@@ -1,0 +1,35 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+secrets/
+bots.json
+bots.json.bak*
+bots.test.json
+logs/
+nohup.out
+*.log
+.DS_Store
+data/
+*.db
+*.db-shm
+*.db-wal
+coverage/
+.vitest/
+.idea/
+.vscode/
+
+# 本地机器私有的 Claude Code 配置（含权限白名单等本机信息，绝不入库）
+.claude/settings.local.json
+
+# Engine-installed skill bundles (each bot installs on its own) —
+# except the two repo-bundled skills shipped with the project
+.claude/skills/*
+!.claude/skills/doubao-tts
+!.claude/skills/frontend-design
+.codex/
+
+# Per-engine project instructions — CLAUDE.md is canonical, AGENTS.md is the codex-engine mirror kept local-only
+AGENTS.md

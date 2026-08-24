@@ -1,0 +1,177 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import type { Logger } from '../utils/logger.js';
+import { resolveWithinRoot } from '../utils/managed-path.js';
+
+const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg', '.tiff']);
+
+/** How long to keep output files before cleanup (ms). */
+const RETENTION_MS = 5 * 60 * 1000; // 5 minutes
+
+export interface OutputFile {
+  filePath: string;
+  fileName: string;
+  extension: string;
+  isImage: boolean;
+  sizeBytes: number;
+}
+
+export class OutputsManager {
+  /** Tracks directories scheduled for deferred cleanup: dir -> timeout handle */
+  private pendingCleanups = new Map<string, ReturnType<typeof setTimeout>>();
+
+  constructor(
+    private baseDir: string,
+    private logger: Logger,
+  ) {}
+
+  /** Create a fresh (empty) per-chat outputs directory for the upcoming turn. */
+  prepareDir(chatId: string): string {
+    const root = path.resolve(this.baseDir);
+    const dir = resolveWithinRoot(root, chatId);
+    if (!dir || dir === root) {
+      throw new Error('Output path is outside the outputs root');
+    }
+
+    // Cancel any pending deferred cleanup for this directory
+    const pending = this.pendingCleanups.get(dir);
+    if (pending) {
+      clearTimeout(pending);
+      this.pendingCleanups.delete(dir);
+    }
+
+    // Start the turn with an empty send dir. Any file still here is a leftover
+    // from a previous turn (already delivered); keeping it would make this turn
+    // re-send it — the duplicate-image bug. Turns are serialized per chat, so
+    // nothing here belongs to an in-flight turn — safe to remove all files.
+    try {
+      if (fs.existsSync(dir)) {
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (!entry.isFile()) continue;
+          try {
+            fs.unlinkSync(path.join(dir, entry.name));
+          } catch { /* ignore individual file errors */ }
+        }
+      } else {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+    } catch {
+      // If anything fails, ensure the directory exists
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    this.logger.debug({ dir }, 'Prepared outputs directory');
+    return dir;
+  }
+
+  /** Scan the outputs directory and return metadata for each file found. */
+  scanOutputs(outputsDir: string): OutputFile[] {
+    const results: OutputFile[] = [];
+    const root = path.resolve(this.baseDir);
+    const managedDir = resolveWithinRoot(root, outputsDir);
+    if (!managedDir || managedDir === root) {
+      this.logger.warn({ outputsDir }, 'Refusing to scan outside the outputs root');
+      return results;
+    }
+    outputsDir = managedDir;
+
+    try {
+      if (!fs.existsSync(outputsDir)) return results;
+      const entries = fs.readdirSync(outputsDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isFile()) continue;
+        const filePath = path.join(outputsDir, entry.name);
+        const ext = path.extname(entry.name).toLowerCase();
+        const stat = fs.statSync(filePath);
+        if (stat.size === 0) continue;
+        results.push({
+          filePath,
+          fileName: entry.name,
+          extension: ext,
+          isImage: IMAGE_EXTENSIONS.has(ext),
+          sizeBytes: stat.size,
+        });
+      }
+    } catch (err) {
+      this.logger.warn({ err, outputsDir }, 'Failed to scan outputs directory');
+    }
+    return results;
+  }
+
+  /** Schedule deferred cleanup of the outputs directory after RETENTION_MS. */
+  cleanup(outputsDir: string): void {
+    const root = path.resolve(this.baseDir);
+    const managedDir = resolveWithinRoot(root, outputsDir);
+    if (!managedDir || managedDir === root) {
+      this.logger.warn({ outputsDir }, 'Refusing to clean up outside the outputs root');
+      return;
+    }
+    outputsDir = managedDir;
+
+    // Cancel any existing timer for this dir
+    const existing = this.pendingCleanups.get(outputsDir);
+    if (existing) clearTimeout(existing);
+
+    const timer = setTimeout(() => {
+      this.pendingCleanups.delete(outputsDir);
+      // [design-note Q] rm 前先补扫:发送成功的文件已被即删(见 output-handler),
+      // 目录里若还有文件 = 一定没发出去(如后台生图晚落盘)。先交给 sweeper 发送,
+      // 再删目录 —— 否则迟到产物会被这里静默销毁(2026-07-30 事故的删除点之一)。
+      const doRemove = () => {
+        try {
+          fs.rmSync(outputsDir, { recursive: true, force: true });
+          this.logger.debug({ outputsDir }, 'Cleaned up outputs directory (deferred)');
+        } catch { /* ignore */ }
+      };
+      if (this.sweeper) {
+        void this.sweeper(outputsDir).then(doRemove, doRemove);
+      } else {
+        doRemove();
+      }
+    }, RETENTION_MS);
+
+    // Don't let the timer keep the process alive
+    timer.unref();
+
+    this.pendingCleanups.set(outputsDir, timer);
+    this.logger.debug({ outputsDir, retentionMs: RETENTION_MS }, 'Scheduled deferred outputs cleanup');
+  }
+
+  // ---- [design-note Q] 漏发补扫支持 ----
+
+  /** 补扫回调:延迟清理 rm 前把目录里未发送的文件先发出去。由 bridge 启动时注册。 */
+  private sweeper?: (outputsDir: string) => Promise<void>;
+
+  setSweeper(fn: (outputsDir: string) => Promise<void>): void {
+    this.sweeper = fn;
+  }
+
+  /** 只解析 chatId 对应的目录路径,不建目录、不清文件(prepareDir 的无副作用版,供补扫用)。 */
+  dirFor(chatId: string): string | null {
+    const root = path.resolve(this.baseDir);
+    const dir = resolveWithinRoot(root, chatId);
+    if (!dir || dir === root) return null;
+    return dir;
+  }
+
+  /** Check if a file extension is a text-based format that can be sent as text. */
+  static isTextFile(ext: string): boolean {
+    const textExts = new Set(['.txt', '.md', '.csv', '.json', '.xml', '.yaml', '.yml', '.log', '.html', '.css', '.js', '.ts', '.py', '.sh', '.sql', '.ini', '.cfg', '.conf', '.toml']);
+    return textExts.has(ext);
+  }
+
+  /** Map file extension to Feishu file type for im.v1.file.create. */
+  static feishuFileType(ext: string): string {
+    switch (ext) {
+      case '.pdf': return 'pdf';
+      case '.doc':
+      case '.docx': return 'doc';
+      case '.xls':
+      case '.xlsx': return 'xls';
+      case '.ppt':
+      case '.pptx': return 'ppt';
+      default: return 'stream';
+    }
+  }
+}

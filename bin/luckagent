@@ -1,0 +1,1365 @@
+#!/usr/bin/env bash
+# luckagent - Luckagent CLI (single binary)
+# Three command categories:
+#   1. Bridge process control: update | start | stop | restart | logs | status
+#   2. Bridge daemon API (localhost:9100): bots | bot | talk | schedule |
+#      peers | stats | metrics | voice | health
+#   3. luckagent-core delegation: agents | memory | skills | inbox
+
+set -euo pipefail
+
+# Resolve LUCKAGENT_HOME: env var > script's parent dir (follows symlinks) > $HOME/luckagent
+if [[ -z "${LUCKAGENT_HOME:-}" ]]; then
+  _src="${BASH_SOURCE[0]}"
+  if command -v readlink &>/dev/null; then
+    _src="$(readlink -f "$_src" 2>/dev/null || echo "$_src")"
+  fi
+  _sd="$(cd "$(dirname "$_src")/.." 2>/dev/null && pwd)" || _sd=""
+  if [[ -n "$_sd" && -d "$_sd/.git" && -f "$_sd/package.json" ]]; then
+    LUCKAGENT_HOME="$_sd"
+  else
+    LUCKAGENT_HOME="$HOME/luckagent"
+  fi
+fi
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+info()    { echo -e "${BLUE}[INFO]${NC} $*"; }
+success() { echo -e "${GREEN}[OK]${NC} $*"; }
+warn()    { echo -e "${YELLOW}[WARN]${NC} $*"; }
+error()   { echo -e "${RED}[ERROR]${NC} $*"; }
+
+# --- Bridge daemon API config (Category 2): env vars > .env file > defaults ---
+# Read API_PORT / API_SECRET / LUCKAGENT_URL from $LUCKAGENT_HOME/.env without
+# clobbering values already exported in the environment.
+_load_bridge_api_config() {
+  local envf="$LUCKAGENT_HOME/.env"
+  if [[ -f "$envf" ]]; then
+    _api_port=$(sed -n 's/^API_PORT=//p' "$envf" 2>/dev/null || true)
+    _api_secret=$(sed -n 's/^API_SECRET=//p' "$envf" 2>/dev/null || true)
+    _api_url=$(sed -n 's/^LUCKAGENT_URL=//p' "$envf" 2>/dev/null || true)
+  fi
+  LUCKAGENT_URL="${LUCKAGENT_URL:-${_api_url:-http://localhost:${_api_port:-9100}}}"
+  _api_secret="${API_SECRET:-${_api_secret:-changeme}}"
+  LUCKAGENT_AUTH="Authorization: Bearer $_api_secret"
+}
+
+_json() { python3 -m json.tool 2>/dev/null || cat; }
+
+cmd_update() {
+  # Single update path: git pull + rebuild + skill sync + pm2 restart.
+if [[ ! -d "$LUCKAGENT_HOME/.git" ]]; then
+    error "Git update requested, but $LUCKAGENT_HOME is not a git checkout."
+    echo "  Use the default package refresh instead:"
+    echo "    luckagent update"
+    exit 1
+  fi
+
+  # Always re-exec from the repo copy before doing anything.
+  # This prevents the running script (e.g. ~/.local/bin/luckagent) from being
+  # overwritten mid-execution when we copy CLI tools later.
+  if [[ -z "${LUCKAGENT_REEXEC:-}" ]] && [[ -f "$LUCKAGENT_HOME/bin/luckagent" ]]; then
+    export LUCKAGENT_REEXEC=1
+    exec "$LUCKAGENT_HOME/bin/luckagent" update
+  fi
+
+  info "Pulling latest code..."
+  cd "$LUCKAGENT_HOME"
+  local old_head
+  old_head="$(git rev-parse HEAD)"
+  git pull --ff-only || { error "git pull failed"; exit 1; }
+
+  # Re-exec if git pull updated this script (the repo copy we're running from)
+  if ! git diff --quiet "$old_head" HEAD -- bin/luckagent 2>/dev/null; then
+    info "luckagent CLI updated, re-launching with new version..."
+    exec "$LUCKAGENT_HOME/bin/luckagent" update
+  fi
+
+  info "Installing dependencies..."
+  npm install --production=false
+
+  info "Building..."
+  npm run build
+
+  # Update CLI tools in ~/.local/bin.
+  # `luckagent` is the sole dispatcher (bridge process control + delegate to
+  # luckagent-core feature CLI). `mb`/`mm`/`mh`/`mbcore` are legacy and stay removed.
+  LOCAL_BIN="$HOME/.local/bin"
+  if [[ -d "$LOCAL_BIN" ]]; then
+    info "Updating CLI tools..."
+    for cli in luckagent; do
+      local src="$LUCKAGENT_HOME/bin/$cli"
+      local dst="$LOCAL_BIN/$cli"
+      if [[ -f "$src" ]]; then
+        # Skip when $dst already points at $src — copying a file onto its own
+        # symlink target errors out with `cp: 'a' and 'b' are the same file`.
+        if [[ "$src" -ef "$dst" ]]; then
+          continue
+        fi
+        cp "$src" "$dst"
+        chmod +x "$dst"
+      fi
+    done
+    success "CLI tools updated"
+  fi
+
+  # Update skills in ~/.claude/skills and ~/.codex/skills
+  SKILLS_DIR="$HOME/.claude/skills"
+  CODEX_SKILLS_DIR="$HOME/.codex/skills"
+  AGENTS_SKILLS_DIR="$HOME/.agents/skills"
+  mkdir -p "$SKILLS_DIR" "$CODEX_SKILLS_DIR"
+  info "Updating skills..."
+  local src=""
+  local -a lark_skill_names=(
+    lark-base
+    lark-calendar
+    lark-contact
+    lark-doc
+    lark-drive
+    lark-event
+    lark-im
+    lark-mail
+    lark-minutes
+    lark-openapi-explorer
+    lark-shared
+    lark-sheets
+    lark-skill-maker
+    lark-task
+    lark-vc
+    lark-whiteboard
+    lark-wiki
+    lark-workflow-meeting-summary
+    lark-workflow-standup-report
+  )
+  # Phase 4 consolidation: `metamemory` and `skill-hub` skill bundles are
+  # subsumed by the unified `luckagent` skill (which delegates memory/skills/
+  # agents to the luckagent-core feature CLI). luckagent-team is the compact
+  # Agent Teams coordination skill. metaskill / metaschedule remain opt-in;
+  # sources still ship in src/skills/* for manual copy.
+  for skill in luckagent voice luckagent-team; do
+    case "$skill" in
+      luckagent)      src="$LUCKAGENT_HOME/packages/skills/luckagent" ;;
+      voice)        src="$LUCKAGENT_HOME/src/skills/voice" ;;
+      luckagent-team) src="$LUCKAGENT_HOME/src/skills/luckagent-team" ;;
+      *)            src="" ;;
+    esac
+    if [[ -n "$src" && -d "$src" ]]; then
+      for dst_root in "$SKILLS_DIR" "$CODEX_SKILLS_DIR"; do
+        mkdir -p "$dst_root/$skill"
+        cp -r "$src/." "$dst_root/$skill/"
+      done
+    fi
+  done
+
+  # Update lark-cli and its AI Agent skills only if previously installed.
+  # New installs still opt in via install.sh; updates keep existing setups fresh.
+  local has_lark_skills=false
+  local skill_root
+  for skill_root in "$AGENTS_SKILLS_DIR" "$SKILLS_DIR" "$CODEX_SKILLS_DIR"; do
+    if [[ -d "$skill_root/lark-doc" ]]; then
+      has_lark_skills=true
+      break
+    fi
+  done
+  if command -v lark-cli &>/dev/null; then
+    info "Updating lark-cli..."
+    if npm install -g @larksuite/cli@latest 2>/dev/null || npm install -g --prefix "$HOME/.local" @larksuite/cli@latest 2>/dev/null; then
+      success "lark-cli updated ($(lark-cli --version 2>/dev/null || echo 'version unknown'))"
+    else
+      warn "lark-cli update failed; Luckagent update will continue"
+    fi
+    has_lark_skills=true
+  fi
+  if [[ "$has_lark_skills" == "true" ]]; then
+    info "Updating lark-cli AI Agent skills..."
+    if npx skills add larksuite/cli --all -y -g 2>/dev/null; then
+      success "lark-cli AI Agent skills updated"
+    else
+      warn "lark-cli skills update failed; keeping existing installed copies"
+    fi
+    # Mirror lark-cli skills into Claude/Codex skill roots. Recent lark-cli
+    # installs use ~/.agents/skills, while older installs may use ~/.claude.
+    local lark_skill
+    for lark_skill in "${lark_skill_names[@]}"; do
+      local lark_src=""
+      for skill_root in "$AGENTS_SKILLS_DIR" "$SKILLS_DIR" "$CODEX_SKILLS_DIR"; do
+        if [[ -d "$skill_root/$lark_skill" ]]; then
+          lark_src="$skill_root/$lark_skill"
+          break
+        fi
+      done
+      if [[ -n "$lark_src" ]]; then
+        for dst_root in "$SKILLS_DIR" "$CODEX_SKILLS_DIR"; do
+          mkdir -p "$dst_root/$lark_skill"
+          # Skip when src and dst already resolve to the same inode
+          # (lark-cli installs ~/.agents/skills/* and symlinks them into
+          # ~/.claude/skills + ~/.codex/skills — cp would error on same-file).
+          [[ "$lark_src" -ef "$dst_root/$lark_skill" ]] && continue
+          if [[ "$lark_src" != "$dst_root/$lark_skill" ]]; then
+            cp -r "$lark_src/." "$dst_root/$lark_skill/"
+          fi
+        done
+      fi
+    done
+  fi
+  success "Skills updated"
+
+  # Update workspace skills if bots.json exists
+  if [[ -f "$LUCKAGENT_HOME/bots.json" ]] && command -v node &>/dev/null; then
+    local work_dir
+    work_dir=$(node -e "
+      const c=JSON.parse(require('fs').readFileSync('$LUCKAGENT_HOME/bots.json','utf-8'));
+      const b=[...(c.feishuBots||[])];
+      if(b[0])console.log(b[0].defaultWorkingDirectory);
+    " 2>/dev/null || true)
+    if [[ -n "$work_dir" ]]; then
+      local ws_skills_dir="$work_dir/.claude/skills"
+      local ws_codex_skills_dir="$work_dir/.codex/skills"
+      mkdir -p "$ws_skills_dir" "$ws_codex_skills_dir"
+
+      # Copy common skills (Phase 4: metamemory/skill-hub removed).
+      for skill in luckagent voice; do
+        if [[ -d "$SKILLS_DIR/$skill" ]]; then
+          for dst_root in "$ws_skills_dir" "$ws_codex_skills_dir"; do
+            mkdir -p "$dst_root/$skill"
+            cp -r "$SKILLS_DIR/$skill/." "$dst_root/$skill/"
+          done
+        fi
+      done
+      # Mirror opt-in skills (metaskill / metaschedule) only when present.
+      for skill in metaskill metaschedule; do
+        if [[ -d "$SKILLS_DIR/$skill" ]]; then
+          for dst_root in "$ws_skills_dir" "$ws_codex_skills_dir"; do
+            mkdir -p "$dst_root/$skill"
+            cp -r "$SKILLS_DIR/$skill/." "$dst_root/$skill/"
+          done
+        fi
+      done
+      # Copy lark-cli skills if previously installed
+      if [[ "$has_lark_skills" == "true" ]]; then
+        local lark_skill
+        for lark_skill in "${lark_skill_names[@]}"; do
+          local lark_src=""
+          for skill_root in "$AGENTS_SKILLS_DIR" "$SKILLS_DIR" "$CODEX_SKILLS_DIR"; do
+            if [[ -d "$skill_root/$lark_skill" ]]; then
+              lark_src="$skill_root/$lark_skill"
+              break
+            fi
+          done
+          if [[ -n "$lark_src" ]]; then
+            for dst_root in "$ws_skills_dir" "$ws_codex_skills_dir"; do
+              mkdir -p "$dst_root/$lark_skill"
+              [[ "$lark_src" -ef "$dst_root/$lark_skill" ]] && continue
+              cp -r "$lark_src/." "$dst_root/$lark_skill/"
+            done
+          fi
+        done
+      fi
+      # Update CLAUDE.md
+      if [[ -f "$LUCKAGENT_HOME/src/workspace/CLAUDE.md" ]]; then
+        cp "$LUCKAGENT_HOME/src/workspace/CLAUDE.md" "$work_dir/CLAUDE.md"
+        if [[ ! -e "$work_dir/AGENTS.md" ]]; then
+          cp "$LUCKAGENT_HOME/src/workspace/CLAUDE.md" "$work_dir/AGENTS.md"
+        fi
+      fi
+      success "Workspace skills updated"
+    fi
+  fi
+
+  info "Restarting Luckagent..."
+  _write_restart_breadcrumb
+  pm2 restart luckagent-bridge luckagent-core 2>/dev/null || pm2 start ecosystem.config.cjs
+  pm2 save --force 2>/dev/null || true
+
+  success "Luckagent updated and restarted!"
+}
+
+# Drop a breadcrumb so the bridge knows it was just restarted. After
+# `pm2 restart` the node process (and every Claude session) is killed and
+# respawned, so the agent that issued the restart loses all memory of having
+# done so — without this it sees "please restart" in resumed history and
+# restarts again in a loop. The bridge reads + deletes this file at boot and
+# injects a one-shot "you just restarted, don't restart again" system-reminder.
+_write_restart_breadcrumb() {
+  local dir="${SESSION_STORE_DIR:-$HOME/.luckagent}"
+  mkdir -p "$dir" 2>/dev/null || return 0
+  printf '{"restartedAt": %s}\n' "$(date +%s)" > "$dir/last-restart.json" 2>/dev/null || true
+}
+
+cmd_start()   { pm2 start "$LUCKAGENT_HOME/ecosystem.config.cjs"; pm2 save --force 2>/dev/null || true; }
+cmd_stop()    {
+  case "${1:-}" in
+    --all)  pm2 stop luckagent-bridge luckagent-core ;;
+    --core) pm2 stop luckagent-core ;;
+    *)      pm2 stop luckagent-bridge ;;
+  esac
+}
+cmd_restart() {
+  _write_restart_breadcrumb
+  case "${1:-}" in
+    --all)  pm2 restart luckagent-bridge luckagent-core ;;
+    --core) pm2 restart luckagent-core ;;
+    *)      pm2 restart luckagent-bridge ;;
+  esac
+}
+cmd_logs()    {
+  case "${1:-}" in
+    --core) shift; pm2 logs luckagent-core "${@}" ;;
+    *)      pm2 logs luckagent-bridge "${@}" ;;
+  esac
+}
+cmd_status()  { pm2 ls | grep -E "luckagent|App name|─" || pm2 ls; }
+
+cmd_doctor() {
+  local json=false
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --json) json=true; shift ;;
+      --help|-h)
+        echo "Usage: luckagent doctor [--json]"
+        echo "  Agent-native local diagnostics for runtime, PM2, core, bots, voice, and engines."
+        exit 0
+        ;;
+      *)
+        error "Unknown doctor option: $1"
+        echo "  Usage: luckagent doctor [--json]"
+        exit 1
+        ;;
+    esac
+  done
+
+  LUCKAGENT_HOME="$LUCKAGENT_HOME" python3 - "$json" <<'PY'
+import json
+import os
+import shutil
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+want_json = sys.argv[1] == "true"
+home = Path(os.environ.get("LUCKAGENT_HOME") or str(Path.home() / "luckagent")).expanduser()
+
+def load_env(path: Path):
+    env = {}
+    if not path.exists():
+        return env
+    for raw in path.read_text(errors="ignore").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        v = v.strip().strip('"').strip("'")
+        env[k.strip()] = v
+    return env
+
+file_env = load_env(home / ".env")
+
+def env(name, default=None):
+    return os.environ.get(name) or file_env.get(name) or default
+
+def run(cmd, timeout=4):
+    try:
+        p = subprocess.run(cmd, text=True, capture_output=True, timeout=timeout)
+        return {"ok": p.returncode == 0, "code": p.returncode, "stdout": p.stdout.strip(), "stderr": p.stderr.strip()}
+    except Exception as e:
+        return {"ok": False, "code": None, "stdout": "", "stderr": str(e)}
+
+def http_json(url, token=None, timeout=4):
+    req = urllib.request.Request(url)
+    if token:
+        req.add_header("Authorization", f"Bearer {token}")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            body = resp.read(512 * 1024).decode("utf-8", errors="replace")
+            try:
+                parsed = json.loads(body)
+            except Exception:
+                parsed = None
+            return {"ok": 200 <= resp.status < 300, "status": resp.status, "json": parsed, "bodyPreview": body[:300]}
+    except urllib.error.HTTPError as e:
+        return {"ok": False, "status": e.code, "json": None, "bodyPreview": e.read(300).decode("utf-8", errors="replace")}
+    except Exception as e:
+        return {"ok": False, "status": None, "json": None, "bodyPreview": str(e)}
+
+def check(name, ok, code=None, diagnosis="", recommendedAction="", canAutoFix=False, data=None):
+    severity = "ok" if ok else "warn"
+    item = {
+        "name": name,
+        "ok": bool(ok),
+        "severity": severity,
+        "code": code or ("ok" if ok else "check_failed"),
+        "diagnosis": diagnosis,
+        "recommendedAction": recommendedAction,
+        "canAutoFix": bool(canAutoFix),
+    }
+    if data is not None:
+        item["data"] = data
+    checks.append(item)
+
+checks = []
+report = {
+    "ok": True,
+    "schemaVersion": 1,
+    "generatedAt": int(time.time()),
+    "luckagentHome": str(home),
+    "checks": checks,
+}
+
+check("luckagent_home", home.exists(), "luckagent_home_missing" if not home.exists() else "ok",
+      f"LUCKAGENT_HOME resolves to {home}", "Run the installer or set LUCKAGENT_HOME to the installed runtime.", False,
+      {"path": str(home), "hasPackageJson": (home / "package.json").exists(), "hasEnv": (home / ".env").exists(), "hasBotsJson": (home / "bots.json").exists()})
+
+pm2 = shutil.which("pm2")
+pm2_data = {"installed": bool(pm2)}
+pm2_ok = False
+if pm2:
+    j = run([pm2, "jlist"])
+    pm2_data["jlistOk"] = j["ok"]
+    if j["ok"]:
+        try:
+            apps = json.loads(j["stdout"] or "[]")
+            app = next((a for a in apps if a.get("name") == "luckagent-bridge"), None)
+            if app:
+                e = app.get("pm2_env", {})
+                pm2_data.update({
+                    "status": e.get("status"),
+                    "cwd": e.get("pm_cwd"),
+                    "script": e.get("pm_exec_path"),
+                    "restartTime": e.get("restart_time"),
+                    "unstableRestarts": e.get("unstable_restarts"),
+                })
+                pm2_ok = e.get("status") == "online" and str(e.get("pm_cwd")) == str(home)
+        except Exception as e:
+            pm2_data["parseError"] = str(e)
+check("pm2_runtime", pm2_ok, "pm2_wrong_cwd_or_offline" if not pm2_ok else "ok",
+      "PM2 luckagent-bridge is online and running from LUCKAGENT_HOME." if pm2_ok else "PM2 luckagent-bridge is missing, offline, or running from a different cwd.",
+      "Run from the desired runtime: pm2 delete luckagent-bridge; cd $LUCKAGENT_HOME; pm2 start ecosystem.config.cjs --update-env.",
+      True,
+      pm2_data)
+
+api_port = env("API_PORT", "9100")
+api_secret = env("API_SECRET", "changeme")
+luckagent_url = env("LUCKAGENT_URL", f"http://localhost:{api_port}")
+bridge_health = http_json(f"{luckagent_url.rstrip('/')}/api/health", api_secret)
+check("bridge_health", bridge_health["ok"], "bridge_health_failed" if not bridge_health["ok"] else "ok",
+      "Local bridge health endpoint is reachable." if bridge_health["ok"] else "Local bridge health endpoint is not reachable.",
+      "Check PM2 status, API_PORT/API_SECRET, and logs/error.log.",
+      False,
+      {"url": luckagent_url, "status": bridge_health["status"], "response": bridge_health["json"] or bridge_health["bodyPreview"]})
+
+core_url = env("LUCKAGENT_CORE_URL", "http://localhost:9200").rstrip("/")
+core_token_present = bool(env("LUCKAGENT_CORE_TOKEN") or (Path.home() / ".luckagent-core" / "token").exists())
+core_health = http_json(f"{core_url}/health")
+check("luckagent_core", core_health["ok"], "core_unreachable" if not core_health["ok"] else "ok",
+      "luckagent-core health endpoint is reachable." if core_health["ok"] else "luckagent-core health endpoint is not reachable.",
+      "Check VPN/network and LUCKAGENT_CORE_URL.",
+      False,
+      {"url": core_url, "status": core_health["status"], "tokenPresent": core_token_present, "response": core_health["json"] or core_health["bodyPreview"]})
+
+bots_data = []
+bots_path = home / "bots.json"
+if bots_path.exists():
+    try:
+        cfg = json.loads(bots_path.read_text())
+        all_bots = []
+        for key in ("feishuBots", "telegramBots", "webBots", "wechatBots"):
+            for b in cfg.get(key, []) or []:
+                all_bots.append((key, b))
+        for platform, b in all_bots:
+            voice = b.get("voiceReply") or {}
+            wd = b.get("defaultWorkingDirectory")
+            bots_data.append({
+                "name": b.get("name"),
+                "platform": platform,
+                "engine": b.get("engine", "codex"),
+                "workingDirectory": wd,
+                "workingDirectoryExists": bool(wd and Path(wd).expanduser().exists()),
+                "voiceReplyEnabled": voice.get("enabled"),
+            })
+    except Exception as e:
+        bots_data.append({"parseError": str(e)})
+bots_ok = bool(bots_data) and not any("parseError" in b for b in bots_data)
+check("bots_config", bots_ok, "bots_config_missing_or_invalid" if not bots_ok else "ok",
+      "bots.json parsed." if bots_ok else "bots.json missing, empty, or invalid.",
+      "Create/fix bots.json or run install.sh.",
+      False,
+      {"bots": bots_data})
+
+voice_default = {
+    "defaultOn": env("LUCKAGENT_VOICE_REPLY_DEFAULT_ON"),
+    "provider": env("LUCKAGENT_VOICE_REPLY_PROVIDER") or env("FEISHU_VOICE_REPLY_PROVIDER"),
+    "hasVolcengineAppId": bool(env("VOLCENGINE_TTS_APPID")),
+    "hasVolcengineAccessKey": bool(env("VOLCENGINE_TTS_ACCESS_KEY")),
+    "hasOpenAIKey": bool(env("OPENAI_API_KEY")),
+}
+voice_ok = bool(voice_default["provider"] or voice_default["hasVolcengineAppId"] or voice_default["hasOpenAIKey"])
+check("voice_defaults", voice_ok, "voice_defaults_missing" if not voice_ok else "ok",
+      "Voice/TTS defaults appear configured." if voice_ok else "No voice/TTS defaults found.",
+      "Install package default env or configure VOLCENGINE_TTS_* / OPENAI_API_KEY and bot voiceReply.",
+      False,
+      voice_default)
+
+codex_path = env("CODEX_EXECUTABLE_PATH") or shutil.which("codex")
+codex_home = Path(env("CODEX_HOME", str(Path.home() / ".codex"))).expanduser()
+codex_config = codex_home / "config.toml"
+
+def parse_codex_feature_list(output):
+    features = {}
+    for raw in output.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("Usage:") or line.startswith("Commands:"):
+            continue
+        parts = line.split()
+        if len(parts) < 3 or parts[-1] not in ("true", "false"):
+            continue
+        name = parts[0]
+        stage = " ".join(parts[1:-1])
+        features[name] = {"stage": stage, "enabled": parts[-1] == "true"}
+    return features
+
+def count_codex_mcp_servers(config_path):
+    if not config_path.exists():
+        return 0
+    count = 0
+    for raw in config_path.read_text(errors="ignore").splitlines():
+        if raw.strip().startswith("[mcp_servers."):
+            count += 1
+    return count
+
+codex_data = {
+    "executable": codex_path,
+    "hasOpenAIKey": bool(env("OPENAI_API_KEY")),
+    "hasCodexApiKey": bool(env("CODEX_API_KEY")),
+    "baseUrl": env("CODEX_BASE_URL") or env("OPENAI_BASE_URL"),
+    "model": env("CODEX_MODEL"),
+    "codexHome": str(codex_home),
+    "configTomlExists": codex_config.exists(),
+    "skillsDirExists": (codex_home / "skills").is_dir(),
+    "agentsDirExists": (codex_home / "agents").is_dir(),
+    "memoriesDirExists": (codex_home / "memories").is_dir(),
+    "memoryDbExists": bool(list(codex_home.glob("memories_*.sqlite"))),
+    "mcpServerCount": count_codex_mcp_servers(codex_config),
+}
+codex_ok = bool(codex_path)
+if codex_path:
+    v = run([codex_path, "--version"], timeout=3)
+    codex_data["versionOk"] = v["ok"]
+    codex_data["version"] = v["stdout"] or v["stderr"]
+    features_result = run([codex_path, "features", "list"], timeout=5)
+    codex_data["featuresListOk"] = features_result["ok"]
+    if features_result["ok"]:
+        features = parse_codex_feature_list(features_result["stdout"])
+        important_features = [
+            "multi_agent",
+            "memories",
+            "plugins",
+            "hooks",
+            "browser_use",
+            "computer_use",
+            "image_generation",
+            "guardian_approval",
+            "prevent_idle_sleep",
+        ]
+        codex_data["features"] = {name: features.get(name) for name in important_features if name in features}
+check("codex_cli", codex_ok, "codex_missing" if not codex_ok else "ok",
+      "Codex executable found." if codex_ok else "Codex executable not found.",
+      "Install Codex CLI or set CODEX_EXECUTABLE_PATH.",
+      False,
+      codex_data)
+
+codex_features = codex_data.get("features", {})
+required_codex_features = ["multi_agent", "memories"]
+missing_codex_features = [
+    name for name in required_codex_features
+    if not codex_features.get(name, {}).get("enabled")
+]
+codex_agent_features_ok = bool(codex_path) and not missing_codex_features and codex_data["skillsDirExists"] and (codex_data["memoriesDirExists"] or codex_data["memoryDbExists"])
+check("codex_agent_features", codex_agent_features_ok,
+      "codex_agent_features_missing" if not codex_agent_features_ok else "ok",
+      "Codex multi-agent, memories, skills, and memory storage are ready." if codex_agent_features_ok else "Codex agent features are missing or disabled.",
+      "Run install.sh with Codex selected, or add [features] multi_agent=true and memories=true to ~/.codex/config.toml; ensure ~/.codex/skills and ~/.codex/memories exist.",
+      False,
+      {
+          "requiredFeatures": required_codex_features,
+          "missingFeatures": missing_codex_features,
+          "skillsDirExists": codex_data["skillsDirExists"],
+          "agentsDirExists": codex_data["agentsDirExists"],
+          "memoriesDirExists": codex_data["memoriesDirExists"],
+          "memoryDbExists": codex_data["memoryDbExists"],
+          "mcpServerCount": codex_data["mcpServerCount"],
+      })
+
+report["ok"] = all(c.get("ok") for c in checks if c["name"] in ("luckagent_home", "pm2_runtime", "bridge_health"))
+report["summary"] = {
+    "ok": sum(1 for c in checks if c["ok"]),
+    "warn": sum(1 for c in checks if not c["ok"]),
+    "criticalOk": report["ok"],
+}
+
+if want_json:
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+else:
+    print(f"Luckagent doctor: {'OK' if report['ok'] else 'WARN'}")
+    print(f"  LUCKAGENT_HOME: {home}")
+    for c in checks:
+        mark = "✓" if c["ok"] else "!"
+        print(f"  {mark} {c['name']}: {c['code']}")
+        if not c["ok"] and c["recommendedAction"]:
+            print(f"    next: {c['recommendedAction']}")
+    print("\nUse `luckagent doctor --json` for agent-readable diagnostics.")
+PY
+}
+
+# Resolve the luckagent-core feature CLI (agents/memory/skills/inbox).
+# Order: explicit override > in-tree monorepo > sibling workspace > npm-global on PATH.
+_resolve_core_cli() {
+  if [[ -n "${LUCKAGENT_CORE_CLI:-}" && -x "$LUCKAGENT_CORE_CLI" ]]; then
+    echo "$LUCKAGENT_CORE_CLI"; return 0
+  fi
+  # In-tree (monorepo): packages/cli is shipped alongside this script.
+  local intree="$LUCKAGENT_HOME/packages/cli/bin/luckagent"
+  if [[ -f "$intree" ]]; then
+    echo "$intree"; return 0
+  fi
+  # npm-linked global: a `luckagent-core` bin on PATH (NOT this script).
+  local g
+  g="$(command -v luckagent-core 2>/dev/null || true)"
+  if [[ -n "$g" ]]; then echo "$g"; return 0; fi
+  return 1
+}
+
+cmd_delegate() {
+  local core_cli
+  if ! core_cli="$(_resolve_core_cli)"; then
+    error "'luckagent $1' needs the luckagent-core CLI, which isn't installed here."
+    echo "  Fix one of:" >&2
+    echo "    - Build the in-tree CLI: cd \"$LUCKAGENT_HOME\" && npm ci && npx tsc -b" >&2
+    echo "    - Or point at it:        export LUCKAGENT_CORE_CLI=/path/to/packages/cli/bin/luckagent" >&2
+    exit 1
+  fi
+  # Feed LUCKAGENT_CORE_URL / LUCKAGENT_CORE_TOKEN from the bridge .env WITHOUT
+  # clobbering values already set in the environment.
+  local envf="$LUCKAGENT_HOME/.env"
+  if [[ -f "$envf" ]]; then
+    local k
+    for k in LUCKAGENT_CORE_URL LUCKAGENT_CORE_TOKEN; do
+      if [[ -z "${!k:-}" ]]; then
+        local line
+        line="$(grep -E "^${k}=" "$envf" | tail -n1 || true)"
+        if [[ -n "$line" ]]; then
+          export "${k}=$(printf '%s' "${line#${k}=}" | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'\$//")"
+        fi
+      fi
+    done
+  fi
+  exec node "$core_cli" "$@"
+}
+
+# --- Category 2: bridge daemon API (curls the local bridge at localhost:9100) ---
+cmd_bridge_api() {
+  _load_bridge_api_config
+  local cmd="$1"; shift 2>/dev/null || true
+  case "$cmd" in
+    bots|b)
+      curl -s -H "$LUCKAGENT_AUTH" "$LUCKAGENT_URL/api/bots" | _json
+      ;;
+    bot)
+      curl -s -H "$LUCKAGENT_AUTH" "$LUCKAGENT_URL/api/bots/$1" | _json
+      ;;
+    talk|t)
+      local bot="$1" chat="$2"; shift 2 2>/dev/null || true
+      local prompt="$*"
+      if [[ -z "${bot:-}" || -z "${chat:-}" || -z "${prompt:-}" ]]; then
+        echo "Usage: luckagent talk [peer/]<botName> <chatId> <prompt>"
+        echo "  Examples:"
+        echo "    luckagent talk mybot chat123 'fix the bug'"
+        echo "    luckagent talk alice/backend-bot chat123 'deploy to staging'"
+        exit 1
+      fi
+      python3 -c "
+import json, sys
+print(json.dumps({'botName': sys.argv[1], 'chatId': sys.argv[2], 'prompt': sys.argv[3], 'sendCards': True}))
+" "$bot" "$chat" "$prompt" | \
+      curl -s -X POST "$LUCKAGENT_URL/api/talk" \
+        -H "$LUCKAGENT_AUTH" -H "Content-Type: application/json" \
+        -d @-
+      ;;
+    schedule|sched|sc)
+      local subcmd="${1:-list}"; shift 2>/dev/null || true
+      case "$subcmd" in
+        list|ls)
+          curl -s -H "$LUCKAGENT_AUTH" "$LUCKAGENT_URL/api/schedule" | _json
+          ;;
+        add|a)
+          local bot="$1" chat="$2" delay="$3"; shift 3 2>/dev/null || true
+          local prompt="$*"
+          if [[ -z "${bot:-}" || -z "${chat:-}" || -z "${delay:-}" || -z "${prompt:-}" ]]; then
+            echo "Usage: luckagent schedule add <botName> <chatId> <delaySeconds> <prompt>"
+            exit 1
+          fi
+          python3 -c "
+import json, sys
+print(json.dumps({'botName': sys.argv[1], 'chatId': sys.argv[2], 'delaySeconds': int(sys.argv[3]), 'prompt': sys.argv[4]}))
+" "$bot" "$chat" "$delay" "$prompt" | \
+          curl -s -X POST "$LUCKAGENT_URL/api/schedule" \
+            -H "$LUCKAGENT_AUTH" -H "Content-Type: application/json" \
+            -d @- | _json
+          ;;
+        cron|c)
+          local bot="$1" chat="$2" cron_expr="$3"; shift 3 2>/dev/null || true
+          local prompt="$*"
+          if [[ -z "${bot:-}" || -z "${chat:-}" || -z "${cron_expr:-}" || -z "${prompt:-}" ]]; then
+            echo "Usage: luckagent schedule cron <botName> <chatId> '<cronExpr>' <prompt>"
+            echo "  Example: luckagent schedule cron mybot oc_xxx '0 8 * * 1-5' Generate daily report"
+            exit 1
+          fi
+          python3 -c "
+import json, sys
+print(json.dumps({'botName': sys.argv[1], 'chatId': sys.argv[2], 'cronExpr': sys.argv[3], 'prompt': sys.argv[4]}))
+" "$bot" "$chat" "$cron_expr" "$prompt" | \
+          curl -s -X POST "$LUCKAGENT_URL/api/schedule" \
+            -H "$LUCKAGENT_AUTH" -H "Content-Type: application/json" \
+            -d @- | _json
+          ;;
+        pause|p)
+          if [[ -z "${1:-}" ]]; then echo "Usage: luckagent schedule pause <id>"; exit 1; fi
+          curl -s -X POST "$LUCKAGENT_URL/api/schedule/$1/pause" -H "$LUCKAGENT_AUTH" | _json
+          ;;
+        resume|r)
+          if [[ -z "${1:-}" ]]; then echo "Usage: luckagent schedule resume <id>"; exit 1; fi
+          curl -s -X POST "$LUCKAGENT_URL/api/schedule/$1/resume" -H "$LUCKAGENT_AUTH" | _json
+          ;;
+        cancel|rm)
+          if [[ -z "${1:-}" ]]; then echo "Usage: luckagent schedule cancel <id>"; exit 1; fi
+          curl -s -X DELETE "$LUCKAGENT_URL/api/schedule/$1" -H "$LUCKAGENT_AUTH" | _json
+          ;;
+        *)
+          echo "luckagent schedule - Task scheduling"
+          echo "  luckagent schedule list                                    - List all scheduled tasks"
+          echo "  luckagent schedule add <bot> <chatId> <delaySec> <prompt>  - Schedule a one-time task"
+          echo "  luckagent schedule cron <bot> <chatId> '<cron>' <prompt>   - Schedule a recurring task"
+          echo "  luckagent schedule pause <id>                              - Pause a recurring task"
+          echo "  luckagent schedule resume <id>                             - Resume a paused task"
+          echo "  luckagent schedule cancel <id>                             - Cancel a task"
+          ;;
+      esac
+      ;;
+    peers|p)
+      local subcmd="${1:-list}"; shift 2>/dev/null || true
+      case "$subcmd" in
+        list|ls)
+          curl -s -H "$LUCKAGENT_AUTH" "$LUCKAGENT_URL/api/peers" | _json
+          ;;
+        add|a)
+          local pname="$1" purl="$2" psecret="${3:-}"
+          if [[ -z "${pname:-}" || -z "${purl:-}" ]]; then
+            echo "Usage: luckagent peers add <name> <url> [secret]"
+            echo "  Example: luckagent peers add alice http://10.0.0.5:9100"
+            exit 1
+          fi
+          python3 -c "
+import json, sys
+body = {'name': sys.argv[1], 'url': sys.argv[2]}
+if len(sys.argv) > 3 and sys.argv[3]:
+    body['secret'] = sys.argv[3]
+print(json.dumps(body))
+" "$pname" "$purl" "$psecret" | \
+          curl -s -X POST "$LUCKAGENT_URL/api/peers" \
+            -H "$LUCKAGENT_AUTH" -H "Content-Type: application/json" \
+            -d @- | _json
+          ;;
+        remove|rm|del)
+          local pname="$1"
+          if [[ -z "${pname:-}" ]]; then
+            echo "Usage: luckagent peers remove <name>"
+            exit 1
+          fi
+          curl -s -X DELETE -H "$LUCKAGENT_AUTH" "$LUCKAGENT_URL/api/peers/$pname" | _json
+          ;;
+        *)
+          echo "Usage: luckagent peers [list|add|remove]"
+          echo "  luckagent peers                       - List peers and their status"
+          echo "  luckagent peers add <name> <url> [secret] - Add a peer at runtime (no restart)"
+          echo "  luckagent peers remove <name>         - Remove a peer"
+          ;;
+      esac
+      ;;
+    stats)
+      curl -s -H "$LUCKAGENT_AUTH" "$LUCKAGENT_URL/api/stats" | _json
+      ;;
+    metrics|m)
+      curl -s -H "$LUCKAGENT_AUTH" "$LUCKAGENT_URL/api/metrics"
+      ;;
+    voice|v)
+      local subcmd="${1:-help}"; shift 2>/dev/null || true
+      case "$subcmd" in
+        tts)
+          local _provider=""
+          local _voice=""
+          local _output=""
+          local _play=false
+          local _text=""
+          while [[ $# -gt 0 ]]; do
+            case "$1" in
+              --provider|-p) _provider="$2"; shift 2 ;;
+              --voice)       _voice="$2"; shift 2 ;;
+              -o|--output)   _output="$2"; shift 2 ;;
+              --play)        _play=true; shift ;;
+              --)            shift; _text="$*"; break ;;
+              -*)            echo "Unknown flag: $1"; exit 1 ;;
+              *)             _text="$*"; break ;;
+            esac
+          done
+          if [[ -z "$_text" ]]; then
+            if [[ -t 0 ]]; then
+              echo "Usage: luckagent voice tts \"text\" [--play] [-o file.mp3] [--provider doubao|openai|elevenlabs] [--voice <name>]"
+              echo "  Or pipe text: echo 'hello' | luckagent voice tts"
+              exit 1
+            fi
+            _text="$(cat)"
+          fi
+          local _json_body
+          _json_body=$(python3 -c "
+import json, sys
+body = {'text': sys.argv[1]}
+if sys.argv[2]: body['provider'] = sys.argv[2]
+if sys.argv[3]: body['voice'] = sys.argv[3]
+print(json.dumps(body))
+" "$_text" "$_provider" "$_voice")
+          if [[ -z "$_output" ]]; then
+            _output="/tmp/luckagent-voice-$(date +%s).mp3"
+          fi
+          local _http_code
+          _http_code=$(curl -s -w '%{http_code}' -o "$_output" \
+            -X POST "$LUCKAGENT_URL/api/tts" \
+            -H "$LUCKAGENT_AUTH" -H "Content-Type: application/json" \
+            -d "$_json_body")
+          if [[ "$_http_code" != "200" ]]; then
+            echo "Error: TTS request failed (HTTP $_http_code)"
+            cat "$_output" 2>/dev/null
+            rm -f "$_output"
+            exit 1
+          fi
+          echo "$_output"
+          if [[ "$_play" == "true" ]]; then
+            if command -v afplay &>/dev/null; then afplay "$_output"
+            elif command -v mpv &>/dev/null; then mpv --no-video "$_output" 2>/dev/null
+            elif command -v ffplay &>/dev/null; then ffplay -nodisp -autoexit "$_output" 2>/dev/null
+            elif command -v play &>/dev/null; then play "$_output" 2>/dev/null
+            else echo "(no audio player found — install mpv, ffplay, or sox to use --play)"
+            fi
+          fi
+          ;;
+        *)
+          echo "luckagent voice - Voice tools"
+          echo ""
+          echo "  Text-to-Speech:"
+          echo "    luckagent voice tts \"text\" [--play] [-o f]  - Generate MP3 from text"
+          echo "    luckagent voice tts \"text\" --provider doubao - Use specific TTS provider"
+          echo "    echo 'hello' | luckagent voice tts           - Read from stdin"
+          ;;
+      esac
+      ;;
+    teams|team)
+      python3 - "$LUCKAGENT_URL" "${_api_secret:-changeme}" "$@" <<'PY'
+import json
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+
+base = sys.argv[1].rstrip("/")
+token = sys.argv[2]
+argv = sys.argv[3:]
+
+def usage():
+    print("""luckagent teams - Luckagent Agent Teams
+  luckagent teams list
+  luckagent teams create <team> [--description text]
+  luckagent teams delete <team>
+  luckagent teams status <team> [--summary|--plain]
+  luckagent teams bind <team> <chatId> [--display]
+  luckagent teams start|stop <team>
+  luckagent teams dispatch <team> <agent> <subject> [--description text] [--message text] [--from name] [--plain]
+  luckagent teams next <team> <agent> [--read] [--summary|--plain]
+  luckagent teams watch <team> [--interval sec] [--count n] [--summary|--plain]
+  luckagent teams agents list <team>
+  luckagent teams agents spawn <team> <name> [--role r] [--engine claude|codex|kimi] [--prompt p]
+  luckagent teams agents stop <team> <name>
+  luckagent teams agents delete <team> <name>
+  luckagent teams send <team> <to> <message> [--from name] [--summary text]
+  luckagent teams inbox <team> <name> [--unread] [--read] [--summary|--plain]
+  luckagent teams tasks list <team> [--summary|--plain]
+  luckagent teams tasks create <team> <subject> [--description text] [--owner name] [--blocked-by id,id]
+  luckagent teams tasks get <team> <id>
+  luckagent teams tasks update <team> <id> [--subject s] [--description d] [--status s] [--owner name|none] [--blocked-by id,id] [--result text]
+  luckagent teams tasks claim <team> <id> [owner|--owner name]
+  luckagent teams tasks done <team> <id> <result>
+  luckagent teams tasks block <team> <id> <reason> [--blocked-by id,id]
+  luckagent teams tasks reopen <team> <id>
+  luckagent teams runs list <team> [--summary|--plain]
+  luckagent teams runs create <team> [--agent name] [--task-id id] [--status s] [--output text] [--error text]
+  luckagent teams runs update <team> <runId> [--status s] [--output text] [--error text]
+  luckagent teams runs output|stop <team> <runId>""")
+
+def parse(args):
+    pos, flags, i = [], {}, 0
+    while i < len(args):
+        a = args[i]
+        if a == "--":
+            pos.extend(args[i + 1:])
+            break
+        if a.startswith("--"):
+            key = a[2:]
+            if "=" in key:
+                k, v = key.split("=", 1)
+                flags[k] = v
+                i += 1
+            elif i + 1 < len(args) and not args[i + 1].startswith("-"):
+                flags[key] = args[i + 1]
+                i += 2
+            else:
+                flags[key] = True
+                i += 1
+        else:
+            pos.append(a)
+            i += 1
+    return pos, flags
+
+def req_data(method, path, body=None):
+    if isinstance(body, dict):
+        keep_null = set(body.pop("__keepNull", []))
+        body = {k: v for k, v in body.items() if v is not None or k in keep_null}
+    data = None if body is None else json.dumps(body).encode()
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+    if body is not None:
+        headers["Content-Type"] = "application/json"
+    r = urllib.request.Request(base + path, data=data, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(r) as resp:
+            text = resp.read().decode()
+            try:
+                return json.loads(text)
+            except Exception:
+                return text
+    except urllib.error.HTTPError as e:
+        sys.stdout.write(e.read().decode() or json.dumps({"error": str(e)}))
+        sys.exit(1)
+
+def emit(value):
+    if isinstance(value, (dict, list)):
+        print(json.dumps(value, indent=2, ensure_ascii=False))
+    else:
+        text = str(value)
+        sys.stdout.write(text)
+        if not text.endswith("\n"):
+            sys.stdout.write("\n")
+
+def req(method, path, body=None):
+    emit(req_data(method, path, body))
+
+def enc(s):
+    return urllib.parse.quote(str(s), safe="")
+
+def bool_flag(flags, name):
+    return flags.get(name) is True or flags.get(name) in ("true", "1")
+
+def wants_summary(flags):
+    return bool_flag(flags, "summary") or bool_flag(flags, "plain")
+
+def parse_number_list(value):
+    if not value:
+        return None
+    nums = []
+    for part in str(value).split(","):
+        try:
+            num = int(part.strip())
+        except Exception:
+            continue
+        if num > 0:
+            nums.append(num)
+    return nums or None
+
+def default_agent_name():
+    import os
+    return os.environ.get("LUCKAGENT_TEAM_AGENT") or os.environ.get("LUCKAGENT_AGENT_NAME")
+
+def compact(value, limit=120):
+    text = " ".join(str(value or "").split())
+    return text if len(text) <= limit else text[:max(0, limit - 3)] + "..."
+
+def task_line(task):
+    owner = f" @{task.get('owner')}" if task.get("owner") else ""
+    blocked = ""
+    if task.get("blockedBy"):
+        blocked = " blocked_by=" + ",".join(str(x) for x in task.get("blockedBy"))
+    result = f" - {compact(task.get('result'), 80)}" if task.get("result") else ""
+    return f"#{task.get('id')} {task.get('status')}{owner}{blocked} {task.get('subject')}{result}"
+
+def run_line(run):
+    agent = f" @{run.get('agentName')}" if run.get("agentName") else ""
+    task = f" task=#{run.get('taskId')}" if run.get("taskId") is not None else ""
+    if run.get("error"):
+        detail = f" error={compact(run.get('error'), 80)}"
+    elif run.get("output"):
+        detail = f" output={compact(run.get('output'), 80)}"
+    else:
+        detail = ""
+    return f"{run.get('id')} {run.get('status')}{agent}{task}{detail}"
+
+def format_messages(messages):
+    if not messages:
+        return ["- none"]
+    lines = []
+    for message in messages[:12]:
+        from_name = f" from {message.get('fromName')}" if message.get("fromName") else ""
+        summary = f"{message.get('summary')}: " if message.get("summary") else ""
+        lines.append(f"- #{message.get('id')}{from_name} {summary}{compact(message.get('body'), 140)}")
+    return lines
+
+def format_tasks(body):
+    tasks = body.get("tasks", []) if isinstance(body, dict) else []
+    open_tasks = [t for t in tasks if t.get("status") in ("pending", "in_progress")]
+    lines = [f"Tasks: {len(tasks)} total, {len(open_tasks)} open"]
+    lines.extend(f"- {task_line(task)}" for task in tasks[:20])
+    if len(tasks) > 20:
+        lines.append(f"... {len(tasks) - 20} more")
+    return "\n".join(lines)
+
+def format_runs(body):
+    runs = body.get("runs", []) if isinstance(body, dict) else []
+    running = len([run for run in runs if run.get("status") == "running"])
+    lines = [f"Runs: {len(runs)} total, {running} running"]
+    lines.extend(f"- {run_line(run)}" for run in runs[:12])
+    if len(runs) > 12:
+        lines.append(f"... {len(runs) - 12} more")
+    return "\n".join(lines)
+
+def format_inbox(body):
+    messages = body.get("messages", []) if isinstance(body, dict) else []
+    read = f", read {body.get('read')}" if isinstance(body, dict) and isinstance(body.get("read"), int) else ""
+    return "\n".join([f"Inbox: {len(messages)} messages{read}", *format_messages(messages)])
+
+def format_next(body):
+    unread = body.get("unreadMessages", []) if isinstance(body, dict) else []
+    tasks = body.get("assignedTasks", []) if isinstance(body, dict) else []
+    read = f" ({body.get('read')} marked read)" if isinstance(body, dict) and body.get("read") else ""
+    lines = [
+        f"Next: {body.get('team', '?')} / {body.get('agent', '?')}",
+        f"Unread: {len(unread)}{read}",
+        *format_messages(unread),
+        f"Assigned open tasks: {len(tasks)}",
+    ]
+    lines.extend(f"- {task_line(task)}" for task in tasks[:12])
+    if not tasks:
+        lines.append("- none")
+    return "\n".join(lines)
+
+def format_status(body):
+    team = body.get("team", {}) if isinstance(body, dict) else {}
+    agents = body.get("agents", []) if isinstance(body, dict) else []
+    tasks = body.get("tasks", []) if isinstance(body, dict) else []
+    runs = body.get("runs", []) if isinstance(body, dict) else []
+    open_tasks = [task for task in tasks if task.get("status") in ("pending", "in_progress")]
+    running_runs = [run for run in runs if run.get("status") == "running"]
+    agent_text = ", ".join(
+        f"{agent.get('name')}:{agent.get('status', 'unknown')}{('/' + agent.get('engine')) if agent.get('engine') else ''}"
+        for agent in agents
+    )
+    lines = [
+        f"Team: {team.get('name', '?')} [{team.get('status', '?')}]",
+    ]
+    if team.get("description"):
+        lines.append(compact(team.get("description"), 160))
+    lines.append(f"Agents: {len(agents)}" + (f" ({agent_text})" if agent_text else ""))
+    lines.append(f"Tasks: {len(tasks)} total, {len(open_tasks)} open")
+    lines.extend(f"- {task_line(task)}" for task in open_tasks[:8])
+    lines.append(f"Unread messages: {body.get('unreadMessages', 0) if isinstance(body, dict) else 0}")
+    lines.append(f"Runs: {len(runs)} total, {len(running_runs)} running")
+    lines.extend(f"- {run_line(run)}" for run in runs[:5])
+    return "\n".join(lines)
+
+def format_dispatch(task, message):
+    return f"Dispatched task #{task.get('id')} to {task.get('owner') or message.get('toName')}: {task.get('subject')}\nMessage #{message.get('id')} sent to {message.get('toName')}"
+
+if not argv or argv[0] in ("help", "--help", "-h"):
+    usage()
+    raise SystemExit(0)
+
+cmd, rest = argv[0], argv[1:]
+if cmd == "list":
+    req("GET", "/api/agent-teams")
+elif cmd == "create":
+    pos, flags = parse(rest)
+    if not pos: raise SystemExit("Usage: luckagent teams create <team>")
+    req("POST", "/api/agent-teams", {"name": pos[0], "description": flags.get("description")})
+elif cmd == "delete":
+    if not rest: raise SystemExit("Usage: luckagent teams delete <team>")
+    req("DELETE", f"/api/agent-teams/{enc(rest[0])}")
+elif cmd == "status":
+    pos, flags = parse(rest)
+    if not pos: raise SystemExit("Usage: luckagent teams status <team>")
+    status = req_data("GET", f"/api/agent-teams/{enc(pos[0])}")
+    emit(format_status(status) if wants_summary(flags) else status)
+elif cmd == "bind":
+    pos, flags = parse(rest)
+    if len(pos) < 2: raise SystemExit("Usage: luckagent teams bind <team> <chatId> [--display]")
+    current = req_data("GET", f"/api/agent-teams/{enc(pos[0])}")
+    team = current.get("team", {}) if isinstance(current, dict) else {}
+    chat_ids = list(team.get("chatIds") or [])
+    display_chat_ids = list(team.get("displayChatIds") or [])
+    target = display_chat_ids if flags.get("display") is True or flags.get("display") == "true" else chat_ids
+    if pos[1] not in target:
+        target.append(pos[1])
+    req("PATCH", f"/api/agent-teams/{enc(pos[0])}", {
+        "chatIds": chat_ids,
+        "displayChatIds": display_chat_ids,
+    })
+elif cmd in ("start", "stop"):
+    if not rest: raise SystemExit(f"Usage: luckagent teams {cmd} <team>")
+    req("POST", f"/api/agent-teams/{enc(rest[0])}/{cmd}", {})
+elif cmd == "dispatch":
+    pos, flags = parse(rest)
+    if len(pos) < 3: raise SystemExit("Usage: luckagent teams dispatch <team> <agent> <subject>")
+    team, agent = pos[0], pos[1]
+    subject = " ".join(pos[2:])
+    description = flags.get("description")
+    task = req_data("POST", f"/api/agent-teams/{enc(team)}/tasks", {
+        "subject": subject,
+        "description": description,
+        "owner": agent,
+        "blockedBy": parse_number_list(flags.get("blocked-by")),
+    })
+    body = flags.get("message")
+    if not body:
+        parts = [
+            f"Start task #{task.get('id')}: {subject}",
+            f"\n{description}" if description else "",
+            "",
+            f"Expected: claim with `luckagent teams tasks claim {team} {task.get('id')} {agent}`, then finish with `luckagent teams tasks done {team} {task.get('id')} \"<result>\"`.",
+        ]
+        body = "\n".join(part for part in parts if part)
+    message = req_data("POST", f"/api/agent-teams/{enc(team)}/messages", {
+        "toName": agent,
+        "fromName": flags.get("from") or "lead",
+        "summary": (flags.get("summary") if isinstance(flags.get("summary"), str) else None) or f"Task #{task.get('id')}: {subject}",
+        "body": body,
+    })
+    emit(format_dispatch(task, message) if wants_summary(flags) else {"task": task, "message": message})
+elif cmd == "next":
+    pos, flags = parse(rest)
+    if len(pos) < 2: raise SystemExit("Usage: luckagent teams next <team> <agent>")
+    team, agent = pos[0], pos[1]
+    unread = req_data("GET", f"/api/agent-teams/{enc(team)}/messages?to={enc(agent)}&unread=1")
+    tasks_body = req_data("GET", f"/api/agent-teams/{enc(team)}/tasks")
+    tasks = tasks_body.get("tasks", []) if isinstance(tasks_body, dict) else []
+    assigned = [
+        task for task in tasks
+        if task.get("owner") == agent and task.get("status") in ("pending", "in_progress")
+    ]
+    result = {
+        "team": team,
+        "agent": agent,
+        "unreadMessages": unread.get("messages", []) if isinstance(unread, dict) else [],
+        "assignedTasks": assigned,
+    }
+    if flags.get("read") and result["unreadMessages"]:
+        read = req_data("POST", f"/api/agent-teams/{enc(team)}/messages/read?to={enc(agent)}", {})
+        if isinstance(read, dict):
+            result["read"] = read.get("read", 0)
+    emit(format_next(result) if wants_summary(flags) else result)
+elif cmd == "watch":
+    pos, flags = parse(rest)
+    if not pos: raise SystemExit("Usage: luckagent teams watch <team>")
+    interval = max(1.0, float(flags.get("interval") or 5))
+    count = max(1, int(flags.get("count") or 1))
+    for i in range(count):
+        status = req_data("GET", f"/api/agent-teams/{enc(pos[0])}")
+        emit(format_status(status) if wants_summary(flags) else status)
+        if i < count - 1:
+            time.sleep(interval)
+elif cmd == "agents":
+    sub, args = (rest[0] if rest else ""), rest[1:]
+    if sub == "list":
+        if not args: raise SystemExit("Usage: luckagent teams agents list <team>")
+        req("GET", f"/api/agent-teams/{enc(args[0])}/agents")
+    elif sub == "spawn":
+        pos, flags = parse(args)
+        if len(pos) < 2: raise SystemExit("Usage: luckagent teams agents spawn <team> <name>")
+        req("POST", f"/api/agent-teams/{enc(pos[0])}/agents", {
+            "name": pos[1], "role": flags.get("role"), "engine": flags.get("engine") or "codex", "prompt": flags.get("prompt")
+        })
+    elif sub == "stop":
+        if len(args) < 2: raise SystemExit("Usage: luckagent teams agents stop <team> <name>")
+        req("POST", f"/api/agent-teams/{enc(args[0])}/agents/{enc(args[1])}/stop", {})
+    elif sub in ("delete", "remove"):
+        if len(args) < 2: raise SystemExit(f"Usage: luckagent teams agents {sub} <team> <name>")
+        req("DELETE", f"/api/agent-teams/{enc(args[0])}/agents/{enc(args[1])}")
+    else:
+        raise SystemExit("Usage: luckagent teams agents list|spawn|stop|delete ...")
+elif cmd == "send":
+    pos, flags = parse(rest)
+    if len(pos) < 2: raise SystemExit("Usage: luckagent teams send <team> <to> <message>")
+    message = flags.get("message") or " ".join(pos[2:])
+    if not message: raise SystemExit("Usage: luckagent teams send <team> <to> <message>")
+    req("POST", f"/api/agent-teams/{enc(pos[0])}/messages", {
+        "toName": pos[1], "body": message, "fromName": flags.get("from"), "summary": flags.get("summary")
+    })
+elif cmd == "inbox":
+    pos, flags = parse(rest)
+    if len(pos) < 2: raise SystemExit("Usage: luckagent teams inbox <team> <name>")
+    q = f"?to={enc(pos[1])}" + ("&unread=1" if flags.get("unread") else "")
+    inbox = req_data("GET", f"/api/agent-teams/{enc(pos[0])}/messages{q}")
+    if flags.get("read"):
+        read = req_data("POST", f"/api/agent-teams/{enc(pos[0])}/messages/read?to={enc(pos[1])}", {})
+        if isinstance(inbox, dict) and isinstance(read, dict):
+            inbox["read"] = read.get("read", 0)
+    emit(format_inbox(inbox) if wants_summary(flags) else inbox)
+elif cmd == "tasks":
+    sub, args = (rest[0] if rest else ""), rest[1:]
+    if sub == "list":
+        pos, flags = parse(args)
+        if not pos: raise SystemExit("Usage: luckagent teams tasks list <team>")
+        tasks = req_data("GET", f"/api/agent-teams/{enc(pos[0])}/tasks")
+        emit(format_tasks(tasks) if wants_summary(flags) else tasks)
+    elif sub == "create":
+        pos, flags = parse(args)
+        if len(pos) < 2: raise SystemExit("Usage: luckagent teams tasks create <team> <subject>")
+        req("POST", f"/api/agent-teams/{enc(pos[0])}/tasks", {
+            "subject": " ".join(pos[1:]), "description": flags.get("description"), "owner": flags.get("owner"),
+            "blockedBy": parse_number_list(flags.get("blocked-by"))
+        })
+    elif sub == "get":
+        if len(args) < 2: raise SystemExit("Usage: luckagent teams tasks get <team> <id>")
+        req("GET", f"/api/agent-teams/{enc(args[0])}/tasks/{enc(args[1])}")
+    elif sub == "update":
+        pos, flags = parse(args)
+        if len(pos) < 2: raise SystemExit("Usage: luckagent teams tasks update <team> <id>")
+        req("PATCH", f"/api/agent-teams/{enc(pos[0])}/tasks/{enc(pos[1])}", {
+            "subject": flags.get("subject"),
+            "description": flags.get("description"),
+            "status": flags.get("status"),
+            "owner": None if flags.get("owner") == "none" else flags.get("owner"),
+            "__keepNull": ["owner"] if flags.get("owner") == "none" else [],
+            "blockedBy": parse_number_list(flags.get("blocked-by")),
+            "result": flags.get("result"),
+        })
+    elif sub == "claim":
+        pos, flags = parse(args)
+        owner = flags.get("owner") or (pos[2] if len(pos) >= 3 else None) or default_agent_name()
+        if len(pos) < 2 or not owner: raise SystemExit("Usage: luckagent teams tasks claim <team> <id> [owner|--owner name]")
+        req("PATCH", f"/api/agent-teams/{enc(pos[0])}/tasks/{enc(pos[1])}", {
+            "status": "in_progress", "owner": owner
+        })
+    elif sub in ("done", "complete"):
+        pos, flags = parse(args)
+        result = flags.get("result") or (" ".join(pos[2:]) if len(pos) >= 3 else "")
+        if len(pos) < 2 or not result: raise SystemExit(f"Usage: luckagent teams tasks {sub} <team> <id> <result>")
+        req("PATCH", f"/api/agent-teams/{enc(pos[0])}/tasks/{enc(pos[1])}", {
+            "status": "completed", "result": result
+        })
+    elif sub == "block":
+        pos, flags = parse(args)
+        reason = flags.get("result") or (" ".join(pos[2:]) if len(pos) >= 3 else "")
+        if len(pos) < 2 or not reason: raise SystemExit("Usage: luckagent teams tasks block <team> <id> <reason>")
+        req("PATCH", f"/api/agent-teams/{enc(pos[0])}/tasks/{enc(pos[1])}", {
+            "status": "pending",
+            "blockedBy": parse_number_list(flags.get("blocked-by")),
+            "result": f"Blocked: {reason}",
+        })
+    elif sub == "reopen":
+        if len(args) < 2: raise SystemExit("Usage: luckagent teams tasks reopen <team> <id>")
+        req("PATCH", f"/api/agent-teams/{enc(args[0])}/tasks/{enc(args[1])}", {
+            "status": "pending"
+        })
+    else:
+        raise SystemExit("Usage: luckagent teams tasks list|create|get|update|claim|done|block|reopen ...")
+elif cmd == "runs":
+    sub, args = (rest[0] if rest else ""), rest[1:]
+    if sub == "list":
+        pos, flags = parse(args)
+        if not pos: raise SystemExit("Usage: luckagent teams runs list <team>")
+        runs = req_data("GET", f"/api/agent-teams/{enc(pos[0])}/runs")
+        emit(format_runs(runs) if wants_summary(flags) else runs)
+    elif sub == "create":
+        pos, flags = parse(args)
+        if not pos: raise SystemExit("Usage: luckagent teams runs create <team>")
+        task_id = flags.get("task-id")
+        req("POST", f"/api/agent-teams/{enc(pos[0])}/runs", {
+            "agentName": flags.get("agent"), "taskId": int(task_id) if task_id else None,
+            "status": flags.get("status"), "output": flags.get("output"), "error": flags.get("error")
+        })
+    elif sub == "update":
+        pos, flags = parse(args)
+        if len(pos) < 2: raise SystemExit("Usage: luckagent teams runs update <team> <runId>")
+        req("PATCH", f"/api/agent-teams/{enc(pos[0])}/runs/{enc(pos[1])}", {
+            "status": flags.get("status"), "output": flags.get("output"), "error": flags.get("error")
+        })
+    elif sub in ("output", "stop"):
+        if len(args) < 2: raise SystemExit(f"Usage: luckagent teams runs {sub} <team> <runId>")
+        if sub == "output":
+            req("GET", f"/api/agent-teams/{enc(args[0])}/runs/{enc(args[1])}/output")
+        else:
+            req("POST", f"/api/agent-teams/{enc(args[0])}/runs/{enc(args[1])}/stop", {})
+    else:
+        raise SystemExit("Usage: luckagent teams runs list|create|update|output|stop ...")
+else:
+    raise SystemExit(f"Unknown luckagent teams command: {cmd}")
+PY
+      ;;
+    health|h)
+      curl -s -H "$LUCKAGENT_AUTH" "$LUCKAGENT_URL/api/health" | _json
+      ;;
+  esac
+}
+
+print_help() {
+  echo -e "${BOLD}luckagent${NC} - Luckagent CLI"
+  echo ""
+  echo "  Process control:"
+  echo "    luckagent update     Git pull, rebuild, sync skills, and restart"
+  echo "    luckagent start      Start bridge + core with PM2"
+  echo "    luckagent stop       Stop the bridge (--core / --all for the rest)"
+  echo "    luckagent restart    Restart the bridge (--core / --all)"
+  echo "    luckagent logs       View live logs (--core for core; pass -n 100 etc.)"
+  echo "    luckagent status     Show PM2 process status"
+  echo "    luckagent doctor     Agent-readable runtime diagnostics (--json)"
+  echo ""
+  echo "  Bridge daemon API (localhost:9100):"
+  echo "    luckagent bots                       List all bots (local + peer)"
+  echo "    luckagent bot <name>                 Get bot details"
+  echo "    luckagent talk <bot> <chatId> <msg>  Talk to a bot (bridge /api/talk)"
+  echo "    luckagent schedule …                 Task scheduling (list/add/cron/pause/resume/cancel)"
+  echo "    luckagent teams …                    Luckagent Agent Teams (agents/tasks/messages/runs)"
+  echo "    luckagent peers                      List peers and their status"
+  echo "    luckagent stats                      Cost & usage stats"
+  echo "    luckagent metrics                    Prometheus metrics"
+  echo "    luckagent voice tts …                Text-to-speech (POST /api/tts)"
+  echo "    luckagent health                     Health check"
+  echo ""
+  echo "  Feature subcommands (delegated to luckagent-core):"
+  echo "    luckagent agents … | memory … | skills … | inbox …"
+}
+
+case "${1:-}" in
+  update|up)    shift; cmd_update "$@" ;;
+  start)        cmd_start ;;
+  stop)         shift; cmd_stop "$@" ;;
+  restart|rs)   shift; cmd_restart "$@" ;;
+  logs|log)     shift; cmd_logs "$@" ;;
+  status|st)    cmd_status ;;
+  doctor)       shift; cmd_doctor "$@" ;;
+  bots|b|bot|talk|t|schedule|sched|sc|peers|p|stats|metrics|m|voice|v|teams|team|health|h)
+                cmd_bridge_api "$@" ;;
+  ""|help|--help|-h) print_help ;;
+  *)            cmd_delegate "$@" ;;
+esac

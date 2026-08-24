@@ -1,0 +1,34 @@
+{
+  "name": "@luckagent/cli",
+  "version": "0.1.0",
+  "description": "luckagent — unified CLI dispatching to metamemory / skill-hub / agents / t5t subcommands.",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "luckagent": "bin/luckagent"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "pack:standalone": "bash scripts/pack.sh",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@luckagent/cli-core": "*",
+    "@luckagent/metamemory": "*",
+    "@luckagent/skill-hub": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

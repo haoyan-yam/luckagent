@@ -1,0 +1,17 @@
+# gitleaks config for luckagent. Extends the default rule set and allowlists
+# example placeholders + product names that the generic-api-key entropy rule
+# misfires on.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "luckagent docs examples — placeholder tokens and product names"
+regexTarget = "match"
+regexes = [
+  # docs/features/voice-jarvis.{md,zh.md} — curl example with placeholder bearer
+  '''YOUR_API_SECRET''',
+  '''YOUR_TOKEN''',
+  '''YOUR_BOT_SECRET''',
+  # docs/concepts/architecture.md — product names that hit the entropy rule
+  '''Doubao/Whisper''',
+]

@@ -1,0 +1,27 @@
+{
+  "name": "@luckagent/skill-hub",
+  "version": "0.1.0",
+  "description": "Thin HTTP client library for the central luckagent-core skill hub. Surfaced by `luckagent skills` subcommands; no standalone bin in v1 (consumed via @luckagent/cli).",
+  "type": "module",
+  "main": "dist/index.js",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@luckagent/cli-core": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

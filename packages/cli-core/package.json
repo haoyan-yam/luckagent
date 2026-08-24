@@ -1,0 +1,46 @@
+{
+  "name": "@luckagent/cli-core",
+  "version": "0.1.0",
+  "description": "Shared building blocks (config, HTTP client, argparse, print) for luckagent-core CLIs.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./config": {
+      "import": "./dist/config.js",
+      "types": "./dist/config.d.ts"
+    },
+    "./client": {
+      "import": "./dist/client.js",
+      "types": "./dist/client.d.ts"
+    },
+    "./args": {
+      "import": "./dist/args.js",
+      "types": "./dist/args.d.ts"
+    },
+    "./print": {
+      "import": "./dist/print.js",
+      "types": "./dist/print.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "echo 'no cli-core unit tests in v1 — covered transitively via metamemory + skill-hub' && exit 0"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

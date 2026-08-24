@@ -1,0 +1,326 @@
+import { useEffect, useState } from 'react';
+import {
+  Button,
+  Collapse,
+  Drawer,
+  Form,
+  Input,
+  InputNumber,
+  Select,
+  Space,
+  Switch,
+  Typography,
+  message,
+} from 'antd';
+import { api } from '../api/client';
+import type { BotEntry } from '../api/types';
+
+const MASK_PREFIX = '••••';
+
+/**
+ * Create/edit form for one feishuBots entry.
+ *
+ * Secret-field contract (must match the backend):
+ *  - On edit, secrets arrive masked ("••••1234"). Leaving the field untouched
+ *    means "unchanged" — the key is REMOVED from the payload entirely (the
+ *    server treats ''/null as "delete this key" and additionally strips any
+ *    surviving mask, so a mask must never be sent as a value).
+ *  - Typing a new value replaces the secret.
+ */
+export default function BotFormDrawer({
+  open,
+  editing,
+  onClose,
+  onSaved,
+}: {
+  open: boolean;
+  editing: string | null; // bot name when editing, null when creating
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [form] = Form.useForm();
+  const [loading, setLoading] = useState(false);
+  const [testing, setTesting] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    form.resetFields();
+    if (editing) {
+      void api.get<{ config: BotEntry }>(`/api/bots/${encodeURIComponent(editing)}`).then((r) => {
+        const cfg = r.config || {};
+        form.setFieldsValue({
+          ...cfg,
+          groupOnlyAllowUsers: (cfg.groupOnlyAllowUsers || []).join(','),
+        });
+      });
+    }
+  }, [open, editing, form]);
+
+  const isMasked = (v: unknown) => typeof v === 'string' && v.startsWith(MASK_PREFIX);
+
+  const buildPayload = (values: Record<string, unknown>): Record<string, unknown> => {
+    const payload: Record<string, unknown> = { ...values };
+    // groupOnlyAllowUsers: comma string → array
+    if (typeof payload.groupOnlyAllowUsers === 'string') {
+      const arr = (payload.groupOnlyAllowUsers as string)
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (arr.length) payload.groupOnlyAllowUsers = arr;
+      else delete payload.groupOnlyAllowUsers;
+    }
+    // Never send masked/unchanged secrets or empty strings.
+    const scrub = (obj: Record<string, unknown>) => {
+      for (const [k, v] of Object.entries(obj)) {
+        if (isMasked(v)) delete obj[k];
+        else if (v === '' || v === undefined || v === null) delete obj[k];
+        else if (v && typeof v === 'object' && !Array.isArray(v)) {
+          scrub(v as Record<string, unknown>);
+          if (Object.keys(v as object).length === 0) delete obj[k];
+        }
+      }
+    };
+    scrub(payload);
+    return payload;
+  };
+
+  const onSubmit = async () => {
+    const values = await form.validateFields();
+    const payload = buildPayload(values);
+    setLoading(true);
+    try {
+      if (editing) {
+        await api.put(`/api/bots/${encodeURIComponent(editing)}`, payload);
+        message.success('已保存，重启桥接后生效');
+      } else {
+        await api.post('/api/bots', { ...payload, platform: 'feishu' });
+        message.success('机器人已创建，重启桥接后生效');
+      }
+      onSaved();
+      onClose();
+    } catch (err: any) {
+      message.error(err?.message || '保存失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onTest = async () => {
+    const appId = form.getFieldValue('feishuAppId');
+    const appSecret = form.getFieldValue('feishuAppSecret');
+    setTesting(true);
+    try {
+      const body =
+        isMasked(appSecret) || !appSecret
+          ? { botName: editing }
+          : { appId, appSecret };
+      const r = await api.post<{ ok: boolean; msg: string; feishuCode: number | null }>(
+        '/admin/api/feishu/test-connection',
+        body,
+      );
+      if (r.ok) message.success('凭证有效 ✓');
+      else message.error(`验证失败：${r.msg}（code ${r.feishuCode ?? 'n/a'}）`);
+    } catch (err: any) {
+      message.error(err?.message || '测试失败');
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const engine = Form.useWatch('engine', form) || 'claude';
+
+  return (
+    <Drawer
+      title={editing ? `编辑机器人：${editing}` : '新建机器人'}
+      width={520}
+      open={open}
+      onClose={onClose}
+      extra={
+        <Space>
+          <Button onClick={onTest} loading={testing}>
+            测试连接
+          </Button>
+          <Button type="primary" onClick={onSubmit} loading={loading}>
+            保存
+          </Button>
+        </Space>
+      }
+    >
+      <Form form={form} layout="vertical" initialValues={{ engine: 'claude' }}>
+        <Form.Item
+          name="name"
+          label="名称"
+          rules={[{ required: true, message: '必填' }, { pattern: /^[\w-]+$/, message: '仅限字母/数字/下划线/连字符' }]}
+        >
+          <Input disabled={!!editing} placeholder="my-bot" />
+        </Form.Item>
+        <Form.Item name="description" label="描述">
+          <Input placeholder="这个 bot 是做什么的" />
+        </Form.Item>
+        <Form.Item
+          name="feishuAppId"
+          label="飞书 App ID"
+          rules={editing ? [] : [{ required: true, message: '必填' }]}
+        >
+          <Input placeholder="cli_xxxxxxxxxxxxxxxx" />
+        </Form.Item>
+        <Form.Item
+          name="feishuAppSecret"
+          label={
+            <span>
+              飞书 App Secret{' '}
+              {editing && <Typography.Text type="secondary">（留空 = 不修改）</Typography.Text>}
+            </span>
+          }
+          rules={editing ? [] : [{ required: true, message: '必填' }]}
+        >
+          <Input.Password placeholder={editing ? '不修改请留空' : 'App Secret'} />
+        </Form.Item>
+        <Form.Item
+          name="defaultWorkingDirectory"
+          label="工作目录（绝对路径）"
+          rules={[{ required: true, message: '必填' }]}
+        >
+          <Input placeholder="/Users/you/projects/my-bot" />
+        </Form.Item>
+        <Form.Item name="engine" label="引擎">
+          <Select
+            options={[
+              { value: 'claude', label: 'Claude Code' },
+              { value: 'kimi', label: 'Kimi' },
+              { value: 'codex', label: 'Codex' },
+            ]}
+          />
+        </Form.Item>
+
+        {engine === 'kimi' && (
+          <Collapse
+            size="small"
+            defaultActiveKey={['kimi']}
+            items={[
+              {
+                key: 'kimi',
+                label: 'Kimi 引擎设置',
+                children: (
+                  <>
+                    <Form.Item name={['kimi', 'model']} label="模型">
+                      <Input placeholder="kimi-latest" />
+                    </Form.Item>
+                    <Form.Item name={['kimi', 'thinking']} label="思考模式" valuePropName="checked">
+                      <Switch />
+                    </Form.Item>
+                    <Form.Item name={['kimi', 'apiKey']} label="API Key（留空 = 不修改/用全局）">
+                      <Input.Password />
+                    </Form.Item>
+                  </>
+                ),
+              },
+            ]}
+          />
+        )}
+
+        {engine === 'codex' && (
+          <Collapse
+            size="small"
+            defaultActiveKey={['codex']}
+            items={[
+              {
+                key: 'codex',
+                label: 'Codex 引擎设置',
+                children: (
+                  <>
+                    <Form.Item name={['codex', 'model']} label="模型">
+                      <Input placeholder="gpt-5.5" />
+                    </Form.Item>
+                    <Form.Item name={['codex', 'baseUrl']} label="Base URL">
+                      <Input placeholder="https://api.openai.com/v1" />
+                    </Form.Item>
+                    <Form.Item name={['codex', 'apiKey']} label="API Key（留空 = 不修改/用全局）">
+                      <Input.Password />
+                    </Form.Item>
+                    <Form.Item name={['codex', 'approvalPolicy']} label="审批策略">
+                      <Select
+                        allowClear
+                        options={['untrusted', 'on-failure', 'on-request', 'never'].map((v) => ({ value: v, label: v }))}
+                      />
+                    </Form.Item>
+                    <Form.Item name={['codex', 'sandbox']} label="沙箱">
+                      <Select
+                        allowClear
+                        options={['read-only', 'workspace-write', 'danger-full-access'].map((v) => ({ value: v, label: v }))}
+                      />
+                    </Form.Item>
+                  </>
+                ),
+              },
+            ]}
+          />
+        )}
+
+        <Collapse
+          size="small"
+          style={{ marginTop: 16 }}
+          items={[
+            {
+              key: 'limits',
+              label: '限制与预算（可选）',
+              children: (
+                <>
+                  <Form.Item name="model" label="模型覆盖（Claude）">
+                    <Input placeholder="留空用默认" />
+                  </Form.Item>
+                  <Form.Item name="maxTurns" label="单任务最大回合数">
+                    <InputNumber min={1} style={{ width: '100%' }} />
+                  </Form.Item>
+                  <Form.Item name="maxBudgetUsd" label="单任务预算上限（美元）">
+                    <InputNumber min={0} step={0.1} style={{ width: '100%' }} />
+                  </Form.Item>
+                  <Form.Item name="budgetLimitDaily" label="每日预算上限（美元）">
+                    <InputNumber min={0} step={0.5} style={{ width: '100%' }} />
+                  </Form.Item>
+                  <Form.Item name="maxConcurrentTasks" label="最大并发任务数">
+                    <InputNumber min={1} style={{ width: '100%' }} />
+                  </Form.Item>
+                </>
+              ),
+            },
+            {
+              key: 'group',
+              label: '群聊限制（可选）',
+              children: (
+                <>
+                  <Form.Item name="groupOnly" label="仅群聊模式（私聊只允许白名单）" valuePropName="checked">
+                    <Switch />
+                  </Form.Item>
+                  <Form.Item
+                    name="groupOnlyAllowUsers"
+                    label="私聊白名单 open_id（逗号分隔）"
+                  >
+                    <Input placeholder="ou_xxx,ou_yyy" />
+                  </Form.Item>
+                  <Form.Item name="groupNoMention" label="群里无需 @ 也响应" valuePropName="checked">
+                    <Switch />
+                  </Form.Item>
+                </>
+              ),
+            },
+            {
+              key: 'paths',
+              label: '目录与语音（可选）',
+              children: (
+                <>
+                  <Form.Item name="downloadsDir" label="下载目录（聊天文件落地处）">
+                    <Input placeholder="默认 <工作目录>/inputs" />
+                  </Form.Item>
+                  <Form.Item name="ttsVoice" label="TTS 音色">
+                    <Input placeholder="留空用默认" />
+                  </Form.Item>
+                </>
+              ),
+            },
+          ]}
+        />
+      </Form>
+    </Drawer>
+  );
+}
