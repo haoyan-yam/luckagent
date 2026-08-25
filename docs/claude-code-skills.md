@@ -21,6 +21,7 @@
 | --- | --- | --- |
 | `luckagent` | **CLI 参考技能**：教 agent 用 `luckagent memory / skills / agents / inbox / teams / schedule / talk / voice` 等全部命令，是 bot 融入协作体系的说明书 | `packages/skills/luckagent/` |
 | `voice` | 文本转语音：`luckagent voice tts` 的用法（生成 MP3、发语音） | `src/skills/voice/` |
+| `openai-image-gen` | 文生图 / 图生图 / 改图：直调 OpenAI 图像 API（脚本零依赖），含提示词打法参考与绿幕抠图脚本。需 `.env` 配 `OPENAI_IMAGE_API_KEY` 或 `OPENAI_API_KEY`（可配 `OPENAI_BASE_URL` 走网关） | `src/skills/openai-image-gen/` |
 
 **飞书 bot 额外装 19 个 `lark-*` 技能**（lark-doc、lark-im、lark-calendar、lark-sheets、lark-base、lark-task、lark-drive、lark-mail、lark-wiki 等），让 agent 会用 `lark-cli` 操作飞书文档/消息/日历/多维表格等 11 个业务域。lark-cli 是**必备组件**，安装脚本会自动装好（含 19 个技能）；若曾安装失败可手动补：
 
@@ -64,10 +65,21 @@ cp -r ~/luckagent/src/skills/metaskill ~/.codex/skills/
 
 `luckagent update` 在拉代码、重建之后会做一轮技能同步：
 
-1. 仓库内置技能（`luckagent`、`voice`、`luckagent-team`）刷新到 `~/.claude/skills` 与 `~/.codex/skills`；
+1. 仓库内置技能（`luckagent`、`voice`、`luckagent-team`、`openai-image-gen`）刷新到 `~/.claude/skills` 与 `~/.codex/skills`；
 2. 若本机装过 lark-cli：升级 `@larksuite/cli` 并刷新 19 个 `lark-*` 技能，再镜像进两个全局技能目录；
 3. 把上述技能（含已手动启用的 `metaskill` / `metaschedule`）同步进**首个 bot** 的工作目录 `.claude/skills` + `.codex/skills`；
 4. ⚠️ 把首个 bot 工作目录的 `CLAUDE.md` 刷新为最新模板（**会覆盖本地修改**，改过模板的注意先备份或升级后 `git diff` 找回；`AGENTS.md` 仅缺失时补建）。
+
+## 从旧机器迁移个人技能
+
+全局技能就是普通目录，从旧机器拷到新机的 `~/.claude/skills/`（Codex bot 再镜像一份到 `~/.codex/skills/`）即可被所有 bot 发现：
+
+```bash
+scp -r 旧机器:~/.claude/skills/某技能 ~/.claude/skills/
+cp -r ~/.claude/skills/某技能 ~/.codex/skills/   # 有 codex bot 时
+```
+
+迁移前自查三件事：**①** SKILL.md 里有没有旧机器的绝对路径、真实群/人 ID、人名（有就改掉）；**②** 依赖的密钥是否已进新机 `.env`；**③** 依赖的本地二进制是否已装。典型例子 `opencli`（把网站变成 CLI、驱动已登录的 Chrome）：技能文本可直接拷，但需在新机安装 opencli 二进制、装 Chrome 并完成目标网站登录后才可用——浏览器登录态迁移不了，属于每台机器的现场配置。
 
 ## 中央技能中心（跨 bot 共享）
 

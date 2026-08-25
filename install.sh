@@ -151,11 +151,12 @@ esac
 # ---- 技能同步（Claude Code / Codex 双目录）----
 info "同步技能到 ~/.claude/skills 与 ~/.codex/skills ..."
 mkdir -p "$HOME/.claude/skills" "$HOME/.codex/skills"
-for skill in luckagent voice luckagent-team; do
+for skill in luckagent voice luckagent-team openai-image-gen; do
   case "$skill" in
     luckagent)      src="$LUCKAGENT_HOME/packages/skills/luckagent" ;;
     voice)          src="$LUCKAGENT_HOME/src/skills/voice" ;;
     luckagent-team) src="$LUCKAGENT_HOME/src/skills/luckagent-team" ;;
+    openai-image-gen) src="$LUCKAGENT_HOME/src/skills/openai-image-gen" ;;
   esac
   if [[ -d "$src" ]]; then
     for dst_root in "$HOME/.claude/skills" "$HOME/.codex/skills"; do
@@ -163,7 +164,7 @@ for skill in luckagent voice luckagent-team; do
     done
   fi
 done
-success "技能已同步（luckagent / voice / luckagent-team）"
+success "技能已同步（luckagent / voice / luckagent-team / openai-image-gen）"
 
 # ---- lark-cli（必装：bot 操作飞书文档/表格/日历、群日报拉群消息都依赖它）----
 LARK_CLI_TODO=""
