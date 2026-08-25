@@ -33,7 +33,7 @@ npx skills add larksuite/cli --all -y -g   # 拉取 19 个官方技能到全局
 
 ## 可选技能（手动启用）
 
-不默认安装，需要时从源码目录拷贝到 `~/.claude/skills/`（或某个 bot 的 `.claude/skills/`）即可；`luckagent update` 检测到已启用会跟着同步进工作区：
+不默认安装，需要时从源码目录拷贝到 `~/.claude/skills/`（或某个 bot 的 `.claude/skills/`）即可；管理台创建 bot 时会自动把随装技能装进该 bot 工作目录的 `.claude/skills` 与 `.codex/skills`；`luckagent update` 检测到已启用会跟着同步进工作区：
 
 | 技能 | 作用 | 源 |
 | --- | --- | --- |

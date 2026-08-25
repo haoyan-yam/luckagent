@@ -106,8 +106,8 @@ export default function BotFormDrawer({
         await api.put(`/api/bots/${encodeURIComponent(editing)}`, payload);
         message.success('已保存，重启桥接后生效');
       } else {
-        await api.post('/api/bots', { ...payload, platform: 'feishu' });
-        message.success('机器人已创建，重启桥接后生效');
+        await api.post('/api/bots', { ...payload, platform: 'feishu', installSkills: true });
+        message.success('机器人已创建（含工作目录/技能/模板），重启桥接后生效');
       }
       onSaved();
       onClose();
@@ -324,8 +324,8 @@ export default function BotFormDrawer({
               label: '目录与语音（可选）',
               children: (
                 <>
-                  <Form.Item name="downloadsDir" label="下载目录（聊天文件落地处）">
-                    <Input placeholder="默认 <工作目录>/inputs" />
+                  <Form.Item name="downloadsDir" label="附件下载目录" extra="聊天里发来的文件落在这里，持久保留">
+                    <Input placeholder="留空 = 自动使用 <工作目录>/inputs" />
                   </Form.Item>
                   <Form.Item name="ttsVoice" label="TTS 音色">
                     <Input placeholder="留空用默认" />

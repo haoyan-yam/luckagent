@@ -5,19 +5,15 @@ import * as url from 'node:url';
 import { execFileSync } from 'node:child_process';
 import type { Logger } from '../utils/logger.js';
 
-/** Skills installed for all platforms.
+/** Skills installed for all bots.
  *
- *  Not in this list (opt-in only):
- *   - `metaskill`     — agent-team generator. Source: src/skills/metaskill/
- *   - `metaschedule`  — Luckagent's persistent server-side scheduler.
- *                       Source: src/skills/metaschedule/
- *   - `metamemory`    — moved to luckagent-core; installed per-bot via `mh install metamemory`.
- *   - `skill-hub`     — moved to luckagent-core; installed per-bot via `mh install skill-hub`.
- *
- *  Default ad-hoc scheduling is handled by Claude Code's native `CronCreate`
- *  and `/loop` tools, so the persistent scheduler skill is now opt-in.
+ *  Not in this list (opt-in only, sources under src/skills/):
+ *   - `metaskill`     — agent-team generator.
+ *   - `metaschedule`  — persistent server-side scheduler skill (ad-hoc
+ *                       scheduling is covered by Claude Code's native
+ *                       `CronCreate` / `/loop`).
  */
-const COMMON_SKILLS = ['luckagent', 'phone-call'];
+const COMMON_SKILLS = ['luckagent'];
 
 /** Lark CLI AI Agent skills — installed via `npx skills add larksuite/cli` and
  *  symlinked into ~/.claude/skills/ automatically. We copy them to the bot
@@ -32,10 +28,12 @@ const LARK_CLI_SKILLS = [
 
 export interface InstallSkillsOptions {
   /** Bot platform — feishu-only skills are skipped for other platforms. */
-  platform?: 'feishu' | 'telegram' | 'web' | 'wechat';
+  platform?: 'feishu';
   /** Feishu app credentials for lark-cli auto-config (feishu only). */
   feishuAppId?: string;
   feishuAppSecret?: string;
+  /** Bot name — used as the lark-cli profile name (`--profile <botName>`). */
+  botName?: string;
 }
 
 export function installSkillsToWorkDir(workDir: string, logger: Logger, options?: InstallSkillsOptions): void {
@@ -67,22 +65,39 @@ export function installSkillsToWorkDir(workDir: string, logger: Logger, options?
     }
   }
 
-  // For Feishu bots, ensure lark-cli is configured
+  // For Feishu bots, ensure lark-cli has a profile for this app
   if (options?.platform === 'feishu' && options.feishuAppId && options.feishuAppSecret) {
-    ensureLarkCliConfig(options.feishuAppId, options.feishuAppSecret, logger);
+    ensureLarkCliConfig(options.feishuAppId, options.feishuAppSecret, options.botName, logger);
   }
 
   deployWorkspaceInstructions(workDir, logger);
 }
 
 /**
- * Ensure lark-cli is configured with Feishu app credentials.
- * Skips if ~/.lark-cli/config.json already exists.
+ * True when ~/.lark-cli/config.json (or the given file) already carries an
+ * app entry for this appId. Exported for tests.
  */
-function ensureLarkCliConfig(appId: string, appSecret: string, logger: Logger): void {
+export function larkCliHasApp(configPath: string, appId: string): boolean {
+  try {
+    const raw = fs.readFileSync(configPath, 'utf-8');
+    const parsed = JSON.parse(raw) as { apps?: Array<{ appId?: string }> };
+    return (parsed.apps ?? []).some((a) => a.appId === appId);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Ensure lark-cli has a profile for this Feishu app. Uses
+ * `lark-cli config init --name <botName>` — the documented append-a-named-
+ * profile mode — so a second/third bot gets its own profile instead of the
+ * whole config being skipped. Idempotent: skipped when the appId is already
+ * present in ~/.lark-cli/config.json. Best-effort: failures only warn.
+ */
+function ensureLarkCliConfig(appId: string, appSecret: string, botName: string | undefined, logger: Logger): void {
   const configPath = path.join(os.homedir(), '.lark-cli', 'config.json');
-  if (fs.existsSync(configPath)) {
-    logger.debug('lark-cli already configured, skipping');
+  if (larkCliHasApp(configPath, appId)) {
+    logger.debug({ appId }, 'lark-cli already has this app, skipping');
     return;
   }
 
@@ -93,15 +108,20 @@ function ensureLarkCliConfig(appId: string, appSecret: string, logger: Logger): 
     return;
   }
 
+  const args = ['config', 'init', '--app-id', appId, '--app-secret-stdin', '--brand', 'feishu'];
+  if (botName) args.push('--name', botName);
   try {
-    execFileSync(larkCliBin, ['config', 'init', '--app-id', appId, '--app-secret-stdin', '--brand', 'feishu'], {
+    execFileSync(larkCliBin, args, {
       input: appSecret,
       stdio: ['pipe', 'pipe', 'pipe'],
       timeout: 15_000,
     });
-    logger.info({ appId }, 'lark-cli configured successfully');
+    logger.info({ appId, profile: botName }, 'lark-cli profile configured');
   } catch (err: any) {
-    logger.warn({ err: err.message }, 'Failed to configure lark-cli — you can run manually: lark-cli config init');
+    logger.warn(
+      { err: err.message, appId },
+      `Failed to configure lark-cli — run manually: lark-cli config init --app-id ${appId} --app-secret-stdin --brand feishu${botName ? ` --name ${botName}` : ''}`,
+    );
   }
 }
 

@@ -1,4 +1,5 @@
 import * as fs from 'node:fs';
+import * as path from 'node:path';
 import type * as http from 'node:http';
 import { addBot, removeBot, updateBot, getBotEntry, addPeer, removePeer } from '../bots-config-writer.js';
 import { installSkillsToWorkDir } from '../skills-installer.js';
@@ -149,29 +150,41 @@ export async function handleBotRoutes(
       jsonResponse(res, 400, { error: 'Feishu bot requires: feishuAppId, feishuAppSecret, defaultWorkingDirectory' });
       return true;
     }
+    // Chat attachments should land inside the workdir by convention
+    // (<workDir>/inputs) — write it explicitly so bots.json is self-documenting.
+    const downloadsDir = (typeof body.downloadsDir === 'string' && body.downloadsDir.trim())
+      ? (body.downloadsDir as string).trim()
+      : path.join(workDirInput, 'inputs');
+
     const entry: Record<string, unknown> = {
       name, ...(body.description ? { description: body.description } : {}),
       ...(body.engine ? { engine: body.engine } : {}),
       ...(body.codex ? { codex: body.codex } : {}),
       ...(body.kimi ? { kimi: body.kimi } : {}),
       feishuAppId: appId, feishuAppSecret: appSecret, defaultWorkingDirectory: workDirInput,
+      downloadsDir,
       ...(body.maxTurns ? { maxTurns: body.maxTurns } : {}),
       ...(body.maxBudgetUsd ? { maxBudgetUsd: body.maxBudgetUsd } : {}),
       ...(body.model ? { model: body.model } : {}),
       ...(body.groupOnly !== undefined ? { groupOnly: body.groupOnly } : {}),
       ...(body.groupOnlyAllowUsers ? { groupOnlyAllowUsers: body.groupOnlyAllowUsers } : {}),
-      ...(body.downloadsDir ? { downloadsDir: body.downloadsDir } : {}),
     };
 
     try {
       const workDir = body.defaultWorkingDirectory as string;
       fs.mkdirSync(workDir, { recursive: true });
+      fs.mkdirSync(downloadsDir, { recursive: true });
 
       addBot(botsConfigPath, 'feishu', entry as any);
       logger.info({ name, platform }, 'Bot added to config');
 
       if (body.installSkills) {
-        installSkillsToWorkDir(workDir, logger, { platform: 'feishu' });
+        installSkillsToWorkDir(workDir, logger, {
+          platform: 'feishu',
+          feishuAppId: appId,
+          feishuAppSecret: appSecret,
+          botName: name,
+        });
       }
 
       jsonResponse(res, 201, {

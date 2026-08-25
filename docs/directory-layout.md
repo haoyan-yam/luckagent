@@ -47,7 +47,7 @@ Luckagent 涉及四类目录：安装目录、每个 bot 的工作目录、两�
 
 另外，工作目录的**父目录**（如 `~/projects/`）会部署一份共用规范 `CLAUDE.md`（模板 `src/workspace/PROJECTS-CLAUDE.md`），对该目录下所有 bot 工作区生效。两级模板的分工见[技能体系](claude-code-skills.md#工作区指令文件两级模板)。
 
-> 聊天附件的实际下载位置由 bot 的 `downloadsDir` 决定：建议配成 `<工作目录>/inputs`，文件会持久保留；未配置时默认落系统临时目录（`<tmp>/luckagent-downloads-<用户名>`），任务结束后会被清理。
+> 聊天附件的实际下载位置由 bot 的 `downloadsDir` 决定，**默认就是 `<工作目录>/inputs`**（管理台创建 bot 时会显式写入 bots.json；手写配置省略该字段时也回退到同一位置），文件持久保留、任务结束不清理。设置 `DOWNLOADS_DIR` 环境变量或该 bot 的 `downloadsDir` 可整体/单独改位置。
 
 ## ⚠️ outputs 归档目录 ≠ 发送暂存目录
 

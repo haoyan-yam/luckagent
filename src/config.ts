@@ -345,7 +345,9 @@ function buildClaudeConfig(entry: {
     model: entry.model || process.env.CLAUDE_MODEL || process.env.ANTHROPIC_MODEL || 'claude-fable-5',
     apiKey: entry.apiKey || undefined,
     outputsBaseDir: entry.outputsBaseDir || process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `luckagent-outputs-${os.userInfo().username}`),
-    downloadsDir: entry.downloadsDir || process.env.DOWNLOADS_DIR || path.join(os.tmpdir(), `luckagent-downloads-${os.userInfo().username}`),
+    // Convention: chat attachments land in <workDir>/inputs (persistent),
+    // matching the workspace rules in src/workspace/PROJECTS-CLAUDE.md.
+    downloadsDir: entry.downloadsDir || process.env.DOWNLOADS_DIR || path.join(expandUserPath(entry.defaultWorkingDirectory), 'inputs'),
   };
 }
 
@@ -390,7 +392,7 @@ function feishuBotFromEnv(): BotConfig {
       model: process.env.CLAUDE_MODEL || 'claude-fable-5',
       apiKey: undefined,
       outputsBaseDir: process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `luckagent-outputs-${os.userInfo().username}`),
-      downloadsDir: process.env.DOWNLOADS_DIR || path.join(os.tmpdir(), `luckagent-downloads-${os.userInfo().username}`),
+      downloadsDir: process.env.DOWNLOADS_DIR || path.join(expandUserPath(required('CLAUDE_DEFAULT_WORKING_DIRECTORY')), 'inputs'),
       backend: process.env.CLAUDE_BACKEND === 'sdk' ? 'sdk' : 'pty',
     },
   };

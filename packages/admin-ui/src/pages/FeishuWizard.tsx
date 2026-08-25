@@ -72,6 +72,7 @@ export default function FeishuWizard({
         feishuAppId: values.appId,
         feishuAppSecret: values.appSecret,
         defaultWorkingDirectory: values.workDir,
+        installSkills: true,
       });
       message.success('机器人已保存到 bots.json，重启桥接后生效');
       onCreated();
@@ -207,7 +208,7 @@ export default function FeishuWizard({
           <Alert
             type="info"
             showIcon
-            message="保存后需重启桥接生效；随后在飞书里把机器人拉进群或发起私聊，@它说话即可测试。"
+            message="保存时会自动：创建工作目录与 inputs/ 附件目录、安装工作区技能与说明模板、为 lark-cli 追加该应用的 profile（以机器人名命名）。之后重启桥接生效，把机器人拉进群 @它说话即可测试。"
           />
         </>
       ),
