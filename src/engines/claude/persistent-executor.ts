@@ -78,7 +78,7 @@ function hasCredentialsFile(): boolean {
   }
 }
 
-function createSpawnFn(explicitApiKey?: string): (options: SpawnOptions) => SpawnedProcess {
+function createSpawnFn(authEnv?: Record<string, string>): (options: SpawnOptions) => SpawnedProcess {
   // Mirror executor.ts: when env-based Anthropic auth is in use (proxy /
   // gateway via ANTHROPIC_BASE_URL + ANTHROPIC_AUTH_TOKEN), bypass the
   // credentials.json filter so ANTHROPIC_AUTH_TOKEN reaches the subprocess.
@@ -89,7 +89,7 @@ function createSpawnFn(explicitApiKey?: string): (options: SpawnOptions) => Spaw
       process.env.ANTHROPIC_API_KEY ||
       process.env.ANTHROPIC_BASE_URL
     );
-  const filterAuthVars = !preferEnvAuth && !!(explicitApiKey || hasCredentialsFile());
+  const filterAuthVars = (!preferEnvAuth && !!(authEnv || hasCredentialsFile())) || !!authEnv;
   return (options: SpawnOptions): SpawnedProcess => {
     const baseEnv = options.env && Object.keys(options.env).length > 0
       ? { ...process.env, ...options.env }
@@ -102,7 +102,7 @@ function createSpawnFn(explicitApiKey?: string): (options: SpawnOptions) => Spaw
       if (filterAuthVars && AUTH_ENV_VARS.some(v => key.startsWith(v))) continue;
       env[key] = value;
     }
-    if (explicitApiKey) env.ANTHROPIC_API_KEY = explicitApiKey;
+    if (authEnv) { for (const [k, v] of Object.entries(authEnv)) env[k] = v; }
     if (env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS === undefined) {
       env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = '1';
     }
@@ -133,8 +133,9 @@ export interface PersistentExecutorOptions {
   cwd: string;
   /** Optional sessionId to resume. If omitted, a fresh session is created. */
   resumeSessionId?: string;
-  /** Optional explicit API key, otherwise OAuth credentials file is used. */
-  apiKey?: string;
+  /** Per-bot auth env to inject into spawned processes (API key and/or
+   *  Anthropic-compatible endpoint overrides, e.g. DeepSeek). */
+  authEnv?: Record<string, string>;
   model?: string;
   logger: Logger;
   /**
@@ -418,7 +419,7 @@ export class PersistentClaudeExecutor extends EventEmitter {
       cwd: this.options.cwd,
       includePartialMessages: true,
       settingSources: ['user', 'project'],
-      spawnClaudeCodeProcess: createSpawnFn(this.options.apiKey),
+      spawnClaudeCodeProcess: createSpawnFn(this.options.authEnv),
       pathToClaudeCodeExecutable: CLAUDE_EXECUTABLE,
       settings: { teammateMode: 'in-process' },
       agentProgressSummaries: true,
@@ -507,6 +508,7 @@ export class PersistentClaudeExecutor extends EventEmitter {
         systemPrompt: append ? { type: 'preset', preset: 'claude_code', append } : undefined,
         logger: this.options.logger,
         pathToClaudeExecutable: CLAUDE_EXECUTABLE,
+        env: this.options.authEnv,
         onInteractiveTool: (tool) => this.handleInteractiveTool(tool),
       };
       const stream = ptyQuery({

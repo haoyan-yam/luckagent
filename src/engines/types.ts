@@ -11,7 +11,7 @@ import type {
 import type { CodexExecutor } from './codex/executor.js';
 import type { StreamProcessor } from './claude/stream-processor.js';
 
-export type EngineName = 'claude' | 'kimi' | 'codex';
+export type EngineName = 'claude' | 'kimi' | 'codex' | 'deepseek';
 
 /**
  * An Engine is a programmable agent backend (Claude Code, Kimi Code, …).

@@ -1,6 +1,6 @@
 # Luckagent Workspace
 
-This workspace is managed by **Luckagent** — an AI assistant accessible via Feishu that runs the Claude Code, Kimi, or Codex agent engine with full tool access. The bot's engine is configured per-bot in `bots.json` (`engine: "claude" | "kimi" | "codex"`).
+This workspace is managed by **Luckagent** — an AI assistant accessible via Feishu that runs the Claude Code, Kimi, Codex, or DeepSeek agent engine with full tool access. The bot's engine is configured per-bot in `bots.json` (`engine: "claude" | "kimi" | "codex" | "deepseek"`).
 
 ## Available Skills
 

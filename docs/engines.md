@@ -1,8 +1,8 @@
-# 多引擎配置（Claude Code / Codex / Kimi）
+# 多引擎配置（Claude Code / Codex / Kimi / DeepSeek）
 
-每个 bot 独立选引擎：`bots.json` 里的 `engine: "claude" | "kimi" | "codex"`（默认 `claude`），
+每个 bot 独立选引擎：`bots.json` 里的 `engine: "claude" | "kimi" | "codex" | "deepseek"`（默认 `claude`），
 管理台「机器人管理 → 编辑」的引擎下拉即可切换，选中后会展开对应的参数子表单。
-同一台机器上三种引擎的 bot 可以并存混用。
+同一台机器上各引擎的 bot 可以并存混用。
 
 ## Claude Code（默认，开箱即用）
 
@@ -39,7 +39,24 @@ SDK 随 Luckagent 打包，但它**底层拉起 `kimi` CLI**，认证继承自 `
 2. 选引擎：管理台下拉选 Kimi，子表单填模型（如 `kimi-latest`）、思考模式开关。
 3. 桥接启动该 bot 时会预检登录态（`isLoggedIn()`），未登录会给出明确报错。
 
-## 指令文件（CLAUDE.md）在三个引擎下如何生效
+## DeepSeek（最省事：零安装，只要 key）
+
+DeepSeek 官方提供 **Anthropic 兼容端点**（`https://api.deepseek.com/anthropic`），Luckagent 让它直接跑在
+Claude 引擎的运行时上——**不用装任何 CLI**：
+
+1. 申请 key：https://platform.deepseek.com → `.env` 填 `DEEPSEEK_API_KEY`（或在 bot 的 DeepSeek 子表单里按 bot 填）。
+2. 管理台建/编辑 bot：引擎下拉选 DeepSeek，模型三选一：
+   `deepseek-v4-flash`（快、便宜、默认）/ `deepseek-v4-pro`（更强推理）/ `deepseek-v4-flash-vision-exp`（**视觉理解**，可看图）。
+3. 保存重启即生效。会话内 `/model deepseek` 也可临时切换。
+
+凭证注入是 **bot 级隔离**的：DeepSeek bot 与 Claude 订阅 bot 在同一台机器并存互不干扰
+（每个 bot 的子进程注入自己的 endpoint 与 key，宿主机的 Claude 登录态不受影响）。
+
+适合：高频轻任务（群日报、摘要、问答）、中文场景、成本敏感的 bot；复杂多步任务的可靠性与 Claude 有差距，重活建议留 Claude。
+
+> 计费提示：管理台/统计里显示的费用是按 Claude 价目估算的（运行时不识别 DeepSeek 价目），DeepSeek 实际账单远低于显示值，以 DeepSeek 平台为准。
+
+## 指令文件（CLAUDE.md）在各引擎下如何生效
 
 Luckagent 用**一份内容、多个入口**的方式让同一套指令覆盖所有引擎：
 
@@ -70,3 +87,4 @@ luckagent doctor --json     # codex / kimi 相关检查项一目了然
 | Claude | 无（API key 路线）或装 CLI + 登录（订阅路线） | `.env` / 管理台 |
 | Codex | 装 `codex` CLI；订阅路线再跑 `codex login` | 管理台子表单 |
 | Kimi | 装 `kimi` CLI 并登录 | 管理台子表单 |
+| DeepSeek | **无**——只要申请个 key | `.env` 或管理台子表单 |

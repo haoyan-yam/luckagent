@@ -409,16 +409,26 @@ export class CommandHandler {
         { id: 'gpt-5.5-codex', label: 'GPT 5.5 Codex', note: 'Codex coding model, when available in your Codex account' },
         { id: 'gpt-5.2-codex', label: 'GPT-5.2 Codex', note: 'Legacy Codex coding model' },
       ];
-      const models = activeEngine === 'kimi' ? kimiModels : activeEngine === 'codex' ? codexModels : claudeModels;
+      const deepseekModels = [
+        { id: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash', note: 'Fast + cheap default' },
+        { id: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro', note: 'Stronger reasoning' },
+        { id: 'deepseek-v4-flash-vision-exp', label: 'DeepSeek V4 Flash Vision', note: 'Image understanding (experimental)' },
+      ];
+      const models = activeEngine === 'kimi' ? kimiModels
+        : activeEngine === 'codex' ? codexModels
+        : activeEngine === 'deepseek' ? deepseekModels
+        : claudeModels;
       const header = activeEngine === 'kimi'
         ? '**Available Kimi models:**'
         : activeEngine === 'codex'
           ? '**Common Codex models:**'
-          : '**Available Claude models:**';
+          : activeEngine === 'deepseek'
+            ? '**Available DeepSeek models:**'
+            : '**Available Claude models:**';
       const lines = [
         `**Current engine:** \`${activeEngine}\`${session.engine ? ' (session override)' : ''}`,
         '',
-        '**Engines:** `/model claude`, `/model kimi`, or `/model codex` to switch.',
+        '**Engines:** `/model claude`, `/model kimi`, `/model codex`, or `/model deepseek` to switch.',
         '',
         header,
         '',
@@ -626,6 +636,8 @@ export class CommandHandler {
         return this.config.kimi?.model;
       case 'codex':
         return this.config.codex?.model || this.config.codex?.displayModel;
+      case 'deepseek':
+        return this.config.deepseek?.model || 'deepseek-v4-flash';
     }
   }
 
@@ -637,6 +649,8 @@ export class CommandHandler {
         return '`kimi-for-coding`, `kimi-k2`';
       case 'codex':
         return '`gpt-5.5`, `gpt-5.5-codex`, `gpt-5.2-codex`';
+      case 'deepseek':
+        return '`deepseek-v4-flash`, `deepseek-v4-pro`, `deepseek-v4-flash-vision-exp`';
     }
   }
 
@@ -648,12 +662,14 @@ export class CommandHandler {
         return '_Make sure `kimi login` has been completed on this host._';
       case 'codex':
         return '_Make sure Codex CLI is authenticated (`codex login`) or configured with an API key._';
+      case 'deepseek':
+        return '_Make sure a DeepSeek API key is configured (bots.json `deepseek.apiKey` or env `DEEPSEEK_API_KEY`)._';
     }
   }
 }
 
 function isEngineName(value: string): value is EngineName {
-  return value === 'claude' || value === 'kimi' || value === 'codex';
+  return value === 'claude' || value === 'kimi' || value === 'codex' || value === 'deepseek';
 }
 
 function normalizeCodexEffort(value: string): CodexReasoningEffort | 'reset' | undefined {

@@ -57,6 +57,18 @@
         "approvalPolicy": "never",
         "sandbox": "workspace-write"
       }
+    },
+    {
+      "name": "project-epsilon",
+      "description": "DeepSeek-powered agent (Anthropic-compatible endpoint, no CLI needed)",
+      "engine": "deepseek",
+      "feishuAppId": "cli_ds",
+      "feishuAppSecret": "secret5",
+      "defaultWorkingDirectory": "/home/user/project-epsilon",
+      "deepseek": {
+        "model": "deepseek-v4-flash",
+        "apiKey": "sk-your-deepseek-key"
+      }
     }
   ],
   "peers": [

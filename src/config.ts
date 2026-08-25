@@ -35,7 +35,7 @@ function loadEnvFiles(): void {
 loadEnvFiles();
 
 /** Agent engine backing a bot. */
-export type EngineName = 'claude' | 'kimi' | 'codex';
+export type EngineName = 'claude' | 'kimi' | 'codex' | 'deepseek';
 export type CodexReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh';
 
 /** Shared config fields used by MessageBridge and Executors (platform-agnostic). */
@@ -110,6 +110,19 @@ export interface BotConfigBase {
   };
   /** Codex-specific overrides. Populated only when engine === 'codex'. */
   codex?: CodexBotConfig;
+  /**
+   * DeepSeek-specific overrides. Populated only when engine === 'deepseek'.
+   * DeepSeek runs through the Claude engine pointed at DeepSeek's official
+   * Anthropic-compatible endpoint — no extra CLI needed, only an API key.
+   */
+  deepseek?: {
+    /** DeepSeek API key (falls back to env DEEPSEEK_API_KEY). */
+    apiKey?: string;
+    /** Model id (default deepseek-v4-flash; vision: deepseek-v4-flash-vision-exp). */
+    model?: string;
+    /** Anthropic-compatible endpoint (default https://api.deepseek.com/anthropic). */
+    baseUrl?: string;
+  };
   /**
    * Stage 4 — opt-in to the persistent Claude process pool. When enabled,
    * each chatId is backed by a long-lived Claude Code process (managed by
@@ -259,10 +272,17 @@ export interface CodexJsonConfig {
 }
 
 /** Fields shared across all bot JSON entries (engine selection and engine overrides). */
+export interface DeepseekJsonConfig {
+  apiKey?: string;
+  model?: string;
+  baseUrl?: string;
+}
+
 interface EngineJsonFields {
   engine?: EngineName;
   kimi?: KimiJsonConfig;
   codex?: CodexJsonConfig;
+  deepseek?: DeepseekJsonConfig;
   /** Claude turn backend: 'pty' (default) or 'sdk' (legacy opt-out). Overrides env CLAUDE_BACKEND. */
   backend?: 'sdk' | 'pty';
 }
@@ -315,6 +335,7 @@ function feishuBotFromJson(entry: FeishuBotJsonEntry): BotConfig {
     ...(entry.groupOnlyAllowUsers?.length ? { groupOnlyAllowUsers: entry.groupOnlyAllowUsers } : {}),
     ...(entry.engine ? { engine: entry.engine } : {}),
     ...(entry.kimi ? { kimi: entry.kimi } : {}),
+    ...(buildDeepseekConfig(entry.deepseek) ? { deepseek: buildDeepseekConfig(entry.deepseek) } : {}),
     ...(codex ? { codex } : {}),
     feishu: {
       appId: entry.feishuAppId,
@@ -349,6 +370,16 @@ function buildClaudeConfig(entry: {
     // matching the workspace rules in src/workspace/PROJECTS-CLAUDE.md.
     downloadsDir: entry.downloadsDir || process.env.DOWNLOADS_DIR || path.join(expandUserPath(entry.defaultWorkingDirectory), 'inputs'),
   };
+}
+
+function buildDeepseekConfig(entry?: DeepseekJsonConfig): BotConfigBase['deepseek'] | undefined {
+  const cfg: BotConfigBase['deepseek'] = {
+    ...(process.env.DEEPSEEK_API_KEY ? { apiKey: process.env.DEEPSEEK_API_KEY } : {}),
+    ...(process.env.DEEPSEEK_MODEL ? { model: process.env.DEEPSEEK_MODEL } : {}),
+    ...(process.env.DEEPSEEK_BASE_URL ? { baseUrl: process.env.DEEPSEEK_BASE_URL } : {}),
+    ...(entry ?? {}),
+  };
+  return Object.keys(cfg).length > 0 ? cfg : undefined;
 }
 
 function buildCodexConfig(entry?: CodexJsonConfig): BotConfigBase['codex'] | undefined {

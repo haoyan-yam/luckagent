@@ -16,10 +16,12 @@ import type {
   TeamEvent,
   ApiContext,
 } from '../engines/index.js';
+import { resolveClaudeAuthEnv, DEEPSEEK_DEFAULT_MODEL } from '../engines/claude/auth-env.js';
 import {
   createEngine,
   DEFAULT_CODEX_GOAL_MAX_ITERATIONS,
   resolveEngineName,
+  // deepseek runs through the claude runtime — shared auth-env resolver:
   StreamProcessor,
   SessionManager,
 } from '../engines/index.js';
@@ -597,8 +599,10 @@ export class MessageBridge {
         logger: this.logger,
         idleTimeoutMs,
         maxConcurrent,
-        defaultApiKey: this.config.claude.apiKey,
-        defaultModel: this.config.claude.model,
+        defaultAuthEnv: resolveClaudeAuthEnv(this.config),
+        defaultModel: this.config.engine === 'deepseek'
+          ? (this.config.deepseek?.model || DEEPSEEK_DEFAULT_MODEL)
+          : this.config.claude.model,
         backend: this.config.claude.backend,
       });
       // Stage 3 — every newly added executor gets a spontaneous-activity
@@ -1392,7 +1396,7 @@ export class MessageBridge {
     // that {@link executeApiTask} previously did inline.
     const usePersistent =
       this.isPersistentExecutorEnabled() &&
-      engineName === 'claude' &&
+      (engineName === 'claude' || engineName === 'deepseek') &&
       opts.maxTurns === undefined &&
       opts.allowedTools === undefined;
 

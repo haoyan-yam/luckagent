@@ -54,7 +54,7 @@ export interface RegistryOptions {
   /** Default model for new executors. Per-acquire option overrides this. */
   defaultModel?: string;
   /** Default API key for new executors. */
-  defaultApiKey?: string;
+  defaultAuthEnv?: Record<string, string>;
   /** Turn backend for new executors: 'pty' (default) or 'sdk' (legacy). */
   backend?: 'sdk' | 'pty';
   /**
@@ -259,7 +259,7 @@ export class ExecutorRegistry extends EventEmitter {
     const execOpts: PersistentExecutorOptions = {
       cwd: opts.cwd,
       resumeSessionId,
-      apiKey: this.opts.defaultApiKey,
+      authEnv: this.opts.defaultAuthEnv,
       model: effectiveModel,
       logger: this.opts.logger,
       idleTimeoutMs: this.opts.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS,

@@ -202,6 +202,7 @@ export default function BotFormDrawer({
               { value: 'claude', label: 'Claude Code' },
               { value: 'kimi', label: 'Kimi' },
               { value: 'codex', label: 'Codex' },
+              { value: 'deepseek', label: 'DeepSeek' },
             ]}
           />
         </Form.Item>
@@ -225,6 +226,38 @@ export default function BotFormDrawer({
                     </Form.Item>
                     <Form.Item name={['kimi', 'apiKey']} label="API Key（留空 = 不修改/用全局）">
                       <Input.Password />
+                    </Form.Item>
+                  </>
+                ),
+              },
+            ]}
+          />
+        )}
+
+        {engine === 'deepseek' && (
+          <Collapse
+            size="small"
+            defaultActiveKey={['deepseek']}
+            items={[
+              {
+                key: 'deepseek',
+                forceRender: true,
+                label: 'DeepSeek 引擎设置（无需装 CLI，只要 API key）',
+                children: (
+                  <>
+                    <Form.Item name={['deepseek', 'apiKey']} label="API Key（留空 = 不修改/用全局 DEEPSEEK_API_KEY）">
+                      <Input.Password placeholder="sk-..." />
+                    </Form.Item>
+                    <Form.Item name={['deepseek', 'model']} label="模型">
+                      <Select
+                        allowClear
+                        placeholder="默认 deepseek-v4-flash"
+                        options={[
+                          { value: 'deepseek-v4-flash', label: 'deepseek-v4-flash（快 · 便宜 · 默认）' },
+                          { value: 'deepseek-v4-pro', label: 'deepseek-v4-pro（更强推理）' },
+                          { value: 'deepseek-v4-flash-vision-exp', label: 'deepseek-v4-flash-vision-exp（视觉理解 · 实验）' },
+                        ]}
+                      />
                     </Form.Item>
                   </>
                 ),

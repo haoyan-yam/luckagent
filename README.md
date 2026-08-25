@@ -36,7 +36,7 @@
 ## 特性
 
 - **多 bot 单进程**：一份 `bots.json` 配任意多个飞书机器人，各自独立的应用凭证、工作目录、引擎与预算限额。
-- **三引擎可选**：每个 bot 用 `engine: "claude" | "kimi" | "codex"` 选择后端；Claude 支持 API key 或复用已登录的 Claude Code CLI 订阅。
+- **四引擎可选**：每个 bot 用 `engine: "claude" | "kimi" | "codex" | "deepseek"` 选择后端；Claude 支持 API key 或订阅登录，DeepSeek 走官方 Anthropic 兼容端点、只要 key 零安装（含视觉模型）。
 - **Web 管理台**：系统总览、机器人管理（含手把手的飞书接入向导）、定时任务、运行日志、系统配置，浏览器里完成从建应用到跑通的全流程。
 - **定时任务**：一次性延迟与 cron 周期任务，CLI / 管理台 / HTTP API 三种入口，持久化、重启自动恢复。
 - **生产磨出来的稳定性**（详见 [设计笔记](docs/design-notes.md)）：文件上传超时重试、快速连发消息合并、群聊引用回复精确通知、被引消息上下文注入、出站内容脱敏、发送目录「发过即删 + 漏发补扫」、超大附件分片下载、发送失败明确告知等，全部内建。
@@ -48,7 +48,7 @@
 解开发行包，跑安装脚本，跟着交互提示走完即可：
 
 ```bash
-tar -xzf luckagent-installer-v0.3.1.tar.gz && cd luckagent && bash install.sh
+tar -xzf luckagent-installer-v0.4.0.tar.gz && cd luckagent && bash install.sh
 ```
 
 安装完成后：
@@ -95,7 +95,7 @@ luckagent inbox poll            # CLI agent 收件箱
 | 文档 | 内容 |
 | --- | --- |
 | [飞书应用配置指南](docs/feishu-app-setup.md) | 在飞书开放平台建应用、配权限、订阅事件、发布上线的逐步引导 |
-| [多引擎配置](docs/engines.md) | Codex / Kimi 引擎的安装认证要求，指令文件在三引擎下的生效机制 |
+| [多引擎配置](docs/engines.md) | Codex / Kimi / DeepSeek 引擎的接入要求，指令文件在各引擎下的生效机制 |
 | [目录结构](docs/directory-layout.md) | 安装目录、每 bot 工作目录约定、⚠️ 归档目录与发送暂存目录的关键区别、状态目录与日志位置 |
 | [定时任务](docs/scheduling.md) | CLI / 管理台 / HTTP API 三种入口，cron 与时区，暂停恢复 |
 | [技能体系](docs/claude-code-skills.md) | 随装与可选技能、`.claude`/`.codex` 双目录发现、工作区两级指令模板 |

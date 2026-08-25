@@ -146,3 +146,47 @@ describe('larkCliHasApp', () => {
     expect(larkCliHasApp(p, 'cli_aaa')).toBe(false);
   });
 });
+
+describe('resolveClaudeAuthEnv (deepseek runs on the claude runtime)', () => {
+  const OLD = process.env.DEEPSEEK_API_KEY;
+  afterEach(() => {
+    if (OLD === undefined) delete process.env.DEEPSEEK_API_KEY;
+    else process.env.DEEPSEEK_API_KEY = OLD;
+  });
+
+  const base = (over: Record<string, unknown>) =>
+    ({ name: 't', claude: { defaultWorkingDirectory: '/tmp/x', maxTurns: undefined, maxBudgetUsd: undefined, model: undefined, apiKey: undefined, outputsBaseDir: '/tmp/o', downloadsDir: '/tmp/d', backend: 'pty' }, ...over }) as any;
+
+  it('deepseek engine injects endpoint + BOTH key vars (per-bot key wins)', async () => {
+    const { resolveClaudeAuthEnv } = await import('../src/engines/claude/auth-env.js');
+    const env = resolveClaudeAuthEnv(base({ engine: 'deepseek', deepseek: { apiKey: 'sk-ds-1' } }));
+    expect(env).toEqual({
+      ANTHROPIC_BASE_URL: 'https://api.deepseek.com/anthropic',
+      ANTHROPIC_AUTH_TOKEN: 'sk-ds-1',
+      ANTHROPIC_API_KEY: 'sk-ds-1',
+    });
+  });
+
+  it('deepseek falls back to env DEEPSEEK_API_KEY and honors baseUrl override', async () => {
+    const { resolveClaudeAuthEnv } = await import('../src/engines/claude/auth-env.js');
+    process.env.DEEPSEEK_API_KEY = 'sk-ds-env';
+    const env = resolveClaudeAuthEnv(base({ engine: 'deepseek', deepseek: { baseUrl: 'https://gw.example.com/anthropic' } }));
+    expect(env?.ANTHROPIC_AUTH_TOKEN).toBe('sk-ds-env');
+    expect(env?.ANTHROPIC_BASE_URL).toBe('https://gw.example.com/anthropic');
+  });
+
+  it('deepseek without any key throws a config-guidance error', async () => {
+    const { resolveClaudeAuthEnv } = await import('../src/engines/claude/auth-env.js');
+    delete process.env.DEEPSEEK_API_KEY;
+    expect(() => resolveClaudeAuthEnv(base({ engine: 'deepseek' }))).toThrow(/DEEPSEEK_API_KEY/);
+  });
+
+  it('claude engine keeps the existing explicit-apiKey behavior', async () => {
+    const { resolveClaudeAuthEnv } = await import('../src/engines/claude/auth-env.js');
+    const cfg = base({ engine: 'claude' });
+    cfg.claude.apiKey = 'sk-ant-x';
+    expect(resolveClaudeAuthEnv(cfg)).toEqual({ ANTHROPIC_API_KEY: 'sk-ant-x' });
+    cfg.claude.apiKey = undefined;
+    expect(resolveClaudeAuthEnv(cfg)).toBeUndefined();
+  });
+});

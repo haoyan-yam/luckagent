@@ -11,12 +11,12 @@
 
 | 东西 | 说明 |
 | --- | --- |
-| 安装包 | `luckagent-installer-v0.3.1.tar.gz`（+ 同名 `.sha256` 校验文件） |
+| 安装包 | `luckagent-installer-v0.4.0.tar.gz`（+ 同名 `.sha256` 校验文件） |
 | 网络 | 目标机需联网（下载 Homebrew/node/npm 依赖、连飞书与模型 API） |
 | 飞书账号 | 有权限在 [飞书开放平台](https://open.feishu.cn/app) 创建企业自建应用 |
 | Claude 认证 | 二选一：[Anthropic API Key](https://console.anthropic.com)，或 Claude Code 订阅账号（安装脚本可代装 CLI，登录需自己跑一次 `claude`） |
 | 生图 key（可选） | 二选一：[OpenAI](https://platform.openai.com) 的 key，或 [火山方舟](https://console.volcengine.com/ark) 的 ARK key（需在控制台开通 Doubao-Seedream 模型） |
-| 其他引擎（可选） | 要用 Codex / Kimi 引擎的话各需装其 CLI 并登录，见 [docs/engines.md](docs/engines.md) |
+| 其他引擎（可选） | Codex / Kimi 需装各自 CLI 并登录；**DeepSeek 无需装任何东西，只要一个 [API key](https://platform.deepseek.com)**。详见 [docs/engines.md](docs/engines.md) |
 | 时间 | 全程约 20–40 分钟（首次装 Xcode 命令行工具占大头） |
 
 ---
@@ -25,19 +25,19 @@
 
 任选其一：
 
-- **隔空投送（AirDrop）**：从另一台电脑把 `luckagent-installer-v0.3.1.tar.gz` 投过去（默认落在 `~/Downloads`）
+- **隔空投送（AirDrop）**：从另一台电脑把 `luckagent-installer-v0.4.0.tar.gz` 投过去（默认落在 `~/Downloads`）
 - **U 盘**：拷贝到 U 盘再拷进 `~/Downloads`
 - **scp**（两台机器同一局域网时）：
 
 ```bash
-scp luckagent-installer-v0.3.1.tar.gz 用户名@mac-mini.local:~/Downloads/
+scp luckagent-installer-v0.4.0.tar.gz 用户名@mac-mini.local:~/Downloads/
 ```
 
 （可选）校验包完整性：
 
 ```bash
 cd ~/Downloads
-shasum -a 256 -c luckagent-installer-v0.3.1.tar.gz.sha256
+shasum -a 256 -c luckagent-installer-v0.4.0.tar.gz.sha256
 ```
 
 看到 `OK` 即通过。
@@ -50,7 +50,7 @@ shasum -a 256 -c luckagent-installer-v0.3.1.tar.gz.sha256
 
 ```bash
 cd ~/Downloads
-tar -xzf luckagent-installer-v0.3.1.tar.gz
+tar -xzf luckagent-installer-v0.4.0.tar.gz
 mv luckagent ~/luckagent
 cd ~/luckagent
 bash install.sh

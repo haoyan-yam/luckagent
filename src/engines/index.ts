@@ -2,6 +2,7 @@ import type { BotConfigBase } from '../config.js';
 import type { Logger } from '../utils/logger.js';
 import type { Engine, EngineName } from './types.js';
 import { ClaudeEngine } from './claude/index.js';
+import { DEEPSEEK_DEFAULT_MODEL } from './claude/auth-env.js';
 import { KimiEngine } from './kimi/index.js';
 import { CodexEngine } from './codex/index.js';
 
@@ -26,6 +27,20 @@ export function createEngine(
       return new KimiEngine(config, logger);
     case 'codex':
       return new CodexEngine(config, logger);
+    case 'deepseek': {
+      // DeepSeek = Claude engine + DeepSeek's Anthropic-compatible endpoint.
+      // Derive a config whose claude.model defaults to the DeepSeek model;
+      // credentials/baseUrl are injected per-spawn via resolveClaudeAuthEnv.
+      const derived: BotConfigBase = {
+        ...config,
+        claude: {
+          ...config.claude,
+          model: config.deepseek?.model || DEEPSEEK_DEFAULT_MODEL,
+          apiKey: undefined,
+        },
+      };
+      return new ClaudeEngine(derived, logger);
+    }
     default: {
       const _exhaustive: never = name;
       throw new Error(`Unknown engine: ${_exhaustive}`);
@@ -38,7 +53,7 @@ export function resolveEngineName(config: BotConfigBase): EngineName {
   const explicit = config.engine;
   if (explicit) return explicit;
   const envDefault = process.env.LUCKAGENT_ENGINE as EngineName | undefined;
-  if (envDefault === 'claude' || envDefault === 'kimi' || envDefault === 'codex') return envDefault;
+  if (envDefault === 'claude' || envDefault === 'kimi' || envDefault === 'codex' || envDefault === 'deepseek') return envDefault;
   return 'claude';
 }
 

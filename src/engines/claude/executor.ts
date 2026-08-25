@@ -5,6 +5,7 @@ import path from 'node:path';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { SDKUserMessage, SpawnOptions, SpawnedProcess } from '@anthropic-ai/claude-agent-sdk';
 import type { BotConfigBase } from '../../config.js';
+import { resolveClaudeAuthEnv } from './auth-env.js';
 import type { CodexReasoningEffort } from '../../config.js';
 import type { Logger } from '../../utils/logger.js';
 import { AsyncQueue } from '../../utils/async-queue.js';
@@ -81,7 +82,7 @@ function hasCredentialsFile(): boolean {
  * - Merges process.env so child inherits system PATH, TEMP, etc.
  * - Optionally injects an explicit ANTHROPIC_API_KEY from bots.json config.
  */
-function createSpawnFn(explicitApiKey?: string): (options: SpawnOptions) => SpawnedProcess {
+function createSpawnFn(authEnv?: Record<string, string>): (options: SpawnOptions) => SpawnedProcess {
   // Force-use-env mode: pass ANTHROPIC_AUTH_TOKEN / ANTHROPIC_API_KEY /
   // ANTHROPIC_BASE_URL through to the Claude Code subprocess instead of
   // filtering them out. Triggered by either:
@@ -100,7 +101,7 @@ function createSpawnFn(explicitApiKey?: string): (options: SpawnOptions) => Spaw
     );
 
   // Decide once whether to filter auth env vars
-  const filterAuthVars = !preferEnvAuth && !!(explicitApiKey || hasCredentialsFile());
+  const filterAuthVars = (!preferEnvAuth && !!(authEnv || hasCredentialsFile())) || !!authEnv;
 
   return (options: SpawnOptions): SpawnedProcess => {
     // Merge provided env with process.env for a complete environment
@@ -123,9 +124,11 @@ function createSpawnFn(explicitApiKey?: string): (options: SpawnOptions) => Spaw
       env[key] = value;
     }
 
-    // Inject explicit API key from bots.json (after filtering, so it takes effect)
-    if (explicitApiKey) {
-      env.ANTHROPIC_API_KEY = explicitApiKey;
+    // Inject per-bot auth env (after filtering, so it deterministically wins
+    // over host login / apiKeyHelper / global ANTHROPIC_* — e.g. DeepSeek
+    // BASE_URL + keys, or an explicit bots.json Anthropic apiKey).
+    if (authEnv) {
+      for (const [k, v] of Object.entries(authEnv)) env[k] = v;
     }
 
     // Default-enable Claude Code Agent Teams. Without a real terminal there's
@@ -346,7 +349,7 @@ export class ClaudeExecutor {
       // (>= 0.2.140) supplies the correct command in spawn options — for the
       // native Claude binary that's the binary itself; for legacy JS
       // entrypoints it's the Node executable.
-      spawnClaudeCodeProcess: createSpawnFn(this.config.claude.apiKey),
+      spawnClaudeCodeProcess: createSpawnFn(resolveClaudeAuthEnv(this.config)),
       pathToClaudeCodeExecutable: CLAUDE_EXECUTABLE,
       // Luckagent has no terminal — split-pane (tmux/iTerm2) teammate display
       // doesn't apply. Force in-process so teammates run inside the same

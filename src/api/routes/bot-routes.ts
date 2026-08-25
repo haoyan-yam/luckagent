@@ -161,6 +161,7 @@ export async function handleBotRoutes(
       ...(body.engine ? { engine: body.engine } : {}),
       ...(body.codex ? { codex: body.codex } : {}),
       ...(body.kimi ? { kimi: body.kimi } : {}),
+      ...(body.deepseek ? { deepseek: body.deepseek } : {}),
       feishuAppId: appId, feishuAppSecret: appSecret, defaultWorkingDirectory: workDirInput,
       downloadsDir,
       ...(body.maxTurns ? { maxTurns: body.maxTurns } : {}),
@@ -334,5 +335,7 @@ function defaultModelForConfig(config: import('../../config.js').BotConfigBase):
       return config.kimi?.model;
     case 'codex':
       return config.codex?.model || config.codex?.displayModel;
+    case 'deepseek':
+      return config.deepseek?.model || 'deepseek-v4-flash';
   }
 }
