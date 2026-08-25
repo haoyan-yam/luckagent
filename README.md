@@ -66,7 +66,7 @@
 
 ## 安装
 
-三选一，装完效果相同（推荐方式 A）：
+两种方式，装完效果相同（推荐方式 A）：
 
 **方式 A · 一行命令（推荐，零前置依赖）**
 
@@ -86,16 +86,6 @@ cd ~/luckagent && bash install.sh
 ```
 
 git 检出天然支持 `luckagent update` 一键升级。
-
-**方式 C · 发行包（离线机器）**
-
-从 [Releases](https://github.com/haoyan-yam/luckagent/releases) 下载 `luckagent-installer-v*.tar.gz`：
-
-```bash
-tar -xzf luckagent-installer-v*.tar.gz
-mv luckagent ~/luckagent && cd ~/luckagent
-bash install.sh
-```
 
 安装完成后：
 
@@ -140,8 +130,8 @@ luckagent inbox poll            # CLI agent 收件箱
 
 | 安装方式 | 升级命令 |
 | --- | --- |
-| npm / git clone | `luckagent update`（git pull + 重装依赖 + 构建 + 同步技能 + 重启） |
-| 发行包 | 下载新版包解开覆盖到 `~/luckagent/`，重跑 `bash install.sh`（幂等） |
+| git 检出（git clone / 一行命令在有 git 的机器上） | `luckagent update`（git pull + 重装依赖 + 构建 + 同步技能 + 重启） |
+| 无 `.git` 的安装（一行命令在裸机上的 tarball 下载模式） | `curl -fsSL https://codeload.github.com/haoyan-yam/luckagent/tar.gz/refs/heads/main \| tar -xz --strip-components=1 -C ~/luckagent`，然后重跑 `bash install.sh`（幂等） |
 
 ## 文档
 

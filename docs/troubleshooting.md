@@ -107,7 +107,7 @@ sudo chown -R "$(whoami)" ~/.npm
 ## `luckagent update` 失败
 
 - `git pull --ff-only` 拒绝合并：本地改过源码导致无法快进。先 `git stash`（或提交到自己的分支）再 update；
-- 安装目录不是 git 检出（tar 包直接解开的）：update 的拉码步骤不可用，重新解一份新版本包覆盖后 `npm install && npm run build && luckagent restart --all`。
+- 安装目录不是 git 检出（get.sh 在无 git 机器上的 tarball 下载模式）：update 的拉码步骤不可用，改用 `curl -fsSL https://codeload.github.com/haoyan-yam/luckagent/tar.gz/refs/heads/main | tar -xz --strip-components=1 -C ~/luckagent` 覆盖最新代码后重跑 `bash install.sh`（幂等，含依赖/构建/重启）。
 
 ## 还没解决？
 

@@ -11,8 +11,7 @@
 
 | 东西 | 说明 |
 | --- | --- |
-| 安装包 | 从 [GitHub Releases](https://github.com/haoyan-yam/luckagent/releases) 下载 `luckagent-installer-v*.tar.gz`（+ 同名 `.sha256` 校验文件）；**目标机能直接联网时可跳过安装包**，直接 `npx luckagent init` 或 git clone（见第 1 节开头） |
-| 网络 | 目标机需联网（下载 Homebrew/node/npm 依赖、连飞书与模型 API） |
+| 网络 | 目标机需联网（取代码、下载 Homebrew/node/npm 依赖、连飞书与模型 API），无需下载任何安装包 |
 | 飞书账号 | 有权限在 [飞书开放平台](https://open.feishu.cn/app) 创建企业自建应用 |
 | Claude 认证 | 二选一：[Anthropic API Key](https://console.anthropic.com)，或 Claude Code 订阅账号（安装脚本可代装 CLI，登录需自己跑一次 `claude`） |
 | 生图 key（可选） | 二选一：[OpenAI](https://platform.openai.com) 的 key，或 [火山方舟](https://console.volcengine.com/ark) 的 ARK key（需在控制台开通 Doubao-Seedream 模型） |
@@ -21,49 +20,31 @@
 
 ---
 
-## 1. 把代码放到 Mac mini
-
-> **目标机能联网？一行命令完成全部安装（零前置依赖，可完全替代第 1、2 节）：**
->
-> ```bash
-> curl -fsSL https://github.com/haoyan-yam/luckagent/releases/latest/download/get.sh | bash
-> ```
->
-> 只想先取代码不装：`git clone https://github.com/haoyan-yam/luckagent.git ~/luckagent`，
-> 然后从第 2 节的 `bash install.sh` 继续。已有 Node 的机器也可用 `npx luckagent init`。
-
-用安装包的话，把它传到目标机，任选其一：
-
-- **隔空投送（AirDrop）**：从另一台电脑把 `luckagent-installer-v*.tar.gz` 投过去（默认落在 `~/Downloads`）
-- **U 盘**：拷贝到 U 盘再拷进 `~/Downloads`
-- **scp**（两台机器同一局域网时）：
-
-```bash
-scp luckagent-installer-v*.tar.gz 用户名@mac-mini.local:~/Downloads/
-```
-
-（可选）校验包完整性：
-
-```bash
-cd ~/Downloads
-shasum -a 256 -c luckagent-installer-v*.tar.gz.sha256
-```
-
-看到 `OK` 即通过。
-
----
-
-## 2. 解压并运行安装脚本
+## 1. 一行命令安装（推荐）
 
 打开「终端」（聚焦搜索 Terminal），执行：
 
 ```bash
-cd ~/Downloads
-tar -xzf luckagent-installer-v*.tar.gz
-mv luckagent ~/luckagent
+curl -fsSL https://github.com/haoyan-yam/luckagent/releases/latest/download/get.sh | bash
+```
+
+零前置依赖（只用 macOS 自带的 curl/tar/bash），全新机器直接跑。脚本把代码取到
+`~/luckagent` 后自动进入第 2 节的交互式安装流程——**用这条命令的话第 2 节的
+命令不用再手动执行**，直接看第 2 节的「阶段表」了解安装过程中需要你配合什么。
+
+---
+
+## 2. 运行安装脚本
+
+> 用了第 1 节的一行命令则跳过本节的命令（get.sh 已代跑）。想手动控制的话：
+
+```bash
+git clone https://github.com/haoyan-yam/luckagent.git ~/luckagent
 cd ~/luckagent
 bash install.sh
 ```
+
+（已有 Node 的机器也可用 `npx luckagent init`，效果与一行命令相同。）
 
 安装脚本会依次做这些事，**其中四处需要你配合**：
 
@@ -187,7 +168,13 @@ luckagent doctor --json   # 本机体检（runtime/PM2/core/bots/voice/codex 等
 > **可选增强**：安装 opencli（网站自动化工具）等第三方二进制后，重跑一次 `bash install.sh`
 >（幂等，几十秒），对应技能会自动启用；添加自定义技能见 [docs/claude-code-skills.md](docs/claude-code-skills.md)。
 >
-> **升级 Luckagent**：下载新版安装包 → 解开覆盖到 `~/luckagent/` → 重跑 `bash install.sh`。
+> **升级 Luckagent**：git 安装（含一行命令在有 git 机器上的安装）执行 `luckagent update`；
+> 无 `.git` 的安装（一行命令在裸机上的 tarball 下载模式）执行：
+>
+> ```bash
+> curl -fsSL https://codeload.github.com/haoyan-yam/luckagent/tar.gz/refs/heads/main | tar -xz --strip-components=1 -C ~/luckagent
+> cd ~/luckagent && bash install.sh
+> ```
 
 ---
 

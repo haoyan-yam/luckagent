@@ -35,7 +35,8 @@ main() {
     if [[ -d "$target/.git" ]]; then
       echo "  升级: luckagent update"
     else
-      echo "  升级: 解开新版安装包覆盖到 $target/ 后重跑 bash install.sh"
+      echo "  升级: curl -fsSL https://codeload.github.com/haoyan-yam/luckagent/tar.gz/refs/heads/main | tar -xz --strip-components=1 -C $target"
+      echo "        cd $target && bash install.sh"
     fi
     echo "  重跑安装(幂等): cd $target && bash install.sh"
     return 0
@@ -50,7 +51,7 @@ main() {
   mkdir -p "$(dirname "$target")"
   if xcode-select -p &>/dev/null && command -v git &>/dev/null; then
     git clone --depth 1 --branch "$ref" "$repo" "$target" \
-      || fail "git clone 失败。检查网络后重试，或用安装包方式（见 INSTALL.md）。"
+      || fail "git clone 失败。检查网络后重跑本命令即可。"
   else
     local slug tarball
     slug="${repo#https://github.com/}"; slug="${slug%.git}"
