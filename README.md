@@ -48,7 +48,7 @@
 解开发行包，跑安装脚本，跟着交互提示走完即可：
 
 ```bash
-tar -xzf luckagent-installer-v0.2.2.tar.gz && cd luckagent && bash install.sh
+tar -xzf luckagent-installer-v0.2.3.tar.gz && cd luckagent && bash install.sh
 ```
 
 安装完成后：
@@ -95,6 +95,7 @@ luckagent inbox poll            # CLI agent 收件箱
 | 文档 | 内容 |
 | --- | --- |
 | [飞书应用配置指南](docs/feishu-app-setup.md) | 在飞书开放平台建应用、配权限、订阅事件、发布上线的逐步引导 |
+| [多引擎配置](docs/engines.md) | Codex / Kimi 引擎的安装认证要求，指令文件在三引擎下的生效机制 |
 | [目录结构](docs/directory-layout.md) | 安装目录、每 bot 工作目录约定、⚠️ 归档目录与发送暂存目录的关键区别、状态目录与日志位置 |
 | [定时任务](docs/scheduling.md) | CLI / 管理台 / HTTP API 三种入口，cron 与时区，暂停恢复 |
 | [技能体系](docs/claude-code-skills.md) | 随装与可选技能、`.claude`/`.codex` 双目录发现、工作区两级指令模板 |

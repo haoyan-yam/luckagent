@@ -264,7 +264,7 @@ if [[ ! -d "$LUCKAGENT_HOME/.git" ]]; then
       if [[ -f "$LUCKAGENT_HOME/src/workspace/CLAUDE.md" ]]; then
         cp "$LUCKAGENT_HOME/src/workspace/CLAUDE.md" "$work_dir/CLAUDE.md"
         if [[ ! -e "$work_dir/AGENTS.md" ]]; then
-          cp "$LUCKAGENT_HOME/src/workspace/CLAUDE.md" "$work_dir/AGENTS.md"
+          ln -s CLAUDE.md "$work_dir/AGENTS.md" 2>/dev/null || cp "$work_dir/CLAUDE.md" "$work_dir/AGENTS.md"
         fi
       fi
       success "Workspace skills updated"

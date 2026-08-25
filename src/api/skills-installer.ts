@@ -136,7 +136,19 @@ function deployWorkspaceInstructions(workDir: string, logger: Logger): void {
     if (!fs.existsSync(candidate)) continue;
 
     copyInstructionFile(candidate, existingClaudeMd, 'CLAUDE.md', logger);
-    copyInstructionFile(fs.existsSync(existingClaudeMd) ? existingClaudeMd : candidate, path.join(workDir, 'AGENTS.md'), 'AGENTS.md', logger);
+    // AGENTS.md (read by Codex/Kimi) is a SYMLINK to CLAUDE.md — one document,
+    // two names, so later edits to CLAUDE.md reach every engine with zero
+    // drift. An existing regular AGENTS.md (user-customized) is left alone.
+    const agentsMd = path.join(workDir, 'AGENTS.md');
+    if (!fs.existsSync(agentsMd)) {
+      try {
+        fs.symlinkSync('CLAUDE.md', agentsMd);
+        logger.info({ agentsMd }, 'AGENTS.md symlinked to CLAUDE.md');
+      } catch (err: any) {
+        logger.warn({ err: err?.message }, 'AGENTS.md symlink failed — falling back to copy');
+        copyInstructionFile(fs.existsSync(existingClaudeMd) ? existingClaudeMd : candidate, agentsMd, 'AGENTS.md', logger);
+      }
+    }
     break;
   }
 

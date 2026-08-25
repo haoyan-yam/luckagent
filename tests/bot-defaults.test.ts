@@ -3,7 +3,45 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { loadAppConfig } from '../src/config.js';
-import { larkCliHasApp } from '../src/api/skills-installer.js';
+import { larkCliHasApp, installSkillsToWorkDir } from '../src/api/skills-installer.js';
+
+const noopLogger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} } as any;
+
+describe('workspace instruction deployment (engine-neutral)', () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'la-ws-'));
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('AGENTS.md is a symlink to CLAUDE.md so edits reach every engine', () => {
+    const workDir = path.join(dir, 'bots', 'demo');
+    fs.mkdirSync(workDir, { recursive: true });
+    installSkillsToWorkDir(workDir, noopLogger);
+
+    const claudeMd = path.join(workDir, 'CLAUDE.md');
+    const agentsMd = path.join(workDir, 'AGENTS.md');
+    expect(fs.existsSync(claudeMd)).toBe(true);
+    expect(fs.lstatSync(agentsMd).isSymbolicLink()).toBe(true);
+    expect(fs.readlinkSync(agentsMd)).toBe('CLAUDE.md');
+    // Reading through the link yields the same document; edits propagate.
+    fs.appendFileSync(claudeMd, '\n<!-- edited -->\n');
+    expect(fs.readFileSync(agentsMd, 'utf-8')).toContain('<!-- edited -->');
+    // Parent shared conventions deployed alongside.
+    expect(fs.existsSync(path.join(dir, 'bots', 'CLAUDE.md'))).toBe(true);
+  });
+
+  it('an existing regular AGENTS.md (user-customized) is left untouched', () => {
+    const workDir = path.join(dir, 'bots', 'demo2');
+    fs.mkdirSync(workDir, { recursive: true });
+    fs.writeFileSync(path.join(workDir, 'AGENTS.md'), 'custom instructions\n');
+    installSkillsToWorkDir(workDir, noopLogger);
+    expect(fs.lstatSync(path.join(workDir, 'AGENTS.md')).isSymbolicLink()).toBe(false);
+    expect(fs.readFileSync(path.join(workDir, 'AGENTS.md'), 'utf-8')).toBe('custom instructions\n');
+  });
+});
 
 describe('downloadsDir defaults to <workDir>/inputs', () => {
   let dir: string;

@@ -188,6 +188,13 @@ if [[ ! -f "$BOTS_ROOT/CLAUDE.md" && -f "$LUCKAGENT_HOME/src/workspace/PROJECTS-
   cp "$LUCKAGENT_HOME/src/workspace/PROJECTS-CLAUDE.md" "$BOTS_ROOT/CLAUDE.md"
   success "工作区共用规范已部署: $BOTS_ROOT/CLAUDE.md"
 fi
+# Codex 引擎不向上遍历父目录，其全局指令位是 ~/.codex/AGENTS.md ——
+# 把共用规范镜像一份过去（仅在不存在时），codex bot 也能吃到同一套规范
+if [[ ! -e "$HOME/.codex/AGENTS.md" && -f "$BOTS_ROOT/CLAUDE.md" ]]; then
+  mkdir -p "$HOME/.codex"
+  cp "$BOTS_ROOT/CLAUDE.md" "$HOME/.codex/AGENTS.md"
+  success "共用规范已镜像到 Codex 全局指令: ~/.codex/AGENTS.md"
+fi
 
 # ============================================================
 # 启动
