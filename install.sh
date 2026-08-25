@@ -254,6 +254,20 @@ for dst_root in "$HOME/.claude/skills" "$HOME/.codex/skills"; do
   fi
 done
 
+# ---- frontend-slides（第三方 MIT 技能：HTML 演示文稿/PPT 转网页，从上游拉取保持最新）----
+FS_SKILL_DIR="$HOME/.claude/skills/frontend-slides"
+if [[ -d "$FS_SKILL_DIR/.git" ]] && command -v git &>/dev/null; then
+  git -C "$FS_SKILL_DIR" pull --ff-only --quiet 2>/dev/null     && info "frontend-slides 技能已更新（上游 main）"     || warn "frontend-slides 上游更新失败（保留现有版本）"
+elif [[ ! -d "$FS_SKILL_DIR" ]] && command -v git &>/dev/null; then
+  info "拉取 frontend-slides 技能（HTML 演示文稿生成，MIT · zarazhangrui/frontend-slides）..."
+  git clone --depth 1 https://github.com/zarazhangrui/frontend-slides "$FS_SKILL_DIR" 2>/dev/null     && success "frontend-slides 技能已安装"     || warn "frontend-slides 拉取失败（可选技能，不影响安装）。之后手动: git clone https://github.com/zarazhangrui/frontend-slides ~/.claude/skills/frontend-slides"
+fi
+if [[ -d "$FS_SKILL_DIR" ]]; then
+  mkdir -p "$HOME/.codex/skills/frontend-slides"
+  cp -r "$FS_SKILL_DIR/." "$HOME/.codex/skills/frontend-slides/" 2>/dev/null || true
+  rm -rf "$HOME/.codex/skills/frontend-slides/.git"
+fi
+
 # ---- lark-cli（必装：bot 操作飞书文档/表格/日历、群日报拉群消息都依赖它）----
 LARK_CLI_TODO=""
 if [[ "$NO_SYSTEM" != "true" ]]; then

@@ -22,6 +22,7 @@
 | `luckagent` | **CLI 参考技能**：教 agent 用 `luckagent memory / skills / agents / inbox / teams / schedule / talk / voice` 等全部命令，是 bot 融入协作体系的说明书 | `packages/skills/luckagent/` |
 | `voice` | 文本转语音：`luckagent voice tts` 的用法（生成 MP3、发语音） | `src/skills/voice/` |
 | `opencli`（条件启用） | 把 155+ 网站变成 CLI、驱动本机已登录的 Chrome 做浏览器自动化。**仅当检测到 `opencli` 二进制时才安装**——之后装了二进制，重跑一次 `bash install.sh`（非 git 检出）或 `luckagent update`（git 检出）即启用；还需本机装 Chrome 并登录目标网站 | `src/skills/opencli/` |
+| `frontend-slides`（第三方 · MIT） | 生成零依赖、动画丰富的单文件 HTML 演示文稿，或把 PPT/PPTX 转成网页（转换需 `pip install python-pptx`）。安装时从上游 [zarazhangrui/frontend-slides](https://github.com/zarazhangrui/frontend-slides) 拉取到 `~/.claude/skills/`，`install.sh` / `luckagent update` 都会跟进上游更新 | 上游仓库（不入本仓） |
 | `image-gen` | 文生图 / 图生图 / 改图，**双 provider 统一入口 `gen.py`**：按 key 自动判定——配了 OpenAI key（`OPENAI_IMAGE_API_KEY`/`OPENAI_API_KEY`）走 gpt-image-2，仅配 `ARK_API_KEY` 走火山 Seedream（4K、组图、多参考图，需在方舟控制台开通模型）。脚本零依赖，含提示词打法参考与绿幕抠图 | `src/skills/image-gen/` |
 
 **飞书 bot 额外装 19 个 `lark-*` 技能**（lark-doc、lark-im、lark-calendar、lark-sheets、lark-base、lark-task、lark-drive、lark-mail、lark-wiki 等），让 agent 会用 `lark-cli` 操作飞书文档/消息/日历/多维表格等 11 个业务域。lark-cli 是**必备组件**，安装脚本会自动装好（含 19 个技能）；若曾安装失败可手动补：
@@ -58,7 +59,7 @@ npx skills add larksuite/cli --all -y -g   # 拉取 19 个官方技能到全局
 
 `luckagent update`（仅 git 检出可用；无 `.git` 安装的等价操作是用 codeload tarball 覆盖后重跑 `bash install.sh`，见 INSTALL.md 升级一节）在拉代码、重建之后会做一轮技能同步：
 
-1. 仓库内置技能（`luckagent`、`voice`、`luckagent-team`、`image-gen`，检测到 opencli 二进制时还有 `opencli`）刷新到 `~/.claude/skills` 与 `~/.codex/skills`；
+1. 仓库内置技能（`luckagent`、`voice`、`luckagent-team`、`image-gen`，检测到 opencli 二进制时还有 `opencli`）刷新到 `~/.claude/skills` 与 `~/.codex/skills`；第三方 `frontend-slides` 若为 git 检出则拉取上游最新；
 2. 若本机装过 lark-cli：升级 `@larksuite/cli` 并刷新 19 个 `lark-*` 技能，再镜像进两个全局技能目录；
 3. 把上述技能同步进**每个 bot** 的工作目录 `.claude/skills` + `.codex/skills`（按 `bots.json` 逐个遍历）；
 4. ⚠️ 把各 bot 工作目录的 `CLAUDE.md` 刷新为最新模板（**会覆盖本地修改**，改过模板的注意先备份或升级后 `git diff` 找回；`AGENTS.md` 仅缺失时补建）。

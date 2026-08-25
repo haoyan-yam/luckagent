@@ -5,8 +5,10 @@ import * as url from 'node:url';
 import { spawn } from 'node:child_process';
 import type { Logger } from '../utils/logger.js';
 
-/** Skills installed for all bots. */
-const COMMON_SKILLS = ['luckagent'];
+/** Skills installed for all bots. frontend-slides is a third-party MIT skill
+ *  (zarazhangrui/frontend-slides) fetched into ~/.claude/skills by install.sh —
+ *  absent copies are skipped silently. */
+const COMMON_SKILLS = ['luckagent', 'frontend-slides'];
 
 /** Lark CLI AI Agent skills — installed via `npx skills add larksuite/cli` and
  *  symlinked into ~/.claude/skills/ automatically. We copy them to the bot
@@ -71,7 +73,12 @@ export async function installSkillsToWorkDir(workDir: string, logger: Logger, op
     for (const destSkillsDir of destSkillDirs) {
       const dest = path.join(destSkillsDir, skill);
       await fs.promises.mkdir(dest, { recursive: true });
-      await fs.promises.cp(src, dest, { recursive: true });
+      // Skip VCS metadata — git-cloned skills (e.g. frontend-slides) must not
+      // drag their .git history into every bot workdir.
+      await fs.promises.cp(src, dest, {
+        recursive: true,
+        filter: (entry) => path.basename(entry) !== '.git',
+      });
       logger.info({ skill, src, dest }, 'Skill installed to working directory');
     }
   }

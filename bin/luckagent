@@ -224,6 +224,16 @@ if [[ ! -d "$LUCKAGENT_HOME/.git" ]]; then
       fi
     done
   fi
+  # frontend-slides（第三方技能，git 检出时跟上游）→ 刷新后镜像进 Codex 目录
+  local fs_dir="$SKILLS_DIR/frontend-slides"
+  if [[ -d "$fs_dir/.git" ]] && command -v git &>/dev/null; then
+    git -C "$fs_dir" pull --ff-only --quiet 2>/dev/null || true
+  fi
+  if [[ -d "$fs_dir" ]]; then
+    mkdir -p "$CODEX_SKILLS_DIR/frontend-slides"
+    cp -r "$fs_dir/." "$CODEX_SKILLS_DIR/frontend-slides/" 2>/dev/null || true
+    rm -rf "$CODEX_SKILLS_DIR/frontend-slides/.git"
+  fi
   success "Skills updated"
 
   # Update workspace skills if bots.json exists
@@ -242,12 +252,14 @@ if [[ ! -d "$LUCKAGENT_HOME/.git" ]]; then
       local ws_codex_skills_dir="$work_dir/.codex/skills"
       mkdir -p "$ws_skills_dir" "$ws_codex_skills_dir"
 
-      # Copy common skills (Phase 4: metamemory/skill-hub removed).
-      for skill in luckagent voice; do
+      # Copy common skills — same set the global sync refreshed above, plus
+      # the third-party frontend-slides (sourced from ~/.claude/skills).
+      for skill in $update_skills frontend-slides; do
         if [[ -d "$SKILLS_DIR/$skill" ]]; then
           for dst_root in "$ws_skills_dir" "$ws_codex_skills_dir"; do
             mkdir -p "$dst_root/$skill"
             cp -r "$SKILLS_DIR/$skill/." "$dst_root/$skill/"
+            rm -rf "$dst_root/$skill/.git"
           done
         fi
       done

@@ -56,6 +56,7 @@ bash install.sh
 | npm install + 构建 | 下载依赖并本地编译原生模块，几分钟 | 无 |
 | 生成 `.env` | 自动生成随机 `API_SECRET`（管理台登录密钥） | 会依次询问 `ANTHROPIC_API_KEY`（Claude 认证）和生图 key（OpenAI `sk-` 或火山 `ark-` 前缀自动识别），都可回车跳过、之后编辑 `.env` 补填 |
 | 生成 `bots.json` | 空列表——机器人稍后用管理台向导创建 | 无 |
+| 技能同步 | 内置技能装进全局目录；并从 GitHub 拉取 frontend-slides（HTML 演示文稿生成，第三方 MIT） | 无；拉取失败仅警告不影响安装 |
 | lark-cli（必装） | 自动安装飞书官方 CLI + 19 个 AI 技能（文档/表格/日历操作、群日报拉消息都依赖它） | 无；万一安装失败，结尾会打印待办命令 |
 | PM2 启动 | 启动 `luckagent-bridge` + `luckagent-core` 两个常驻进程 | 无 |
 

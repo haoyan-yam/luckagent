@@ -1,5 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -48,6 +47,34 @@ describe('skills installer', () => {
       // bundled here. Confirm the install does not produce them.
       expect(() => readFileSync(join(workDir, '.claude/skills/metamemory/SKILL.md'), 'utf-8')).toThrow();
       expect(() => readFileSync(join(workDir, '.claude/skills/skill-hub/SKILL.md'), 'utf-8')).toThrow();
+      // frontend-slides is in COMMON_SKILLS but absent from this fake HOME —
+      // it must be skipped silently, not fail the install.
+      expect(() => readFileSync(join(workDir, '.claude/skills/frontend-slides/SKILL.md'), 'utf-8')).toThrow();
+    } finally {
+      if (priorHome === undefined) delete process.env.HOME;
+      else process.env.HOME = priorHome;
+    }
+  });
+});
+
+describe('third-party frontend-slides skill', () => {
+  it('mirrors the global copy into bot workdirs without its .git history', async () => {
+    const priorHome = process.env.HOME;
+    const home = tempDir('luckagent-home-');
+    const workDir = tempDir('luckagent-work-');
+    try {
+      process.env.HOME = home;
+      const fsSkill = join(home, '.claude/skills/frontend-slides');
+      mkdirSync(join(fsSkill, '.git'), { recursive: true });
+      writeFileSync(join(fsSkill, 'SKILL.md'), '# frontend-slides\nHTML presentations');
+      writeFileSync(join(fsSkill, '.git', 'HEAD'), 'ref: refs/heads/main');
+
+      await installSkillsToWorkDir(workDir, logger);
+
+      for (const root of ['.claude/skills', '.codex/skills']) {
+        expect(readFileSync(join(workDir, root, 'frontend-slides/SKILL.md'), 'utf-8')).toContain('frontend-slides');
+        expect(existsSync(join(workDir, root, 'frontend-slides/.git'))).toBe(false);
+      }
     } finally {
       if (priorHome === undefined) delete process.env.HOME;
       else process.env.HOME = priorHome;
