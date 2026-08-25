@@ -213,9 +213,13 @@ python3 scripts/gen_seedream.py "同一 IP 角色的四个表情" --max-images 4
 python3 scripts/gen_seedream.py "..." --size 4096x4096 --seed 42 -o big.png
 ```
 
-参数：`--size WxH`（默认 2048x2048）、`--model`（默认 doubao-seedream-4-0-250828，火山滚版本后用控制台当前 id 覆盖，或设 `SEEDREAM_MODEL` 环境变量）、`--watermark`（默认关水印）、`--timeout`。
+参数：`--size WxH`（默认 2048x2048）、`--model`（默认 doubao-seedream-5-0-pro-260628，火山滚版本后用控制台当前 id 覆盖，或设 `SEEDREAM_MODEL` 环境变量）、`--watermark`（默认关水印）、`--timeout`。
 
-排错：`AuthenticationError`=key 不对；`ModelNotOpen`=账号未开通该模型（控制台「开通管理」一键开通）；`InvalidEndpointOrModel.NotFound`=模型 id 已滚版本，换 `--model`。
+排错：`AuthenticationError`=key 不对；`ModelNotOpen`=账号未开通该模型（控制台「开通管理」一键开通）；`InvalidEndpointOrModel.NotFound`=模型 id 已滚版本。**查当前可用 id**：
+
+```bash
+curl -s https://ark.cn-beijing.volces.com/api/v3/models -H "Authorization: Bearer $ARK_API_KEY" | python3 -c "import json,sys;[print(m['id']) for m in json.load(sys.stdin)['data'] if 'seedream' in m['id']]"
+```
 
 ## 典型示例
 

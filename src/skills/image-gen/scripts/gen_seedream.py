@@ -5,7 +5,7 @@
   python3 gen_seedream.py "海边日落的插画" -o out.png
   python3 gen_seedream.py "把背景换成雪山" --image ref.jpg -o edited.png
   python3 gen_seedream.py "同一角色的四格表情包" --max-images 4 -o outdir/
-  python3 gen_seedream.py "..." --size 4096x4096 --model doubao-seedream-4-0-250828
+  python3 gen_seedream.py "..." --size 4096x4096 --model doubao-seedream-5-0-pro-260628
 
 API key：环境变量 ARK_API_KEY，或自动从 ~/luckagent/.env 读取，无需 export。
 注意：直连火山域名，已强制绕过 HTTP(S)_PROXY（代理会劫持国内直连域名）。
@@ -23,7 +23,7 @@ import urllib.request
 from pathlib import Path
 
 BASE_URL = os.environ.get("ARK_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")
-DEFAULT_MODEL = "doubao-seedream-4-0-250828"
+DEFAULT_MODEL = "doubao-seedream-5-0-pro-260628"
 
 # 绕过系统代理：Ark 是国内直连域名，走代理常见循环重定向/超时
 _OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
