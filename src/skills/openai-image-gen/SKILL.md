@@ -1,9 +1,9 @@
 ---
 name: openai-image-gen
-description: 通过 OpenAI gpt-image-2 API 直接生图（文生图 / 图生图 / 编辑），不依赖 ChatGPT 网页、不依赖 opencli、不依赖任何第三方包。当用户说"生图""画一张""生成图片""做张海报""画个 logo""画个 icon""出张图""生成 banner""做张封面""生成插画""image generation""text to image""img2img""图生图""编辑这张图""把这张图改成 XXX""换背景""透明背景图""出张参考图""文生图"，或任何明显在请求生成/编辑视觉图像产物的场景时使用此 skill。品牌营销物料（海报/货品卡/H5 界面图/长图文/封面/banner，画面含品牌 logo/产品包装/真实文案）也直接用本 skill 整图直出——产出定位是 ref/提案稿，美观第一，打法见正文「品牌物料出图法」一节。即使没有明确说 "OpenAI" 或 "gpt-image-2"，只要意图是生成一张新图或编辑现有图，且没有指定走 Midjourney / Stable Diffusion / Gemini 等其他模型，就触发本 skill。本 skill 不适用于：视频生成（走 seedance-video）、3D 模型、矢量图 SVG 设计稿（走对应专门工具）、实拍照片修图/合焦/清晰化/放大（走 refocus-composite）。
+description: 直接调 API 生图（文生图 / 图生图 / 编辑），双 provider：OpenAI gpt-image-2 与火山 Seedream，均零第三方依赖。用户说"seedream""豆包生图""火山生图"时用 Seedream 脚本。当用户说"生图""画一张""生成图片""做张海报""画个 logo""画个 icon""出张图""生成 banner""做张封面""生成插画""image generation""text to image""img2img""图生图""编辑这张图""把这张图改成 XXX""换背景""透明背景图""出张参考图""文生图"，或任何明显在请求生成/编辑视觉图像产物的场景时使用此 skill。品牌营销物料（海报/货品卡/H5 界面图/长图文/封面/banner，画面含品牌 logo/产品包装/真实文案）也直接用本 skill 整图直出——产出定位是 ref/提案稿，美观第一，打法见正文「品牌物料出图法」一节。即使没有明确说 "OpenAI" 或 "gpt-image-2"，只要意图是生成一张新图或编辑现有图，且没有指定走 Midjourney / Stable Diffusion / Gemini 等其他模型，就触发本 skill。本 skill 不适用于：视频生成（走 seedance-video）、3D 模型、矢量图 SVG 设计稿（走对应专门工具）、实拍照片修图/合焦/清晰化/放大（走 refocus-composite）。
 ---
 
-# openai-image-gen — OpenAI gpt-image-2 生图
+# openai-image-gen — API 直调生图（gpt-image-2 / 火山 Seedream）
 
 > 通过 `scripts/gen_image.py` 直接调用 OpenAI Images API（端点 `/v1/images/generations` 和 `/v1/images/edits`），用 `gpt-image-2` 模型生成或编辑图像。
 > 适用于：海报、icon、产品图、插画、参考图、概念图、社交媒体素材、文生图与图生图。
@@ -22,6 +22,16 @@ description: 通过 OpenAI gpt-image-2 API 直接生图（文生图 / 图生图 
 如果用户只给了一个含糊的"画一张图"没说细节，按 [澄清流程](#澄清流程) 先问关键参数。
 
 ---
+
+## Provider 选择
+
+| 场景 | 用哪个 |
+| --- | --- |
+| 默认 / 英文提示词打磨 / 已有 OpenAI key | gpt-image-2（`gen_image.py`，下文「核心命令」） |
+| 国内网络直连、中文提示词、要 4K、要组图（同风格多张）、成本敏感 | Seedream（`gen_seedream.py`，见文末「火山 Seedream」节） |
+| 用户点名 seedream / 豆包 / 火山 | Seedream |
+
+两者产出都是本地图片文件，后续发送/归档流程完全一致。
 
 ## 核心命令
 
@@ -175,6 +185,28 @@ key 从环境变量读取，优先级：`OPENAI_IMAGE_API_KEY` > `OPENAI_API_KEY
 也可以临时覆盖：`OPENAI_IMAGE_API_KEY=sk-xxx python3 scripts/gen_image.py ...`。
 
 ---
+
+## 火山 Seedream 生图（gen_seedream.py）
+
+前置：`.env` 配 `ARK_API_KEY`（火山方舟控制台创建），且账号已在方舟「开通管理」开通 Doubao-Seedream 模型。脚本自动绕过系统代理（国内直连域名）。
+
+```bash
+# 文生图（默认 2048x2048）
+python3 scripts/gen_seedream.py "海边日落的插画，扁平风格" -o out.png
+
+# 图生图 / 改图（参考图可本地路径或 URL，可 --image 多次传多参考）
+python3 scripts/gen_seedream.py "把背景换成雪山" --image ref.jpg -o edited.png
+
+# 组图：同风格连出多张（目录输出）
+python3 scripts/gen_seedream.py "同一 IP 角色的四个表情" --max-images 4 -o outdir/
+
+# 4K / 指定尺寸 / 固定种子复现
+python3 scripts/gen_seedream.py "..." --size 4096x4096 --seed 42 -o big.png
+```
+
+参数：`--size WxH`（默认 2048x2048）、`--model`（默认 doubao-seedream-4-0-250828，火山滚版本后用控制台当前 id 覆盖，或设 `SEEDREAM_MODEL` 环境变量）、`--watermark`（默认关水印）、`--timeout`。
+
+排错：`AuthenticationError`=key 不对；`ModelNotOpen`=账号未开通该模型（控制台「开通管理」一键开通）；`InvalidEndpointOrModel.NotFound`=模型 id 已滚版本，换 `--model`。
 
 ## 典型示例
 

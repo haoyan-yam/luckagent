@@ -21,7 +21,7 @@
 | --- | --- | --- |
 | `luckagent` | **CLI 参考技能**：教 agent 用 `luckagent memory / skills / agents / inbox / teams / schedule / talk / voice` 等全部命令，是 bot 融入协作体系的说明书 | `packages/skills/luckagent/` |
 | `voice` | 文本转语音：`luckagent voice tts` 的用法（生成 MP3、发语音） | `src/skills/voice/` |
-| `openai-image-gen` | 文生图 / 图生图 / 改图：直调 OpenAI 图像 API（脚本零依赖），含提示词打法参考与绿幕抠图脚本。需 `.env` 配 `OPENAI_IMAGE_API_KEY` 或 `OPENAI_API_KEY`（可配 `OPENAI_BASE_URL` 走网关） | `src/skills/openai-image-gen/` |
+| `openai-image-gen` | 文生图 / 图生图 / 改图，**双 provider**：OpenAI gpt-image-2（`OPENAI_IMAGE_API_KEY`/`OPENAI_API_KEY`）与火山 Seedream（`ARK_API_KEY`，需在方舟控制台开通模型；支持 4K、组图、多参考图）。脚本零依赖，含提示词打法参考与绿幕抠图 | `src/skills/openai-image-gen/` |
 
 **飞书 bot 额外装 19 个 `lark-*` 技能**（lark-doc、lark-im、lark-calendar、lark-sheets、lark-base、lark-task、lark-drive、lark-mail、lark-wiki 等），让 agent 会用 `lark-cli` 操作飞书文档/消息/日历/多维表格等 11 个业务域。lark-cli 是**必备组件**，安装脚本会自动装好（含 19 个技能）；若曾安装失败可手动补：
 

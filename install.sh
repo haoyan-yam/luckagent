@@ -256,7 +256,7 @@ if [[ -n "$LARK_CLI_TODO" ]]; then
   echo ""
 fi
 echo "  可选能力（编辑 .env 填 key 后 luckagent restart 生效）:"
-echo "     生图: OPENAI_IMAGE_API_KEY（或复用 OPENAI_API_KEY）   语音TTS: VOLCENGINE_TTS_*（不填则用免费 Edge TTS）"
+echo "     生图: OPENAI_IMAGE_API_KEY 或 火山 ARK_API_KEY（Seedream）   语音TTS: VOLCENGINE_TTS_*（不填则用免费 Edge TTS）"
 echo ""
 echo "  常用命令:  luckagent status | logs | restart | doctor --json | help"
 echo "  详细文档:  INSTALL.md 与 docs/ 目录"
