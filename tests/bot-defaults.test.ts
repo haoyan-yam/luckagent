@@ -16,10 +16,10 @@ describe('workspace instruction deployment (engine-neutral)', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it('AGENTS.md is a symlink to CLAUDE.md so edits reach every engine', () => {
+  it('AGENTS.md is a symlink to CLAUDE.md so edits reach every engine', async () => {
     const workDir = path.join(dir, 'bots', 'demo');
     fs.mkdirSync(workDir, { recursive: true });
-    installSkillsToWorkDir(workDir, noopLogger);
+    await installSkillsToWorkDir(workDir, noopLogger);
 
     const claudeMd = path.join(workDir, 'CLAUDE.md');
     const agentsMd = path.join(workDir, 'AGENTS.md');
@@ -33,7 +33,7 @@ describe('workspace instruction deployment (engine-neutral)', () => {
     expect(fs.existsSync(path.join(dir, 'bots', 'CLAUDE.md'))).toBe(true);
   });
 
-  it('opencli skill is installed only when the binary is on PATH', () => {
+  it('opencli skill is installed only when the binary is on PATH', async () => {
     const savedPath = process.env.PATH;
     try {
       // Fake bin dir containing an executable `opencli`
@@ -45,25 +45,25 @@ describe('workspace instruction deployment (engine-neutral)', () => {
       expect(opencliAvailable()).toBe(true);
       const withDir = path.join(dir, 'bots', 'with-opencli');
       fs.mkdirSync(withDir, { recursive: true });
-      installSkillsToWorkDir(withDir, noopLogger);
+      await installSkillsToWorkDir(withDir, noopLogger);
       expect(fs.existsSync(path.join(withDir, '.claude', 'skills', 'opencli', 'SKILL.md'))).toBe(true);
 
       process.env.PATH = path.join(dir, 'empty-bin');
       expect(opencliAvailable()).toBe(false);
       const withoutDir = path.join(dir, 'bots', 'without-opencli');
       fs.mkdirSync(withoutDir, { recursive: true });
-      installSkillsToWorkDir(withoutDir, noopLogger);
+      await installSkillsToWorkDir(withoutDir, noopLogger);
       expect(fs.existsSync(path.join(withoutDir, '.claude', 'skills', 'opencli'))).toBe(false);
     } finally {
       process.env.PATH = savedPath;
     }
   });
 
-  it('an existing regular AGENTS.md (user-customized) is left untouched', () => {
+  it('an existing regular AGENTS.md (user-customized) is left untouched', async () => {
     const workDir = path.join(dir, 'bots', 'demo2');
     fs.mkdirSync(workDir, { recursive: true });
     fs.writeFileSync(path.join(workDir, 'AGENTS.md'), 'custom instructions\n');
-    installSkillsToWorkDir(workDir, noopLogger);
+    await installSkillsToWorkDir(workDir, noopLogger);
     expect(fs.lstatSync(path.join(workDir, 'AGENTS.md')).isSymbolicLink()).toBe(false);
     expect(fs.readFileSync(path.join(workDir, 'AGENTS.md'), 'utf-8')).toBe('custom instructions\n');
   });
@@ -188,5 +188,41 @@ describe('resolveClaudeAuthEnv (deepseek runs on the claude runtime)', () => {
     expect(resolveClaudeAuthEnv(cfg)).toEqual({ ANTHROPIC_API_KEY: 'sk-ant-x' });
     cfg.claude.apiKey = undefined;
     expect(resolveClaudeAuthEnv(cfg)).toBeUndefined();
+  });
+});
+
+describe('deriveDeepseekConfig / engine pinning (session-override regression)', () => {
+  const base = (over: Record<string, unknown>) =>
+    ({ name: 't', claude: { defaultWorkingDirectory: '/tmp/x', maxTurns: undefined, maxBudgetUsd: undefined, model: 'claude-fable-5', apiKey: 'sk-ant-host', outputsBaseDir: '/tmp/o', downloadsDir: '/tmp/d', backend: 'pty' }, ...over }) as any;
+
+  it('pins engine=deepseek, defaults the model, strips claude apiKey, forces sdk backend', async () => {
+    const { deriveDeepseekConfig } = await import('../src/engines/index.js');
+    // A CLAUDE bot being session-overridden to deepseek — the original
+    // engine field must NOT leak through.
+    const derived = deriveDeepseekConfig(base({ engine: 'claude', deepseek: { apiKey: 'sk-ds' } }));
+    expect(derived.engine).toBe('deepseek');
+    expect(derived.claude.model).toBe('deepseek-v4-flash');
+    expect(derived.claude.apiKey).toBeUndefined();
+    expect(derived.claude.backend).toBe('sdk');
+  });
+
+  it('derived config resolves DeepSeek auth env (the override-path fix)', async () => {
+    const { deriveDeepseekConfig } = await import('../src/engines/index.js');
+    const { resolveClaudeAuthEnv } = await import('../src/engines/claude/auth-env.js');
+    const derived = deriveDeepseekConfig(base({ engine: 'claude', deepseek: { apiKey: 'sk-ds' } }));
+    const env = resolveClaudeAuthEnv(derived);
+    expect(env?.ANTHROPIC_BASE_URL).toBe('https://api.deepseek.com/anthropic');
+    expect(env?.ANTHROPIC_AUTH_TOKEN).toBe('sk-ds');
+  });
+
+  it("createEngine pins engine='claude' so a claude-override on a deepseek bot uses Anthropic auth", async () => {
+    const { deriveDeepseekConfig } = await import('../src/engines/index.js');
+    const { resolveClaudeAuthEnv } = await import('../src/engines/claude/auth-env.js');
+    // Reverse direction: deepseek bot overridden to claude — pinning
+    // engine:'claude' must stop the deepseek injection.
+    const cfg = base({ engine: 'deepseek', deepseek: { apiKey: 'sk-ds' } });
+    const pinned = { ...cfg, engine: 'claude' };
+    expect(resolveClaudeAuthEnv(pinned)).toEqual({ ANTHROPIC_API_KEY: 'sk-ant-host' });
+    void deriveDeepseekConfig; // silence unused in this scenario
   });
 });

@@ -420,7 +420,7 @@ export class PersistentClaudeExecutor extends EventEmitter {
       includePartialMessages: true,
       settingSources: ['user', 'project'],
       spawnClaudeCodeProcess: createSpawnFn(this.options.authEnv),
-      pathToClaudeCodeExecutable: CLAUDE_EXECUTABLE,
+      ...(CLAUDE_EXECUTABLE ? { pathToClaudeCodeExecutable: CLAUDE_EXECUTABLE } : {}),
       settings: { teammateMode: 'in-process' },
       agentProgressSummaries: true,
     };
@@ -507,8 +507,16 @@ export class PersistentClaudeExecutor extends EventEmitter {
         model: this.options.model,
         systemPrompt: append ? { type: 'preset', preset: 'claude_code', append } : undefined,
         logger: this.options.logger,
-        pathToClaudeExecutable: CLAUDE_EXECUTABLE,
-        env: this.options.authEnv,
+        // PTY drives a REAL interactive claude binary — required here.
+        pathToClaudeExecutable: (() => {
+          if (!CLAUDE_EXECUTABLE) {
+            throw new Error('PTY backend requires the claude CLI binary (install Claude Code, or set CLAUDE_EXECUTABLE_PATH, or use backend "sdk").');
+          }
+          return CLAUDE_EXECUTABLE;
+        })(),
+        // Carry the 1M-context guard vars computed into queryOptions.env, then
+        // let the per-bot authEnv win on conflicts.
+        env: { ...(queryOptions.env ?? {}), ...(this.options.authEnv ?? {}) },
         onInteractiveTool: (tool) => this.handleInteractiveTool(tool),
       };
       const stream = ptyQuery({
@@ -1111,6 +1119,16 @@ export class PersistentClaudeExecutor extends EventEmitter {
         }
       }
       this.options.logger.info('PersistentExecutor: stream ended cleanly');
+      // A clean end can still strand an in-flight turn (e.g. PTY boot failed
+      // and finished the stream before any result message) — release it so
+      // the bridge's for-await doesn't hang until the idle timeout.
+      if (this.activeTurn) {
+        const turn = this.activeTurn;
+        turn.detached = true;
+        turn.queue.finish();
+        this.activeTurn = null;
+        this.emit('turn-aborted', turn.id);
+      }
       this.transition('closed');
     } catch (err: any) {
       // Distinguish "we asked to shut down" (queue.finish then iterator throws

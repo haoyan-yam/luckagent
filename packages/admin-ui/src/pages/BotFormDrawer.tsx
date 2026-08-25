@@ -159,7 +159,7 @@ export default function BotFormDrawer({
         </Space>
       }
     >
-      <Form form={form} layout="vertical" initialValues={{ engine: 'claude' }}>
+      <Form form={form} layout="vertical" initialValues={editing ? {} : { engine: 'claude' }}>
         <Form.Item
           name="name"
           label="名称"
@@ -223,9 +223,6 @@ export default function BotFormDrawer({
                     </Form.Item>
                     <Form.Item name={['kimi', 'thinking']} label="思考模式" valuePropName="checked">
                       <Switch />
-                    </Form.Item>
-                    <Form.Item name={['kimi', 'apiKey']} label="API Key（留空 = 不修改/用全局）">
-                      <Input.Password />
                     </Form.Item>
                   </>
                 ),

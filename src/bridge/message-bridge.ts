@@ -595,15 +595,23 @@ export class MessageBridge {
         ?? (Number.isFinite(idleEnv) && idleEnv >= 0 ? idleEnv : undefined);
       const maxConcurrent = cfg?.maxConcurrent
         ?? (Number.isFinite(maxEnv) && maxEnv > 0 ? maxEnv : undefined);
+      // Resolve via resolveEngineName (NOT the bare config.engine field) so a
+      // machine-wide LUCKAGENT_ENGINE=deepseek default gets the same auth/
+      // model/backend treatment as an explicit per-bot engine field.
+      const cfgEngine = resolveEngineName(this.config);
+      const effectiveCfg = cfgEngine === 'deepseek' && this.config.engine !== 'deepseek'
+        ? { ...this.config, engine: 'deepseek' as const }
+        : this.config;
       this.persistentRegistry = new ExecutorRegistry({
         logger: this.logger,
         idleTimeoutMs,
         maxConcurrent,
-        defaultAuthEnv: resolveClaudeAuthEnv(this.config),
-        defaultModel: this.config.engine === 'deepseek'
+        defaultAuthEnv: resolveClaudeAuthEnv(effectiveCfg),
+        defaultModel: cfgEngine === 'deepseek'
           ? (this.config.deepseek?.model || DEEPSEEK_DEFAULT_MODEL)
           : this.config.claude.model,
-        backend: this.config.claude.backend,
+        // DeepSeek bots run the SDK backend (PTY needs the claude CLI binary).
+        backend: cfgEngine === 'deepseek' ? 'sdk' : this.config.claude.backend,
       });
       // Stage 3 — every newly added executor gets a spontaneous-activity
       // subscription so teammate / goal / background pings between turns
@@ -1394,9 +1402,14 @@ export class MessageBridge {
     // (maxTurns / allowedTools) aren't plumbed through the persistent path yet,
     // so fall back to legacy spawn when they're present — matches the gating
     // that {@link executeApiTask} previously did inline.
+    // The persistent registry carries ONE fixed authEnv/model per bot, so it
+    // only serves the bot's config-level engine; a session override
+    // (/model deepseek on a claude bot, or vice versa) falls back to the
+    // per-turn engine path where deriveDeepseekConfig handles auth correctly.
     const usePersistent =
       this.isPersistentExecutorEnabled() &&
       (engineName === 'claude' || engineName === 'deepseek') &&
+      engineName === resolveEngineName(this.config) &&
       opts.maxTurns === undefined &&
       opts.allowedTools === undefined;
 

@@ -237,9 +237,27 @@ export async function handleTaskRoutes(
     }
 
     if (cronExpr) {
-      const recurring = scheduler.scheduleRecurring({
-        botName, chatId, prompt, cronExpr, timezone, sendCards, label,
-      });
+      // Same bot + same label duplicates are almost always a double-click or
+      // a stale admin page — reject explicitly instead of silently stacking
+      // two identical digests.
+      if (label) {
+        const dup = scheduler.listRecurringTasks().find(
+          (r) => r.botName === botName && r.label === label && r.status !== 'cancelled',
+        );
+        if (dup) {
+          jsonResponse(res, 409, { error: `已存在同名周期任务（label: ${label}，id: ${dup.id}）——请先修改或删除它`, existingId: dup.id });
+          return true;
+        }
+      }
+      let recurring;
+      try {
+        recurring = scheduler.scheduleRecurring({
+          botName, chatId, prompt, cronExpr, timezone, sendCards, label,
+        });
+      } catch (err: any) {
+        jsonResponse(res, 400, { error: `无效的 cron 表达式或参数: ${err?.message || err}` });
+        return true;
+      }
       jsonResponse(res, 201, {
         id: recurring.id, type: 'recurring', botName: recurring.botName,
         chatId: recurring.chatId, prompt: recurring.prompt, cronExpr: recurring.cronExpr,

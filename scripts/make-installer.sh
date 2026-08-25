@@ -6,12 +6,13 @@
 
 set -euo pipefail
 
-VERSION="${1:-$(node -p "require('./package.json').version" 2>/dev/null || echo 0.1.0)}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
+
+# VERSION 必须在 cd 之后解析——否则从仓库外调用会静默回退 0.1.0
+VERSION="${1:-$(node -p "require('./package.json').version" 2>/dev/null || echo 0.1.0)}"
 OUT_DIR="${LUCKAGENT_DIST_DIR:-$HOME/luckagent-dist}"
 OUT_FILE="$OUT_DIR/luckagent-installer-v${VERSION}.tar.gz"
-
-cd "$REPO_ROOT"
 
 if [[ -n "$(git status --porcelain)" ]]; then
   echo "[WARN] 工作区有未提交改动 —— 它们不会进入安装包（打包基于 git HEAD）。"

@@ -4,6 +4,7 @@ import type * as http from 'node:http';
 import { addBot, removeBot, updateBot, getBotEntry, addPeer, removePeer } from '../bots-config-writer.js';
 import { installSkillsToWorkDir } from '../skills-installer.js';
 import { resolveEngineName } from '../../engines/index.js';
+import { expandUserPath } from '../../config.js';
 import { jsonResponse, parseJsonBody } from './helpers.js';
 import type { RouteContext } from './types.js';
 
@@ -152,9 +153,10 @@ export async function handleBotRoutes(
     }
     // Chat attachments should land inside the workdir by convention
     // (<workDir>/inputs) — write it explicitly so bots.json is self-documenting.
+    const workDirExpanded = expandUserPath(workDirInput);
     const downloadsDir = (typeof body.downloadsDir === 'string' && body.downloadsDir.trim())
-      ? (body.downloadsDir as string).trim()
-      : path.join(workDirInput, 'inputs');
+      ? expandUserPath((body.downloadsDir as string).trim())
+      : path.join(workDirExpanded, 'inputs');
 
     const entry: Record<string, unknown> = {
       name, ...(body.description ? { description: body.description } : {}),
@@ -169,10 +171,14 @@ export async function handleBotRoutes(
       ...(body.model ? { model: body.model } : {}),
       ...(body.groupOnly !== undefined ? { groupOnly: body.groupOnly } : {}),
       ...(body.groupOnlyAllowUsers ? { groupOnlyAllowUsers: body.groupOnlyAllowUsers } : {}),
+      ...(body.groupNoMention !== undefined ? { groupNoMention: body.groupNoMention } : {}),
+      ...(body.budgetLimitDaily ? { budgetLimitDaily: body.budgetLimitDaily } : {}),
+      ...(body.maxConcurrentTasks ? { maxConcurrentTasks: body.maxConcurrentTasks } : {}),
+      ...(body.ttsVoice ? { ttsVoice: body.ttsVoice } : {}),
     };
 
     try {
-      const workDir = body.defaultWorkingDirectory as string;
+      const workDir = workDirExpanded;
       fs.mkdirSync(workDir, { recursive: true });
       fs.mkdirSync(downloadsDir, { recursive: true });
 
@@ -180,7 +186,7 @@ export async function handleBotRoutes(
       logger.info({ name, platform }, 'Bot added to config');
 
       if (body.installSkills) {
-        installSkillsToWorkDir(workDir, logger, {
+        await installSkillsToWorkDir(workDir, logger, {
           platform: 'feishu',
           feishuAppId: appId,
           feishuAppSecret: appSecret,

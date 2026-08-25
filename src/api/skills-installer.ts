@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as url from 'node:url';
-import { execFileSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import type { Logger } from '../utils/logger.js';
 
 /** Skills installed for all bots. */
@@ -46,7 +46,7 @@ export function opencliAvailable(): boolean {
   return false;
 }
 
-export function installSkillsToWorkDir(workDir: string, logger: Logger, options?: InstallSkillsOptions): void {
+export async function installSkillsToWorkDir(workDir: string, logger: Logger, options?: InstallSkillsOptions): Promise<void> {
   const userSkillsDir = path.join(os.homedir(), '.claude', 'skills');
   const destSkillDirs = [
     path.join(workDir, '.claude', 'skills'),
@@ -70,15 +70,15 @@ export function installSkillsToWorkDir(workDir: string, logger: Logger, options?
 
     for (const destSkillsDir of destSkillDirs) {
       const dest = path.join(destSkillsDir, skill);
-      fs.mkdirSync(dest, { recursive: true });
-      fs.cpSync(src, dest, { recursive: true });
+      await fs.promises.mkdir(dest, { recursive: true });
+      await fs.promises.cp(src, dest, { recursive: true });
       logger.info({ skill, src, dest }, 'Skill installed to working directory');
     }
   }
 
   // For Feishu bots, ensure lark-cli has a profile for this app
   if (options?.platform === 'feishu' && options.feishuAppId && options.feishuAppSecret) {
-    ensureLarkCliConfig(options.feishuAppId, options.feishuAppSecret, options.botName, logger);
+    await ensureLarkCliConfig(options.feishuAppId, options.feishuAppSecret, options.botName, logger);
   }
 
   deployWorkspaceInstructions(workDir, logger);
@@ -105,7 +105,28 @@ export function larkCliHasApp(configPath: string, appId: string): boolean {
  * whole config being skipped. Idempotent: skipped when the appId is already
  * present in ~/.lark-cli/config.json. Best-effort: failures only warn.
  */
-function ensureLarkCliConfig(appId: string, appSecret: string, botName: string | undefined, logger: Logger): void {
+/** Run a command with data piped to stdin, async (never blocks the loop). */
+function runWithStdin(bin: string, args: string[], input: string, timeoutMs: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(bin, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      reject(new Error(`timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+    let stderr = '';
+    child.stderr?.on('data', (d) => { stderr += d; });
+    child.on('error', (err) => { clearTimeout(timer); reject(err); });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (code === 0) resolve();
+      else reject(new Error(`exit ${code}: ${stderr.slice(0, 300)}`));
+    });
+    child.stdin?.write(input);
+    child.stdin?.end();
+  });
+}
+
+async function ensureLarkCliConfig(appId: string, appSecret: string, botName: string | undefined, logger: Logger): Promise<void> {
   const configPath = path.join(os.homedir(), '.lark-cli', 'config.json');
   if (larkCliHasApp(configPath, appId)) {
     logger.debug({ appId }, 'lark-cli already has this app, skipping');
@@ -122,11 +143,7 @@ function ensureLarkCliConfig(appId: string, appSecret: string, botName: string |
   const args = ['config', 'init', '--app-id', appId, '--app-secret-stdin', '--brand', 'feishu'];
   if (botName) args.push('--name', botName);
   try {
-    execFileSync(larkCliBin, args, {
-      input: appSecret,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      timeout: 15_000,
-    });
+    await runWithStdin(larkCliBin, args, appSecret, 15_000);
     logger.info({ appId, profile: botName }, 'lark-cli profile configured');
   } catch (err: any) {
     logger.warn(
@@ -225,11 +242,13 @@ function findLarkCli(): string | null {
   for (const c of candidates) {
     if (fs.existsSync(c)) return c;
   }
-  // Try PATH via which
+  // Try PATH via a scan (no subprocess)
   try {
-    const result = execFileSync('which', ['lark-cli'], { stdio: ['pipe', 'pipe', 'pipe'], timeout: 5_000 });
-    const p = result.toString().trim();
-    if (p) return p;
+    for (const dir of (process.env.PATH || '').split(path.delimiter)) {
+      if (!dir) continue;
+      const cand = path.join(dir, 'lark-cli');
+      try { fs.accessSync(cand, fs.constants.X_OK); return cand; } catch { /* next */ }
+    }
   } catch { /* not in PATH */ }
   return null;
 }

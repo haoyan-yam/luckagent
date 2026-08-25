@@ -13,14 +13,18 @@ import { makeCanUseTool } from './exit-plan-mode.js';
 
 const isWindows = process.platform === 'win32';
 
-/** Resolve the Claude Code binary path at module load time. */
-function resolveClaudePath(): string {
+/** Resolve the Claude Code binary path at module load time.
+ *  Returns undefined when no binary is found — the Agent SDK BUNDLES its own
+ *  claude runtime, so forcing a guessed path (the old /usr/local/bin/claude
+ *  fallback) breaks zero-install setups (e.g. DeepSeek-only machines). */
+function resolveClaudePath(): string | undefined {
   if (process.env.CLAUDE_EXECUTABLE_PATH) return process.env.CLAUDE_EXECUTABLE_PATH;
   try {
     const cmd = isWindows ? 'where claude' : 'which claude';
-    return execSync(cmd, { encoding: 'utf-8' }).trim().split(/\r?\n/)[0];
+    const found = execSync(cmd, { encoding: 'utf-8' }).trim().split(/\r?\n/)[0];
+    return found || undefined;
   } catch {
-    return isWindows ? 'claude' : '/usr/local/bin/claude';
+    return undefined;
   }
 }
 
@@ -350,7 +354,7 @@ export class ClaudeExecutor {
       // native Claude binary that's the binary itself; for legacy JS
       // entrypoints it's the Node executable.
       spawnClaudeCodeProcess: createSpawnFn(resolveClaudeAuthEnv(this.config)),
-      pathToClaudeCodeExecutable: CLAUDE_EXECUTABLE,
+      ...(CLAUDE_EXECUTABLE ? { pathToClaudeCodeExecutable: CLAUDE_EXECUTABLE } : {}),
       // Luckagent has no terminal — split-pane (tmux/iTerm2) teammate display
       // doesn't apply. Force in-process so teammates run inside the same
       // session and surface via SDK message origin / TeammateIdle hooks.

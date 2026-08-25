@@ -68,16 +68,33 @@ export function updateBot(configPath: string, name: string, updates: Record<stri
 
   // Merge updates into existing entry (name and platform credentials are immutable)
   const entry = bots[idx] as unknown as Record<string, unknown>;
+  mergeInto(entry, updates);
+  writeBotsConfig(configPath, config);
+  return true;
+}
+
+/**
+ * Merge `updates` into `target` with the ''/null = delete-key convention.
+ * Plain-object values are DEEP-merged instead of overwritten — an engine
+ * sub-block like `deepseek: { model }` arriving without its (masked-and-
+ * stripped) `apiKey` must not wipe the stored secret. Arrays and scalars
+ * replace wholesale.
+ */
+function mergeInto(target: Record<string, unknown>, updates: Record<string, unknown>): void {
   for (const [key, value] of Object.entries(updates)) {
     if (key === 'name' || key === 'platform') continue; // immutable
     if (value === undefined || value === null || value === '') {
-      delete entry[key];
+      delete target[key];
+    } else if (
+      value && typeof value === 'object' && !Array.isArray(value)
+      && target[key] && typeof target[key] === 'object' && !Array.isArray(target[key])
+    ) {
+      mergeInto(target[key] as Record<string, unknown>, value as Record<string, unknown>);
+      if (Object.keys(target[key] as object).length === 0) delete target[key];
     } else {
-      entry[key] = value;
+      target[key] = value;
     }
   }
-  writeBotsConfig(configPath, config);
-  return true;
 }
 
 /**

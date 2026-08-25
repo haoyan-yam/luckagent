@@ -79,7 +79,7 @@ Luckagent 用**一份内容、多个入口**的方式让同一套指令覆盖所
 ## 快速核对清单
 
 ```bash
-luckagent doctor --json     # codex / kimi 相关检查项一目了然
+luckagent doctor --json     # codex 检查项（`codex_cli`；kimi 无独立检查项，认证在 `~/.kimi/config.toml`）一目了然
 ```
 
 | 引擎 | 需要终端做的事 | 其余 |

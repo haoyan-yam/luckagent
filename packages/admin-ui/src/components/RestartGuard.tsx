@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Modal, Spin, Typography } from 'antd';
+import { Button, Modal, Spin, Typography } from 'antd';
 
 /**
  * Full-screen overlay shown after POST /admin/api/restart. Probes the
@@ -33,6 +33,7 @@ export function RestartGuard({ open, onRecovered }: { open: boolean; onRecovered
     };
   }, [open, onRecovered]);
 
+  const stalled = elapsed >= 60;
   return (
     <Modal open={open} footer={null} closable={false} centered>
       <div style={{ textAlign: 'center', padding: 24 }}>
@@ -43,6 +44,15 @@ export function RestartGuard({ open, onRecovered }: { open: boolean; onRecovered
         <Typography.Text type="secondary">
           PM2 将自动拉起新进程（约 5–10 秒），已等待 {elapsed}s
         </Typography.Text>
+        {stalled && (
+          <div style={{ marginTop: 16 }}>
+            <Typography.Paragraph type="warning">
+              等待超过 60 秒——若桥接不是由 PM2 托管（前台运行），重启后不会自动拉起，
+              请在终端手动启动后刷新本页。
+            </Typography.Paragraph>
+            <Button onClick={() => window.location.reload()}>刷新页面</Button>
+          </div>
+        )}
       </div>
     </Modal>
   );

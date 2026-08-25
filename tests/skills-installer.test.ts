@@ -25,7 +25,7 @@ function tempDir(prefix: string): string {
 }
 
 describe('skills installer', () => {
-  it('mirrors bundled skills into Claude and Codex project directories and deploys AGENTS.md', () => {
+  it('mirrors bundled skills into Claude and Codex project directories and deploys AGENTS.md', async () => {
     const priorHome = process.env.HOME;
     const home = tempDir('luckagent-home-');
     const workDir = tempDir('luckagent-work-');
@@ -33,7 +33,7 @@ describe('skills installer', () => {
       process.env.HOME = home;
       mkdirSync(join(home, '.claude/skills'), { recursive: true });
 
-      installSkillsToWorkDir(workDir, logger);
+      await installSkillsToWorkDir(workDir, logger);
 
       // `luckagent` is in the default COMMON_SKILLS list, so its bundled SKILL.md
       // must land in both Claude and Codex project directories.

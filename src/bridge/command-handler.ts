@@ -72,7 +72,7 @@ export class CommandHandler {
           '`/stop` - Abort current running task',
           '`/status` - Show current session info',
           '`/model` - Show current engine/model; `/model list` - Available options',
-          '`/model claude`, `/model kimi`, or `/model codex` - Switch engine (resets session)',
+          '`/model claude`, `/model kimi`, `/model codex`, or `/model deepseek` - Switch engine (resets session)',
           '`/model <name>` - Set model for current engine',
           '`/effort low|medium|high|xhigh` - Set Codex reasoning effort for this chat',
           '`/resume` - List & switch to a previous Claude session (Claude only)',
@@ -349,7 +349,7 @@ export class CommandHandler {
         '',
         'Usage:',
         '- `/model list` — Show available engines + models',
-        '- `/model claude`, `/model kimi`, or `/model codex` — Switch engine (resets session)',
+        '- `/model claude`, `/model kimi`, `/model codex`, or `/model deepseek` — Switch engine (resets session)',
         `- \`/model <name>\` — Set session model (e.g. ${exampleModels})`,
         '- `/model reset` — Clear overrides, use bot defaults',
       ];

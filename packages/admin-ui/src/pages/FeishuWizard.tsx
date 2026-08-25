@@ -56,6 +56,9 @@ export default function FeishuWizard({
         setTestPassed(false);
         message.error(`验证失败：${r.msg}（code ${r.feishuCode ?? 'n/a'}）`);
       }
+    } catch (err: any) {
+      setTestPassed(false);
+      message.error(err?.message || '测试请求失败，请确认桥接在运行');
     } finally {
       setTesting(false);
     }

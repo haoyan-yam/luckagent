@@ -223,3 +223,36 @@ describe('updateBot clear semantics (whitelist can be emptied from the UI)', () 
     expect(entry.groupOnly).toBe(true);
   });
 });
+
+describe('updateBot deep-merges nested engine blocks (masked-secret survival)', () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'la-merge-'));
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('a nested block arriving without its stripped apiKey keeps the stored secret', () => {
+    const cfgPath = path.join(dir, 'bots.json');
+    fs.writeFileSync(cfgPath, JSON.stringify({ feishuBots: [] }));
+    addBot(cfgPath, 'feishu', {
+      name: 'ds', feishuAppId: 'cli_x', feishuAppSecret: 's',
+      defaultWorkingDirectory: '/tmp/ds', engine: 'deepseek',
+      deepseek: { apiKey: 'sk-ds-real', model: 'deepseek-v4-flash' },
+    } as any);
+
+    // UI edit: description changed; deepseek block re-sent WITHOUT apiKey
+    // (mask stripped client-side) but WITH its sibling model field.
+    updateBot(cfgPath, 'ds', { description: 'x', deepseek: { model: 'deepseek-v4-pro' } });
+    const entry = readBotsConfig(cfgPath).feishuBots![0] as any;
+    expect(entry.deepseek.apiKey).toBe('sk-ds-real');   // survived
+    expect(entry.deepseek.model).toBe('deepseek-v4-pro'); // updated
+
+    // Nested '' still deletes that one key only.
+    updateBot(cfgPath, 'ds', { deepseek: { model: '' } });
+    const entry2 = readBotsConfig(cfgPath).feishuBots![0] as any;
+    expect(entry2.deepseek.model).toBeUndefined();
+    expect(entry2.deepseek.apiKey).toBe('sk-ds-real');
+  });
+});

@@ -56,14 +56,15 @@ cd ~/luckagent
 bash install.sh
 ```
 
-安装脚本会依次做这些事，**其中三处需要你配合**：
+安装脚本会依次做这些事，**其中四处需要你配合**：
 
 | 阶段 | 会发生什么 | 需要你做什么 |
 | --- | --- | --- |
 | Homebrew | 全新机器会先装 Homebrew，并自动带出 **Xcode 命令行工具**下载 | 弹窗点「安装」、终端里**输入开机密码**；CLT 下载约 5–15 分钟，耐心等 |
 | node@22 / git / pm2 | 自动安装 | 无 |
+| Claude Code CLI | 询问「现在安装 Claude Code CLI？」 | 回答 y/n（走订阅登录路线就装；只用 API key / DeepSeek 可跳过） |
 | npm install + 构建 | 下载依赖并本地编译原生模块，几分钟 | 无 |
-| 生成 `.env` | 自动生成随机 `API_SECRET`（管理台登录密钥） | 会依次询问 `ANTHROPIC_API_KEY`（Claude 认证）和 OpenAI key（生图技能），都可回车跳过、之后编辑 `.env` 补填 |
+| 生成 `.env` | 自动生成随机 `API_SECRET`（管理台登录密钥） | 会依次询问 `ANTHROPIC_API_KEY`（Claude 认证）和生图 key（OpenAI `sk-` 或火山 `ark-` 前缀自动识别），都可回车跳过、之后编辑 `.env` 补填 |
 | 生成 `bots.json` | 空列表——机器人稍后用管理台向导创建 | 无 |
 | lark-cli（必装） | 自动安装飞书官方 CLI + 19 个 AI 技能（文档/表格/日历操作、群日报拉消息都依赖它） | 无；万一安装失败，结尾会打印待办命令 |
 | PM2 启动 | 启动 `luckagent-bridge` + `luckagent-core` 两个常驻进程 | 无 |
@@ -139,6 +140,10 @@ pm2 startup
 pm2 save
 ```
 
+> **无头 Mac mini 注意**：pm2 的 launchd 方案是**登录级**的——用户登录后才拉起。
+> 不接显示器远程使用的机器，请在「系统设置 → 用户与群组」为该账户开启**自动登录**，
+> 否则重启后进程不会自动启动。
+
 验证：重启 Mac mini，等 1 分钟后跑 `luckagent status`，两个进程应为 `online`。
 
 ---
@@ -148,7 +153,7 @@ pm2 save
 ```bash
 luckagent status          # luckagent-bridge / luckagent-core 均 online
 luckagent health          # {"status":"ok",...}
-luckagent doctor --json   # 全面体检（bridge/core/bots/引擎逐项检查）
+luckagent doctor --json   # 本机体检（runtime/PM2/core/bots/voice/codex 等检查项）
 ```
 
 - 管理台「系统总览」：桥接与 core 均绿色，机器人显示「运行中」
@@ -170,8 +175,10 @@ luckagent doctor --json   # 全面体检（bridge/core/bots/引擎逐项检查�
 
 详细说明见 [docs/directory-layout.md](docs/directory-layout.md)。
 
-> **可选增强**：安装 opencli（网站自动化工具）等第三方二进制后跑一次 `luckagent update`，
-> 对应技能会自动启用；添加自定义技能见 [docs/claude-code-skills.md](docs/claude-code-skills.md)。
+> **可选增强**：安装 opencli（网站自动化工具）等第三方二进制后，重跑一次 `bash install.sh`
+>（幂等，几十秒），对应技能会自动启用；添加自定义技能见 [docs/claude-code-skills.md](docs/claude-code-skills.md)。
+>
+> **升级 Luckagent**：下载新版安装包 → 解开覆盖到 `~/luckagent/` → 重跑 `bash install.sh`。
 
 ---
 
@@ -195,7 +202,7 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
 **机器人显示「未运行/启动失败」**
 - 管理台里对该机器人点「测试连接」——凭证错误会直接给出飞书错误码
 - 常见原因：应用没发布版本、「机器人」能力没开、长连接事件没配
-- `luckagent doctor --json` 里 `bots` 一项有逐 bot 诊断
+- `luckagent doctor --json` 里 `bots_config` 一项有逐 bot 诊断
 
 **终端里手工调飞书接口失败 / 循环重定向**
 本机 shell 若设了 `HTTPS_PROXY`，代理可能劫持飞书域名。手工执行时用：

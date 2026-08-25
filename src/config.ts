@@ -72,7 +72,7 @@ export interface BotConfigBase {
    * the bridge re-asserts it on every bulk-register.
    */
   memoryPublic?: boolean;
-  /** Agent engine. Defaults to 'codex' unless LUCKAGENT_ENGINE or bots.json overrides it. */
+  /** Agent engine. Defaults to 'claude' unless LUCKAGENT_ENGINE or bots.json overrides it. */
   engine?: EngineName;
   claude: {
     defaultWorkingDirectory: string;
@@ -111,7 +111,7 @@ export interface BotConfigBase {
   /** Codex-specific overrides. Populated only when engine === 'codex'. */
   codex?: CodexBotConfig;
   /**
-   * DeepSeek-specific overrides. Populated only when engine === 'deepseek'.
+   * DeepSeek-specific overrides. Populated from DEEPSEEK_* env / bot config whenever present (used only when the effective engine is deepseek).
    * DeepSeek runs through the Claude engine pointed at DeepSeek's official
    * Anthropic-compatible endpoint — no extra CLI needed, only an API key.
    */
@@ -124,7 +124,8 @@ export interface BotConfigBase {
     baseUrl?: string;
   };
   /**
-   * Stage 4 — opt-in to the persistent Claude process pool. When enabled,
+   * Stage 4 — the persistent Claude process pool (DEFAULT ON; env/bot config
+   * can force it off). When enabled,
    * each chatId is backed by a long-lived Claude Code process (managed by
    * ExecutorRegistry) instead of spawning a fresh process per turn.
    *
@@ -134,7 +135,7 @@ export interface BotConfigBase {
    *   - /background tasks and agentProgressSummaries actually persist
    *
    * Per-bot field overrides the global LUCKAGENT_PERSISTENT_EXECUTOR env var
-   * (true here forces on, false here forces off). Only applies when the
+   * (true here forces on, false here forces off). Applies when the effective
    * bot's engine is 'claude'.
    */
   persistentExecutor?: {
@@ -368,7 +369,7 @@ function buildClaudeConfig(entry: {
     outputsBaseDir: entry.outputsBaseDir || process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `luckagent-outputs-${os.userInfo().username}`),
     // Convention: chat attachments land in <workDir>/inputs (persistent),
     // matching the workspace rules in src/workspace/PROJECTS-CLAUDE.md.
-    downloadsDir: entry.downloadsDir || process.env.DOWNLOADS_DIR || path.join(expandUserPath(entry.defaultWorkingDirectory), 'inputs'),
+    downloadsDir: expandUserPath(entry.downloadsDir || process.env.DOWNLOADS_DIR || path.join(expandUserPath(entry.defaultWorkingDirectory), 'inputs')),
   };
 }
 

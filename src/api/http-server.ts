@@ -117,7 +117,21 @@ export function startApiServer(options: ApiServerOptions): http.Server {
   const { port, secret, registry, scheduler, logger, botsConfigPath, docSync, feishuServiceClient, peerManager } = options;
   // Always bind loopback by default; exposing to the network requires an
   // explicit opt-in via LUCKAGENT_API_HOST (e.g. 0.0.0.0) AND a secret set.
-  const host = process.env.LUCKAGENT_API_HOST?.trim() || '127.0.0.1';
+  // The AND is ENFORCED here: without a secret the auth gate below is a
+  // no-op, so binding a non-loopback address would hand unauthenticated
+  // agent execution (/api/talk) and the admin API to the whole network.
+  let host = process.env.LUCKAGENT_API_HOST?.trim() || '127.0.0.1';
+  const isLoopback = host === '127.0.0.1' || host === 'localhost' || host === '::1';
+  if (!secret && !isLoopback) {
+    logger.error(
+      { requestedHost: host },
+      'LUCKAGENT_API_HOST requests a non-loopback bind but API_SECRET is empty — refusing to expose an unauthenticated API; falling back to 127.0.0.1. Set API_SECRET to expose.',
+    );
+    host = '127.0.0.1';
+  }
+  if (!secret) {
+    logger.warn('API_SECRET is empty — the HTTP API and admin console run WITHOUT authentication (loopback only). Set API_SECRET in .env.');
+  }
 
   // Initialize shared services
   const asyncTaskStore = new AsyncTaskStore();
@@ -241,12 +255,10 @@ export function startApiServer(options: ApiServerOptions): http.Server {
       const bearer = typeof auth === 'string' && /^Bearer\s+/i.test(auth)
         ? auth.replace(/^Bearer\s+/i, '')
         : undefined;
-      const urlToken = url.includes('token=')
-        ? new URL(url, `http://${req.headers.host || 'localhost'}`).searchParams.get('token')
-        : null;
       // Timing-safe comparison so the secret can't be recovered byte-by-byte.
-      const localOk = timingSafeStrEqual(bearer, secret)
-        || timingSafeStrEqual(urlToken, secret);
+      // (Query-string tokens are deliberately NOT accepted — URLs end up in
+      // logs and proxies; the Authorization header is the only channel.)
+      const localOk = timingSafeStrEqual(bearer, secret);
 
       const rejectUnauthorized = () => {
         // Count this as a failed auth attempt; trips the per-IP lockout once the

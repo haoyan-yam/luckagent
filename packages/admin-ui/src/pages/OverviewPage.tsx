@@ -67,6 +67,9 @@ export default function OverviewPage({
 
   return (
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
+      {data?.configError && (
+        <Alert type="error" banner message={`配置文件异常：${data.configError} —— 下方机器人列表可能不完整，请勿据此判断“尚未配置”。`} />
+      )}
       {failCount >= 2 && (
         <Alert type="error" banner message={`桥接连接中断（${error || '轮询失败'}）——若刚触发重启属正常，恢复后自动消失。`} />
       )}

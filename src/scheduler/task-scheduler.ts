@@ -218,6 +218,16 @@ export class TaskScheduler {
   }
 
   updateRecurring(id: string, input: RecurringUpdateInput): RecurringTask | null {
+    // Validate the CANDIDATE cron/timezone BEFORE touching timers or state —
+    // a bad timezone must fail the request, not strand the task timer-less.
+    {
+      const t0 = this.recurringTasks.get(id);
+      if (t0) {
+        const candCron = input.cronExpr ?? t0.cronExpr;
+        const candTz = input.timezone ?? t0.timezone;
+        nextCronOccurrence(candCron, candTz); // throws on invalid input
+      }
+    }
     const recurring = this.recurringTasks.get(id);
     if (!recurring || recurring.status === 'cancelled') return null;
 
@@ -489,7 +499,9 @@ export class TaskScheduler {
         tasks,
         recurringTasks: Array.from(this.recurringTasks.values()),
       };
-      fs.writeFileSync(PERSIST_FILE, JSON.stringify(data, null, 2));
+      const tmp = `${PERSIST_FILE}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
+      fs.renameSync(tmp, PERSIST_FILE);
     } catch (err) {
       this.logger.error({ err }, 'Failed to save scheduled tasks to disk');
     }

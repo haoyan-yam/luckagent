@@ -22,30 +22,45 @@ export function createEngine(
   const name = override ?? resolveEngineName(config);
   switch (name) {
     case 'claude':
-      return new ClaudeEngine(config, logger);
+      // Pin the engine field to the RESOLVED name: a session override
+      // (/model claude on a deepseek bot) must not inherit the bot-level
+      // engine field, or auth-env resolution would inject the wrong backend.
+      return new ClaudeEngine({ ...config, engine: 'claude' }, logger);
     case 'kimi':
       return new KimiEngine(config, logger);
     case 'codex':
       return new CodexEngine(config, logger);
-    case 'deepseek': {
-      // DeepSeek = Claude engine + DeepSeek's Anthropic-compatible endpoint.
-      // Derive a config whose claude.model defaults to the DeepSeek model;
-      // credentials/baseUrl are injected per-spawn via resolveClaudeAuthEnv.
-      const derived: BotConfigBase = {
-        ...config,
-        claude: {
-          ...config.claude,
-          model: config.deepseek?.model || DEEPSEEK_DEFAULT_MODEL,
-          apiKey: undefined,
-        },
-      };
-      return new ClaudeEngine(derived, logger);
-    }
+    case 'deepseek':
+      return new ClaudeEngine(deriveDeepseekConfig(config), logger);
     default: {
       const _exhaustive: never = name;
       throw new Error(`Unknown engine: ${_exhaustive}`);
     }
   }
+}
+
+/**
+ * DeepSeek = Claude engine + DeepSeek's Anthropic-compatible endpoint.
+ * Derivation rules (exported for tests):
+ *  - engine pinned to 'deepseek' (session overrides must not inherit the
+ *    bot-level engine field — auth-env resolution keys off it);
+ *  - claude.model defaults to the DeepSeek model;
+ *  - backend forced to 'sdk': the PTY backend spawns the `claude` CLI binary,
+ *    which a zero-install DeepSeek machine doesn't have (and PTY's
+ *    subscription-billing rationale doesn't apply to DeepSeek);
+ *  - credentials/baseUrl are injected per-spawn via resolveClaudeAuthEnv.
+ */
+export function deriveDeepseekConfig(config: BotConfigBase): BotConfigBase {
+  return {
+    ...config,
+    engine: 'deepseek',
+    claude: {
+      ...config.claude,
+      model: config.deepseek?.model || DEEPSEEK_DEFAULT_MODEL,
+      apiKey: undefined,
+      backend: 'sdk',
+    },
+  };
 }
 
 /** Resolve the default engine for a bot config (no session override). */

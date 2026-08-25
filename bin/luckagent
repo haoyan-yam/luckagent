@@ -15,7 +15,7 @@ if [[ -z "${LUCKAGENT_HOME:-}" ]]; then
     _src="$(readlink -f "$_src" 2>/dev/null || echo "$_src")"
   fi
   _sd="$(cd "$(dirname "$_src")/.." 2>/dev/null && pwd)" || _sd=""
-  if [[ -n "$_sd" && -d "$_sd/.git" && -f "$_sd/package.json" ]]; then
+  if [[ -n "$_sd" && -f "$_sd/package.json" && -f "$_sd/ecosystem.config.cjs" ]]; then
     LUCKAGENT_HOME="$_sd"
   else
     LUCKAGENT_HOME="$HOME/luckagent"
@@ -37,26 +37,41 @@ error()   { echo -e "${RED}[ERROR]${NC} $*"; }
 # --- Bridge daemon API config (Category 2): env vars > .env file > defaults ---
 # Read API_PORT / API_SECRET / LUCKAGENT_URL from $LUCKAGENT_HOME/.env without
 # clobbering values already exported in the environment.
+_env_val() {  # _env_val KEY FILE — last assignment wins, quotes stripped (dotenv-like)
+  grep -E "^$1=" "$2" 2>/dev/null | tail -1 | cut -d= -f2- \
+    | sed -e 's/[[:space:]]*#.*$//' -e 's/^["'"'"']//' -e 's/["'"'"']$//' -e 's/[[:space:]]*$//'
+}
+
 _load_bridge_api_config() {
   local envf="$LUCKAGENT_HOME/.env"
   if [[ -f "$envf" ]]; then
-    _api_port=$(sed -n 's/^API_PORT=//p' "$envf" 2>/dev/null || true)
-    _api_secret=$(sed -n 's/^API_SECRET=//p' "$envf" 2>/dev/null || true)
-    _api_url=$(sed -n 's/^LUCKAGENT_URL=//p' "$envf" 2>/dev/null || true)
+    _api_port=$(_env_val API_PORT "$envf" || true)
+    _api_secret=$(_env_val API_SECRET "$envf" || true)
+    _api_url=$(_env_val LUCKAGENT_URL "$envf" || true)
   fi
   LUCKAGENT_URL="${LUCKAGENT_URL:-${_api_url:-http://localhost:${_api_port:-9100}}}"
   _api_secret="${API_SECRET:-${_api_secret:-changeme}}"
   LUCKAGENT_AUTH="Authorization: Bearer $_api_secret"
 }
 
-_json() { python3 -m json.tool 2>/dev/null || cat; }
+_json() {
+  local body
+  body="$(cat)"
+  if [[ -z "$body" ]]; then
+    error "桥接无响应（空回复）——先 luckagent status 确认 luckagent-bridge 在线"
+    return 1
+  fi
+  printf '%s' "$body" | python3 -m json.tool 2>/dev/null || printf '%s\n' "$body"
+}
 
 cmd_update() {
   # Single update path: git pull + rebuild + skill sync + pm2 restart.
 if [[ ! -d "$LUCKAGENT_HOME/.git" ]]; then
-    error "Git update requested, but $LUCKAGENT_HOME is not a git checkout."
-    echo "  Use the default package refresh instead:"
-    echo "    luckagent update"
+    error "$LUCKAGENT_HOME 不是 git 检出（安装包方式安装的没有 .git）。"
+    echo "  安装包升级方法："
+    echo "    1. 下载并解开新版安装包，覆盖到 $LUCKAGENT_HOME/"
+    echo "       tar -xzf luckagent-<新版本>.tar.gz && cp -R luckagent/. $LUCKAGENT_HOME/"
+    echo "    2. cd $LUCKAGENT_HOME && bash install.sh   # 幂等，重跑即完成依赖安装/构建/重启"
     exit 1
   fi
 
@@ -139,12 +154,16 @@ if [[ ! -d "$LUCKAGENT_HOME/.git" ]]; then
   # Phase 4 consolidation: `metamemory` and `skill-hub` skill bundles are
   # subsumed by the unified `luckagent` skill (which delegates memory/skills/
   # agents to the luckagent-core feature CLI). luckagent-team is the compact
-  for skill in luckagent voice luckagent-team image-gen; do
+  local update_skills="luckagent voice luckagent-team image-gen"
+  # opencli 技能与安装器同一条件：检测到二进制才启用
+  command -v opencli &>/dev/null && update_skills="$update_skills opencli"
+  for skill in $update_skills; do
     case "$skill" in
       luckagent)      src="$LUCKAGENT_HOME/packages/skills/luckagent" ;;
       voice)        src="$LUCKAGENT_HOME/src/skills/voice" ;;
       luckagent-team) src="$LUCKAGENT_HOME/src/skills/luckagent-team" ;;
       image-gen) src="$LUCKAGENT_HOME/src/skills/image-gen" ;;
+      opencli)   src="$LUCKAGENT_HOME/src/skills/opencli" ;;
       *)            src="" ;;
     esac
     if [[ -n "$src" && -d "$src" ]]; then
@@ -210,13 +229,16 @@ if [[ ! -d "$LUCKAGENT_HOME/.git" ]]; then
 
   # Update workspace skills if bots.json exists
   if [[ -f "$LUCKAGENT_HOME/bots.json" ]] && command -v node &>/dev/null; then
-    local work_dir
-    work_dir=$(node -e "
-      const c=JSON.parse(require('fs').readFileSync('$LUCKAGENT_HOME/bots.json','utf-8'));
-      const b=[...(c.feishuBots||[])];
-      if(b[0])console.log(b[0].defaultWorkingDirectory);
-    " 2>/dev/null || true)
-    if [[ -n "$work_dir" ]]; then
+    local work_dirs work_dir
+    work_dirs=$(node -e '
+      const c=JSON.parse(require("fs").readFileSync(process.argv[1],"utf-8"));
+      const seen=new Set();
+      for(const b of (c.feishuBots||[])){
+        const d=b.defaultWorkingDirectory;
+        if(d&&!seen.has(d)){seen.add(d);console.log(d);}
+      }' "$LUCKAGENT_HOME/bots.json" 2>/dev/null || true)
+    while IFS= read -r work_dir; do
+      [[ -z "$work_dir" ]] && continue
       local ws_skills_dir="$work_dir/.claude/skills"
       local ws_codex_skills_dir="$work_dir/.codex/skills"
       mkdir -p "$ws_skills_dir" "$ws_codex_skills_dir"
@@ -257,8 +279,8 @@ if [[ ! -d "$LUCKAGENT_HOME/.git" ]]; then
           ln -s CLAUDE.md "$work_dir/AGENTS.md" 2>/dev/null || cp "$work_dir/CLAUDE.md" "$work_dir/AGENTS.md"
         fi
       fi
-      success "Workspace skills updated"
-    fi
+      success "Workspace skills updated: $work_dir"
+    done <<< "$work_dirs"
   fi
 
   info "Restarting Luckagent..."
@@ -298,10 +320,15 @@ cmd_restart() {
   esac
 }
 cmd_logs()    {
-  case "${1:-}" in
-    --core) shift; pm2 logs luckagent-core "${@}" ;;
-    *)      pm2 logs luckagent-bridge "${@}" ;;
-  esac
+  local target="luckagent-bridge" args=()
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --core) target="luckagent-core"; shift ;;
+      -n)     args+=("--lines" "${2:-15}"); shift 2 ;;  # pm2 的全局 -n 是 --name，别名翻译
+      *)      args+=("$1"); shift ;;
+    esac
+  done
+  pm2 logs "$target" ${args[@]+"${args[@]}"}
 }
 cmd_status()  { pm2 ls | grep -E "luckagent|App name|─" || pm2 ls; }
 
@@ -469,7 +496,7 @@ if bots_path.exists():
             bots_data.append({
                 "name": b.get("name"),
                 "platform": platform,
-                "engine": b.get("engine", "codex"),
+                "engine": b.get("engine", "claude"),
                 "workingDirectory": wd,
                 "workingDirectoryExists": bool(wd and Path(wd).expanduser().exists()),
                 "voiceReplyEnabled": voice.get("enabled"),
@@ -478,8 +505,8 @@ if bots_path.exists():
         bots_data.append({"parseError": str(e)})
 bots_ok = bool(bots_data) and not any("parseError" in b for b in bots_data)
 check("bots_config", bots_ok, "bots_config_missing_or_invalid" if not bots_ok else "ok",
-      "bots.json parsed." if bots_ok else "bots.json missing, empty, or invalid.",
-      "Create/fix bots.json or run install.sh.",
+      "bots.json parsed." if bots_ok else "bots.json missing/invalid, or has no bots yet (normal on a fresh install).",
+      "Add a bot via the admin console (飞书接入向导) or fix bots.json.",
       False,
       {"bots": bots_data})
 
@@ -490,10 +517,12 @@ voice_default = {
     "hasVolcengineAccessKey": bool(env("VOLCENGINE_TTS_ACCESS_KEY")),
     "hasOpenAIKey": bool(env("OPENAI_API_KEY")),
 }
-voice_ok = bool(voice_default["provider"] or voice_default["hasVolcengineAppId"] or voice_default["hasOpenAIKey"])
-check("voice_defaults", voice_ok, "voice_defaults_missing" if not voice_ok else "ok",
-      "Voice/TTS defaults appear configured." if voice_ok else "No voice/TTS defaults found.",
-      "Install package default env or configure VOLCENGINE_TTS_* / OPENAI_API_KEY and bot voiceReply.",
+voice_configured = bool(voice_default["provider"] or voice_default["hasVolcengineAppId"] or voice_default["hasOpenAIKey"])
+# Zero config is a fully working state: voice replies fall back to free Edge
+# TTS. Report info, never warn, so fresh installs stay clean.
+check("voice_defaults", True, "ok",
+      "Voice/TTS provider configured." if voice_configured else "No paid TTS configured — voice replies use free Edge TTS (works out of the box).",
+      "Optional: configure VOLCENGINE_TTS_* / OPENAI_API_KEY for higher-quality voices.",
       False,
       voice_default)
 

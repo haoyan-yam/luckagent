@@ -56,12 +56,28 @@ if [[ "$NO_SYSTEM" != "true" ]]; then
 
   # Homebrew（安装过程会自动带出 Xcode Command Line Tools，需要输入密码，
   # CLT 下载可能要 5–15 分钟）
+  # 把一行 PATH 设置持久化进 ~/.zprofile（幂等：已有同行则跳过）
+  _persist_zprofile() {
+    local line="$1" f="$HOME/.zprofile"
+    touch "$f"
+    grep -qxF "$line" "$f" 2>/dev/null || { echo "$line" >> "$f"; info "已写入 ~/.zprofile: $line"; }
+  }
+
   if ! command -v brew &>/dev/null && [[ "$(uname -s)" == "Darwin" ]]; then
     info "未检测到 Homebrew，开始安装（会提示输入开机密码）..."
-    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" \
-      || { error "Homebrew 安装失败。手动安装后重跑：https://brew.sh"; exit 1; }
+    if [[ "$YES" == "true" ]]; then
+      NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" \
+        || { error "Homebrew 安装失败。手动安装后重跑：https://brew.sh"; exit 1; }
+    else
+      /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" \
+        || { error "Homebrew 安装失败。手动安装后重跑：https://brew.sh"; exit 1; }
+    fi
     # Apple Silicon 默认装在 /opt/homebrew，本 shell 里先接上
     if [[ -x /opt/homebrew/bin/brew ]]; then eval "$(/opt/homebrew/bin/brew shellenv)"; fi
+  fi
+  # 新终端也要能找到 brew（curl|bash 安装器不写 /etc/paths.d）
+  if [[ -x /opt/homebrew/bin/brew ]]; then
+    _persist_zprofile 'eval "$(/opt/homebrew/bin/brew shellenv)"'
   fi
 
   # node >= 22
@@ -70,8 +86,12 @@ if [[ "$NO_SYSTEM" != "true" ]]; then
   if (( node_major < 22 )); then
     info "安装 node@22 ..."
     brew install node@22 || { error "node 安装失败。手动执行: brew install node@22"; exit 1; }
-    brew link --overwrite node@22 2>/dev/null || true
-    if [[ -d /opt/homebrew/opt/node@22/bin ]]; then export PATH="/opt/homebrew/opt/node@22/bin:$PATH"; fi
+    # node@22 是 keg-only：不带 --force 的 link 必失败（会被静默吞掉）
+    brew link --overwrite --force node@22 2>/dev/null || true
+    if [[ -d /opt/homebrew/opt/node@22/bin ]]; then
+      export PATH="/opt/homebrew/opt/node@22/bin:$PATH"
+      _persist_zprofile 'export PATH="/opt/homebrew/opt/node@22/bin:$PATH"'
+    fi
   fi
   success "node $(node -v)"
 
@@ -79,7 +99,9 @@ if [[ "$NO_SYSTEM" != "true" ]]; then
 
   if ! command -v pm2 &>/dev/null; then
     info "安装 pm2（进程守护）..."
-    npm install -g pm2 || { error "pm2 安装失败。手动执行: npm install -g pm2"; exit 1; }
+    npm install -g pm2 \
+      || { npm install -g --prefix "$HOME/.local" pm2 && export PATH="$HOME/.local/bin:$PATH"; } \
+      || { error "pm2 安装失败。手动执行: npm install -g pm2"; exit 1; }
   fi
   success "pm2 $(pm2 -v 2>/dev/null || echo '?')"
 else
@@ -99,7 +121,7 @@ echo "    Codex CLI         $(_mark codex)    （可选引擎；装法与登录�
 echo "    Kimi CLI          $(_mark kimi)    （可选引擎；装法与登录见 docs/engines.md）"
 echo "    DeepSeek          无需装 CLI    （可选引擎；只要 API key，见下方申请入口）"
 echo "  增强工具:"
-echo "    opencli           $(_mark opencli)    （网站自动化；检测到即自动启用其技能，之后安装的话跑一次 luckagent update 生效）"
+echo "    opencli           $(_mark opencli)    （网站自动化；检测到即自动启用其技能，之后安装的话重跑一次 bash install.sh 生效）"
 echo "    lark-cli          $(_mark lark-cli)    （必备，稍后自动安装）"
 echo "  需要申请的 key（安装中可粘贴，也可之后编辑 .env）:"
 echo "    Claude API:  https://console.anthropic.com  → ANTHROPIC_API_KEY"
@@ -192,7 +214,12 @@ fi
 
 # ---- CLI 入口 ----
 mkdir -p "$HOME/.local/bin"
-cp bin/luckagent "$HOME/.local/bin/luckagent" && chmod +x "$HOME/.local/bin/luckagent"
+if [[ -e "$HOME/.local/bin/luckagent" && bin/luckagent -ef "$HOME/.local/bin/luckagent" ]]; then
+  info "CLI 已是同一文件（符号链接），跳过拷贝"
+else
+  cp bin/luckagent "$HOME/.local/bin/luckagent"
+fi
+chmod +x "$HOME/.local/bin/luckagent"
 success "CLI 已安装: ~/.local/bin/luckagent"
 case ":$PATH:" in
   *":$HOME/.local/bin:"*) ;;
@@ -232,12 +259,12 @@ LARK_CLI_TODO=""
 if [[ "$NO_SYSTEM" != "true" ]]; then
   if ! command -v lark-cli &>/dev/null; then
     info "安装 lark-cli（飞书官方 CLI，Luckagent 必备组件）..."
-    npm install -g @larksuite/cli       || npm install -g --prefix "$HOME/.local" @larksuite/cli       || { error "lark-cli 安装失败——群日报/文档操作等能力不可用"; LARK_CLI_TODO="npm install -g @larksuite/cli && npx skills add larksuite/cli --all -y -g"; }
+    npm install -g @larksuite/cli       || { npm install -g --prefix "$HOME/.local" @larksuite/cli && export PATH="$HOME/.local/bin:$PATH"; }       || { error "lark-cli 安装失败——群日报/文档操作等能力不可用"; LARK_CLI_TODO="npm install -g @larksuite/cli && npx -y skills add larksuite/cli --all -y -g"; }
   fi
   if command -v lark-cli &>/dev/null; then
     success "lark-cli $(lark-cli --version 2>/dev/null || echo '已安装')"
     info "安装 lark-cli AI Agent 技能（19 个）..."
-    npx skills add larksuite/cli --all -y -g 2>/dev/null && success "lark 技能已装"       || { warn "lark 技能安装失败"; LARK_CLI_TODO="npx skills add larksuite/cli --all -y -g"; }
+    npx -y skills add larksuite/cli --all -y -g 2>/dev/null && success "lark 技能已装"       || { warn "lark 技能安装失败"; LARK_CLI_TODO="npx -y skills add larksuite/cli --all -y -g"; }
   fi
 else
   command -v lark-cli &>/dev/null || warn "--no-system：跳过 lark-cli 安装，但它是必备组件——正式环境请确保已装（npm i -g @larksuite/cli）"
@@ -307,7 +334,7 @@ if [[ -n "$LARK_CLI_TODO" ]]; then
 fi
 echo "  可选能力（编辑 .env 填 key 后 luckagent restart 生效）:"
 echo "     生图: OPENAI_IMAGE_API_KEY 或 火山 ARK_API_KEY（Seedream）   语音TTS: VOLCENGINE_TTS_*（不填则用免费 Edge TTS）"
-echo "  可选增强: 安装 opencli（网站自动化）后跑一次 luckagent update，其技能自动启用；"
+echo "  可选增强: 安装 opencli（网站自动化）后重跑一次 bash install.sh，其技能自动启用；"
 echo "     要用 Codex / Kimi 引擎: 装对应 CLI 并登录，见 docs/engines.md"
 echo ""
 echo "  常用命令:  luckagent status | logs | restart | doctor --json | help"

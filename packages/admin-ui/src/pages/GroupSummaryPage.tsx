@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Button,
@@ -64,17 +64,21 @@ export default function GroupSummaryPage() {
     if (!bot && botNames.length) setBot(botNames[0]);
   }, [bot, botNames]);
 
+  const loadSeq = useRef(0);
   const loadChats = useCallback(async (botName: string) => {
+    const seq = ++loadSeq.current;
     setLoadingChats(true);
     setChatsError(null);
     try {
       const r = await api.get<{ chats: Chat[] }>(`/admin/api/feishu/chats?bot=${encodeURIComponent(botName)}`);
-      setChats(r.chats);
+      if (seq === loadSeq.current) setChats(r.chats);
     } catch (err: any) {
-      setChats([]);
-      setChatsError(err?.message || '拉取群列表失败');
+      if (seq === loadSeq.current) {
+        setChats([]);
+        setChatsError(err?.message || '拉取群列表失败');
+      }
     } finally {
-      setLoadingChats(false);
+      if (seq === loadSeq.current) setLoadingChats(false);
     }
   }, []);
 
@@ -82,22 +86,30 @@ export default function GroupSummaryPage() {
     setChats([]);
     setExcluded([]);
     if (!bot) return;
+    let cancelled = false;
     void loadChats(bot);
     void api
       .get<{ excluded: string[] }>(`/admin/api/group-summary?bot=${encodeURIComponent(bot)}`)
-      .then((r) => setExcluded(r.excluded))
-      .catch(() => setExcluded([]));
+      .then((r) => { if (!cancelled) setExcluded(r.excluded); })
+      .catch(() => { if (!cancelled) setExcluded([]); });
+    return () => { cancelled = true; };
   }, [bot, loadChats]);
 
   const saveExcluded = useCallback(
-    async (next: string[]) => {
+    (update: (prev: string[]) => string[]) => {
       if (!bot) return;
-      setExcluded(next);
-      try {
-        await api.put('/admin/api/group-summary', { bot, excluded: next });
-      } catch (err: any) {
-        message.error(err?.message || '保存忽略名单失败');
-      }
+      setExcluded((prev) => {
+        const next = update(prev);
+        api.put('/admin/api/group-summary', { bot, excluded: next }).catch(async (err: any) => {
+          message.error(err?.message || '保存忽略名单失败');
+          // 失败以服务端为准回读，避免本地状态漂移
+          try {
+            const r = await api.get<{ excluded: string[] }>(`/admin/api/group-summary?bot=${encodeURIComponent(bot)}`);
+            setExcluded(r.excluded);
+          } catch { /* 桥接不可达时保持现状 */ }
+        });
+        return next;
+      });
     },
     [bot],
   );
@@ -115,14 +127,19 @@ export default function GroupSummaryPage() {
       return { chatId: c.chatId, name: c.name, status: 'unset' };
     });
     // Tasks whose group the bot has since left → orphans, still deletable.
-    for (const t of tasks) {
-      const cid = (t.label || '').slice(LABEL_PREFIX.length);
-      if (!chats.some((c) => c.chatId === cid)) {
-        list.push({ chatId: cid, name: '（bot 已不在此群）', status: 'orphan', task: t });
+    // Only when the chats fetch SUCCEEDED with data — an error/empty list
+    // must not mislabel every healthy task as orphaned (and invite mass
+    // deletion).
+    if (!chatsError && chats.length > 0) {
+      for (const t of tasks) {
+        const cid = (t.label || '').slice(LABEL_PREFIX.length);
+        if (!chats.some((c) => c.chatId === cid)) {
+          list.push({ chatId: cid, name: '（bot 已不在此群）', status: 'orphan', task: t });
+        }
       }
     }
     return list;
-  }, [bot, chats, excluded, schedule]);
+  }, [bot, chats, chatsError, excluded, schedule]);
 
   const unsetCount = rows.filter((r) => r.status === 'unset').length;
 
@@ -154,9 +171,7 @@ export default function GroupSummaryPage() {
           label: `${LABEL_PREFIX}${editorTarget.chatId}`,
         });
         // 开启日报的群顺手移出忽略名单
-        if (excluded.includes(editorTarget.chatId)) {
-          void saveExcluded(excluded.filter((c) => c !== editorTarget.chatId));
-        }
+        saveExcluded((prev) => prev.filter((c) => c !== editorTarget.chatId));
         message.success('日报已开启（调度即时生效，无需重启）');
       }
       setEditorOpen(false);
@@ -242,14 +257,14 @@ export default function GroupSummaryPage() {
               <Button size="small" type="primary" onClick={() => openEditor(r)}>
                 开启日报
               </Button>
-              <Button size="small" onClick={() => saveExcluded([...excluded, r.chatId])}>
+              <Button size="small" onClick={() => saveExcluded((prev) => [...prev, r.chatId])}>
                 忽略
               </Button>
             </>
           )}
           {r.status === 'ignored' && (
             <>
-              <Button size="small" onClick={() => saveExcluded(excluded.filter((c) => c !== r.chatId))}>
+              <Button size="small" onClick={() => saveExcluded((prev) => prev.filter((c) => c !== r.chatId))}>
                 取消忽略
               </Button>
               <Button size="small" type="primary" onClick={() => openEditor(r)}>

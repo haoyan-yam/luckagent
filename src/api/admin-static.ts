@@ -29,12 +29,23 @@ const MIME: Record<string, string> = {
 
 function send(res: http.ServerResponse, absPath: string, immutable: boolean, method: string): boolean {
   let stat: fs.Stats;
+  let real: string;
   try {
-    stat = fs.statSync(absPath);
+    real = fs.realpathSync(absPath);
+    stat = fs.statSync(real);
   } catch {
     return false;
   }
   if (!stat.isFile()) return false;
+  // Defense-in-depth: after resolving symlinks the file must still live
+  // inside the admin build dir — a planted symlink can't read outside it.
+  let realRoot: string;
+  try {
+    realRoot = fs.realpathSync(ADMIN_ROOT);
+  } catch {
+    return false;
+  }
+  if (real !== realRoot && !real.startsWith(realRoot + path.sep)) return false;
   const ext = path.extname(absPath).toLowerCase();
   res.writeHead(200, {
     'Content-Type': MIME[ext] || 'application/octet-stream',

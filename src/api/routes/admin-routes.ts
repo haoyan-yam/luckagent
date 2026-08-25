@@ -141,6 +141,8 @@ function effectiveConfig(ctx: RouteContext): Record<string, unknown> {
       anthropicApiKey: secretHint(process.env.ANTHROPIC_API_KEY),
       openaiApiKey: secretHint(process.env.OPENAI_API_KEY),
       coreToken: secretHint(process.env.LUCKAGENT_CORE_TOKEN),
+      deepseekApiKey: secretHint(process.env.DEEPSEEK_API_KEY),
+      arkApiKey: secretHint(process.env.ARK_API_KEY),
       volcengineTts: secretHint(process.env.VOLCENGINE_TTS_ACCESS_KEY),
       elevenlabs: secretHint(process.env.ELEVENLABS_API_KEY),
     },
@@ -165,6 +167,7 @@ export async function handleAdminRoutes(
     // Configured entries vs running registry — the diff is the failed set.
     let configured: Array<{ name: string; engine: string; workDir: string | null }> = [];
     let configDirty = false;
+    let configError: string | null = null;
     if (botsConfigPath) {
       try {
         const cfg = readBotsConfig(botsConfigPath);
@@ -176,6 +179,7 @@ export async function handleAdminRoutes(
         const mtime = fs.statSync(botsConfigPath).mtimeMs;
         configDirty = mtime > started;
       } catch (err: any) {
+        configError = `bots.json 读取失败: ${err?.message || err}`;
         logger.warn({ err: err?.message }, 'admin overview: bots.json unreadable');
       }
     }
@@ -241,6 +245,7 @@ export async function handleAdminRoutes(
       core,
       bots,
       configDirty,
+      configError,
       schedule: {
         oneTime: scheduler.taskCount(),
         recurring: scheduler.recurringTaskCount(),

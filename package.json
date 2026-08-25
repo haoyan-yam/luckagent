@@ -1,7 +1,7 @@
 {
   "name": "luckagent",
-  "version": "0.4.0",
-  "description": "Luckagent \u2014 Feishu bot framework bridging chats to AI agent engines (Claude Code / Kimi / Codex)",
+  "version": "0.4.1",
+  "description": "Luckagent — Feishu bot framework bridging chats to AI agent engines (Claude Code / Kimi / Codex)",
   "main": "dist/index.js",
   "type": "module",
   "engines": {
