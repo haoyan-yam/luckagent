@@ -127,6 +127,17 @@ open(p, 'w').write(s)
 PYEOF
       success "ANTHROPIC_API_KEY 已写入"
     fi
+    read -r -p "填入 OpenAI key 启用生图技能吗？（回车跳过） " ikey || ikey=""
+    if [[ -n "$ikey" ]]; then
+      IMAGE_KEY_VALUE="$ikey" python3 - <<'PYEOF'
+import os
+p = '.env'
+s = open(p).read()
+s = s.replace('# OPENAI_IMAGE_API_KEY=sk-...', 'OPENAI_IMAGE_API_KEY=' + os.environ['IMAGE_KEY_VALUE'], 1)
+open(p, 'w').write(s)
+PYEOF
+      success "OPENAI_IMAGE_API_KEY 已写入（openai-image-gen 生图技能可用）"
+    fi
   fi
 else
   info ".env 已存在，跳过生成"
@@ -244,6 +255,9 @@ if [[ -n "$LARK_CLI_TODO" ]]; then
   echo "     $LARK_CLI_TODO"
   echo ""
 fi
+echo "  可选能力（编辑 .env 填 key 后 luckagent restart 生效）:"
+echo "     生图: OPENAI_IMAGE_API_KEY（或复用 OPENAI_API_KEY）   语音TTS: VOLCENGINE_TTS_*（不填则用免费 Edge TTS）"
+echo ""
 echo "  常用命令:  luckagent status | logs | restart | doctor --json | help"
 echo "  详细文档:  INSTALL.md 与 docs/ 目录"
 echo ""
