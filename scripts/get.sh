@@ -1,7 +1,7 @@
 #!/bin/bash
 # Luckagent 一行命令引导安装脚本（零前置依赖：只用 macOS 自带的 curl/tar/bash）。
 #
-#   curl -fsSL https://github.com/haoyan-yam/luckagent/releases/latest/download/get.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/haoyan-yam/luckagent/main/scripts/get.sh | bash
 #
 # 职责：把仓库取到安装目录，然后转交交互式 install.sh（依赖、.env、PM2 一条龙）。
 # 已装机器上重复执行是安全的——检测到现有安装会给出升级指引后退出。

@@ -71,7 +71,7 @@
 **方式 A · 一行命令（推荐，零前置依赖）**
 
 ```bash
-curl -fsSL https://github.com/haoyan-yam/luckagent/releases/latest/download/get.sh | bash
+curl -fsSL https://raw.githubusercontent.com/haoyan-yam/luckagent/main/scripts/get.sh | bash
 ```
 
 只用 macOS 自带的 curl/tar/bash——全新机器（没有 Node、没有 git）也能直接跑。脚本把仓库取到 `~/luckagent` 后转交交互式 install.sh；重复执行安全（检测到现有安装会给升级指引）。想先看脚本内容：[scripts/get.sh](scripts/get.sh)。可用 `LUCKAGENT_DIR` / `LUCKAGENT_YES=1` 等环境变量定制，见脚本头部注释。

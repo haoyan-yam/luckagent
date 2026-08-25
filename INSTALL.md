@@ -25,7 +25,7 @@
 打开「终端」（聚焦搜索 Terminal），执行：
 
 ```bash
-curl -fsSL https://github.com/haoyan-yam/luckagent/releases/latest/download/get.sh | bash
+curl -fsSL https://raw.githubusercontent.com/haoyan-yam/luckagent/main/scripts/get.sh | bash
 ```
 
 零前置依赖（只用 macOS 自带的 curl/tar/bash），全新机器直接跑。脚本把代码取到
