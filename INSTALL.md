@@ -11,7 +11,7 @@
 
 | 东西 | 说明 |
 | --- | --- |
-| 安装包 | `luckagent-installer-v0.4.0.tar.gz`（+ 同名 `.sha256` 校验文件） |
+| 安装包 | 从 [GitHub Releases](https://github.com/haoyan-yam/luckagent/releases) 下载 `luckagent-installer-v*.tar.gz`（+ 同名 `.sha256` 校验文件）；**目标机能直接联网时可跳过安装包**，直接 `npx luckagent init` 或 git clone（见第 1 节开头） |
 | 网络 | 目标机需联网（下载 Homebrew/node/npm 依赖、连飞书与模型 API） |
 | 飞书账号 | 有权限在 [飞书开放平台](https://open.feishu.cn/app) 创建企业自建应用 |
 | Claude 认证 | 二选一：[Anthropic API Key](https://console.anthropic.com)，或 Claude Code 订阅账号（安装脚本可代装 CLI，登录需自己跑一次 `claude`） |
@@ -21,23 +21,35 @@
 
 ---
 
-## 1. 把安装包传到 Mac mini
+## 1. 把代码放到 Mac mini
 
-任选其一：
+> **目标机能联网？两条捷径任选其一，然后直接跳到第 2 节的 `bash install.sh`：**
+>
+> ```bash
+> npx luckagent init        # npm 引导器：取代码到 ~/luckagent 并自动进入安装流程
+> ```
+>
+> ```bash
+> git clone https://github.com/haoyan-yam/luckagent.git ~/luckagent
+> ```
+>
+> （`npx luckagent init` 会自动接着跑 install.sh，可完全替代第 2 节。）
 
-- **隔空投送（AirDrop）**：从另一台电脑把 `luckagent-installer-v0.4.0.tar.gz` 投过去（默认落在 `~/Downloads`）
+用安装包的话，把它传到目标机，任选其一：
+
+- **隔空投送（AirDrop）**：从另一台电脑把 `luckagent-installer-v*.tar.gz` 投过去（默认落在 `~/Downloads`）
 - **U 盘**：拷贝到 U 盘再拷进 `~/Downloads`
 - **scp**（两台机器同一局域网时）：
 
 ```bash
-scp luckagent-installer-v0.4.0.tar.gz 用户名@mac-mini.local:~/Downloads/
+scp luckagent-installer-v*.tar.gz 用户名@mac-mini.local:~/Downloads/
 ```
 
 （可选）校验包完整性：
 
 ```bash
 cd ~/Downloads
-shasum -a 256 -c luckagent-installer-v0.4.0.tar.gz.sha256
+shasum -a 256 -c luckagent-installer-v*.tar.gz.sha256
 ```
 
 看到 `OK` 即通过。
@@ -50,7 +62,7 @@ shasum -a 256 -c luckagent-installer-v0.4.0.tar.gz.sha256
 
 ```bash
 cd ~/Downloads
-tar -xzf luckagent-installer-v0.4.0.tar.gz
+tar -xzf luckagent-installer-v*.tar.gz
 mv luckagent ~/luckagent
 cd ~/luckagent
 bash install.sh

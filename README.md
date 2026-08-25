@@ -1,6 +1,13 @@
 # Luckagent
 
-把飞书群聊接到 AI 编程 agent 的机器人框架。每个飞书机器人背后是一个完整的 agent 引擎——Claude Code（通过 `@anthropic-ai/claude-agent-sdk` / Claude Code CLI）、Kimi 或 Codex——在各自独立的工作目录里拥有完整的工具权限：读写文件、跑命令、调 API、收发聊天附件。你在群里 @机器人说一句话，它就在服务器上替你干活，并把过程与产物以卡片形式实时回贴到群里。
+把飞书群聊接到 AI agent 引擎的自托管机器人平台。每个飞书机器人背后是一个完整的 agent 引擎——Claude Code（`@anthropic-ai/claude-agent-sdk` / Claude Code CLI）、Codex、Kimi 或 DeepSeek——在各自独立的工作目录里拥有完整的工具权限：读写文件、跑命令、调 API、收发聊天附件。你在群里 @机器人说一句话，它就在你自己的 Mac 上替你干活，并把过程与产物以卡片形式实时回贴到群里。
+
+## 项目目标
+
+- **把 agent 从终端搬进团队日常沟通的地方。** Claude Code 这类 agent 很强，但入口是本机终端、一人一会话。Luckagent 让它以飞书机器人的身份 7×24 常驻：团队任何人在群里 @它 就能派活，产物（文档、图片、表格、代码）直接回到群里。
+- **完全自托管、数据不出自己机器。** 跑在你的 Mac mini / MacBook 上：飞书凭证、聊天记录、工作文件、API key 都留在本机；对外只有到飞书开放平台的 websocket 长连接和你选择的模型 API。两个服务端口默认只绑 `127.0.0.1`。
+- **多 bot、多引擎、一份配置。** 一台机器跑任意多个机器人，每个 bot 独立的飞书应用、工作目录、引擎（Claude / Codex / Kimi / DeepSeek）与预算限额，适合「一个项目一个 bot 同事」的用法。
+- **生产可靠优先。** 本项目源自一套在真实团队里连续运行数月的飞书 bot 集群，消息合并、附件收发、发送目录清理、引用上下文注入等 15 项行为增强都是实际踩坑后的沉淀（见[设计笔记](docs/design-notes.md)），并配有 750+ 自动化测试。
 
 ## 架构
 
@@ -33,6 +40,14 @@
 
 两个端口默认都只绑 `127.0.0.1`，不额外配置不会暴露到网络。
 
+### 一条消息的生命周期
+
+1. **接收**：飞书事件经 websocket 长连接推到 bridge（无需公网回调地址）；快速连发的多条消息会自动合并成一轮。
+2. **会话**：每个聊天（群/私聊）对应一个持续的 agent 会话——Claude/DeepSeek 默认走**持久执行器池**（长驻进程，支持 Agent Teams、`/goal` 多轮自动推进、后台任务），其余引擎逐回合拉起。
+3. **执行**：引擎在该 bot 的独立工作目录里全工具运行；聊天里发的文件自动下载到 `inputs/` 供 agent 直接使用。
+4. **回贴**：过程流式更新到飞书卡片；agent 放进发送暂存目录的产物**发过即删**，回合结束再补扫一次防漏发（归档另存 `outputs/`）。
+5. **管控**：预算限额、并发上限、群聊白名单、`/model` 会话内切引擎等都按 bot 配置；全程记账可在管理台与 `luckagent stats` 查看。
+
 ## 特性
 
 - **多 bot 单进程**：一份 `bots.json` 配任意多个飞书机器人，各自独立的应用凭证、工作目录、引擎与预算限额。
@@ -43,12 +58,39 @@
 - **跨 bot 协作**：共享记忆沉淀知识、技能中心复用方法、agent 总线让 bot 之间互相委托任务，也支持跨主机 peers 联邦。
 - **语音**：文本转语音（豆包 / OpenAI / ElevenLabs / Edge TTS），可配置语音回复。
 
-## 快速开始
+## 系统要求
 
-解开发行包，跑安装脚本，跟着交互提示走完即可：
+- **macOS**（目标机型 Mac mini / MacBook，Apple Silicon）；安装脚本会自动补齐 Homebrew、node 22、PM2、lark-cli 等依赖
+- 一个**飞书企业自建应用**（安装后管理台的「接入向导」会手把手带你创建，或先看[配置指南](docs/feishu-app-setup.md)）
+- 至少一种**引擎认证**：Claude 订阅登录或 `ANTHROPIC_API_KEY`；或 DeepSeek 的 `DEEPSEEK_API_KEY`（零 CLI 安装）；Codex / Kimi 见[多引擎配置](docs/engines.md)
+
+## 安装
+
+三选一，装完效果相同（推荐方式 A）：
+
+**方式 A · npm（推荐）**
 
 ```bash
-tar -xzf luckagent-installer-v0.4.1.tar.gz
+npx luckagent init
+```
+
+（或 `npm install -g luckagent && luckagent init`。）引导器会把仓库取到 `~/luckagent` 并运行交互式安装脚本；装好后 `luckagent` 命令自动变成完整 CLI。
+
+**方式 B · git clone**
+
+```bash
+git clone https://github.com/haoyan-yam/luckagent.git ~/luckagent
+cd ~/luckagent && bash install.sh
+```
+
+git 检出天然支持 `luckagent update` 一键升级。
+
+**方式 C · 发行包（离线机器）**
+
+从 [Releases](https://github.com/haoyan-yam/luckagent/releases) 下载 `luckagent-installer-v*.tar.gz`：
+
+```bash
+tar -xzf luckagent-installer-v*.tar.gz
 mv luckagent ~/luckagent && cd ~/luckagent
 bash install.sh
 ```
@@ -91,6 +133,13 @@ luckagent inbox poll            # CLI agent 收件箱
 ```
 
 完整命令与参数见 [CLI 参考](docs/cli-reference.md)。
+
+## 升级
+
+| 安装方式 | 升级命令 |
+| --- | --- |
+| npm / git clone | `luckagent update`（git pull + 重装依赖 + 构建 + 同步技能 + 重启） |
+| 发行包 | 下载新版包解开覆盖到 `~/luckagent/`，重跑 `bash install.sh`（幂等） |
 
 ## 文档
 

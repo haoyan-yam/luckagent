@@ -1,7 +1,17 @@
 {
   "name": "luckagent",
-  "version": "0.4.1",
-  "description": "Luckagent — Feishu bot framework bridging chats to AI agent engines (Claude Code / Kimi / Codex)",
+  "version": "0.5.0",
+  "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/haoyan-yam/luckagent.git"
+  },
+  "homepage": "https://github.com/haoyan-yam/luckagent#readme",
+  "bugs": {
+    "url": "https://github.com/haoyan-yam/luckagent/issues"
+  },
+  "description": "Luckagent — Feishu bot platform bridging chats to AI agent engines (Claude Code / Codex / Kimi / DeepSeek)",
   "main": "dist/index.js",
   "type": "module",
   "engines": {

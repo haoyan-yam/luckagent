@@ -1,0 +1,39 @@
+{
+  "name": "luckagent",
+  "version": "0.5.0",
+  "description": "Luckagent — 把 Claude Code / Codex / Kimi / DeepSeek 变成飞书里的常驻 AI 同事（自托管）。此包为安装引导器：luckagent init 一键完成安装，装好后透传全部 CLI 子命令。",
+  "type": "commonjs",
+  "bin": {
+    "luckagent": "bin/luckagent.js"
+  },
+  "files": [
+    "bin",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "os": [
+    "darwin"
+  ],
+  "keywords": [
+    "feishu",
+    "lark",
+    "bot",
+    "claude-code",
+    "codex",
+    "kimi",
+    "deepseek",
+    "agent",
+    "self-hosted"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/haoyan-yam/luckagent.git"
+  },
+  "homepage": "https://github.com/haoyan-yam/luckagent#readme",
+  "bugs": {
+    "url": "https://github.com/haoyan-yam/luckagent/issues"
+  },
+  "license": "MIT"
+}
