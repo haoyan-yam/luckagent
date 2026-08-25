@@ -5,14 +5,7 @@ import * as url from 'node:url';
 import { execFileSync } from 'node:child_process';
 import type { Logger } from '../utils/logger.js';
 
-/** Skills installed for all bots.
- *
- *  Not in this list (opt-in only, sources under src/skills/):
- *   - `metaskill`     — agent-team generator.
- *   - `metaschedule`  — persistent server-side scheduler skill (ad-hoc
- *                       scheduling is covered by Claude Code's native
- *                       `CronCreate` / `/loop`).
- */
+/** Skills installed for all bots. */
 const COMMON_SKILLS = ['luckagent'];
 
 /** Lark CLI AI Agent skills — installed via `npx skills add larksuite/cli` and
@@ -196,17 +189,6 @@ function bundledSkillSource(skill: string): string | undefined {
   const thisFile = url.fileURLToPath(import.meta.url);
   const thisDir = path.dirname(thisFile);
   const candidatesBySkill: Record<string, string[]> = {
-    // metaskill / metaschedule are opt-in: not in COMMON_SKILLS, but bundled
-    // here so users who copy them into `~/.claude/skills/` get the source
-    // resolved correctly if they later install a bot with installSkills:true.
-    metaskill: [
-      path.join(thisDir, '..', 'skills', 'metaskill'),
-      path.join(thisDir, '..', '..', 'src', 'skills', 'metaskill'),
-    ],
-    metaschedule: [
-      path.join(thisDir, '..', 'skills', 'metaschedule'),
-      path.join(thisDir, '..', '..', 'src', 'skills', 'metaschedule'),
-    ],
     opencli: [
       path.join(thisDir, '..', 'skills', 'opencli'),
       path.join(thisDir, '..', '..', 'src', 'skills', 'opencli'),

@@ -139,8 +139,6 @@ if [[ ! -d "$LUCKAGENT_HOME/.git" ]]; then
   # Phase 4 consolidation: `metamemory` and `skill-hub` skill bundles are
   # subsumed by the unified `luckagent` skill (which delegates memory/skills/
   # agents to the luckagent-core feature CLI). luckagent-team is the compact
-  # Agent Teams coordination skill. metaskill / metaschedule remain opt-in;
-  # sources still ship in src/skills/* for manual copy.
   for skill in luckagent voice luckagent-team image-gen; do
     case "$skill" in
       luckagent)      src="$LUCKAGENT_HOME/packages/skills/luckagent" ;;
@@ -225,15 +223,6 @@ if [[ ! -d "$LUCKAGENT_HOME/.git" ]]; then
 
       # Copy common skills (Phase 4: metamemory/skill-hub removed).
       for skill in luckagent voice; do
-        if [[ -d "$SKILLS_DIR/$skill" ]]; then
-          for dst_root in "$ws_skills_dir" "$ws_codex_skills_dir"; do
-            mkdir -p "$dst_root/$skill"
-            cp -r "$SKILLS_DIR/$skill/." "$dst_root/$skill/"
-          done
-        fi
-      done
-      # Mirror opt-in skills (metaskill / metaschedule) only when present.
-      for skill in metaskill metaschedule; do
         if [[ -d "$SKILLS_DIR/$skill" ]]; then
           for dst_root in "$ws_skills_dir" "$ws_codex_skills_dir"; do
             mkdir -p "$dst_root/$skill"

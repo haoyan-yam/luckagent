@@ -41,11 +41,7 @@ Prefer Claude Code's built-in scheduling tools for ad-hoc, session-scoped tasks 
 - **`CronCreate`** — fire a prompt on a cron schedule (recurring or one-shot). Pass `durable: true` to persist across restarts.
 - **`/loop [interval] <prompt>`** — turn any task into a self-paced loop.
 
-For **persistent server-side scheduling** that outlives the Claude session, is visible to other bots, and lives in the bridge process: `luckagent schedule cron <bot> <chatId> '<cron>' "<prompt>"`, or install the optional `/metaschedule` skill (copy `src/skills/metaschedule/SKILL.md` into `~/.claude/skills/metaschedule/`).
-
-### /metaskill — AI Agent Team Generator (optional)
-
-Not installed by default. Generates portable agent teams, individual agents, or custom skills. Enable it by copying `src/skills/metaskill/` into `~/.claude/skills/`.
+For **persistent server-side scheduling** that outlives the Claude session, is visible to other bots, and lives in the bridge process: `luckagent schedule cron <bot> <chatId> '<cron>' "<prompt>"` (also manageable in the admin console's 定时任务 / 群日报 pages).
 
 ### Feishu / Lark CLI (Feishu bots only)
 

@@ -121,7 +121,7 @@ describe('isStaleSessionError', () => {
 
 describe('normalizePromptForEngine', () => {
   it('converts slash skill invocations to Codex explicit skill syntax', () => {
-    expect(normalizePromptForEngine('/metaskill ios app', 'codex')).toBe('$metaskill ios app');
+    expect(normalizePromptForEngine('/scaffold ios app', 'codex')).toBe('$scaffold ios app');
     expect(normalizePromptForEngine('/skill-name', 'codex')).toBe('$skill-name');
   });
 
@@ -132,9 +132,9 @@ describe('normalizePromptForEngine', () => {
   });
 
   it('leaves non-Codex and non-skill prompts unchanged', () => {
-    expect(normalizePromptForEngine('/metaskill ios app', 'claude')).toBe('/metaskill ios app');
-    expect(normalizePromptForEngine('/metaskill ios app', 'kimi')).toBe('/metaskill ios app');
-    expect(normalizePromptForEngine('hello /metaskill', 'codex')).toBe('hello /metaskill');
+    expect(normalizePromptForEngine('/scaffold ios app', 'claude')).toBe('/scaffold ios app');
+    expect(normalizePromptForEngine('/scaffold ios app', 'kimi')).toBe('/scaffold ios app');
+    expect(normalizePromptForEngine('hello /scaffold', 'codex')).toBe('hello /scaffold');
     expect(normalizePromptForEngine('/bad/path', 'codex')).toBe('/bad/path');
   });
 });

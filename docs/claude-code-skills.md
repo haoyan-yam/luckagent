@@ -39,15 +39,7 @@ npx skills add larksuite/cli --all -y -g   # 拉取 19 个官方技能到全局
 
 | 技能 | 作用 | 源 |
 | --- | --- | --- |
-| `metaskill` | AI Agent 团队/技能生成器：`/metaskill ios app` 一句话生成可移植的 agent 团队或自定义技能 | `src/skills/metaskill/` |
-| `metaschedule` | 服务端持久调度技能：教 agent 用桥接的定时任务 API（临时性任务建议优先用 Claude Code 原生的 `CronCreate` / `/loop`） | `src/skills/metaschedule/` |
 | `luckagent-team` | Agent Teams 协作速查（紧凑版），`luckagent update` 会同步到全局技能目录 | `packages/skills/luckagent-team/`、`src/skills/luckagent-team/` |
-
-```bash
-# 启用示例
-cp -r ~/luckagent/src/skills/metaskill ~/.claude/skills/
-cp -r ~/luckagent/src/skills/metaskill ~/.codex/skills/
-```
 
 ## 工作区指令文件：两级模板
 
@@ -68,7 +60,7 @@ cp -r ~/luckagent/src/skills/metaskill ~/.codex/skills/
 
 1. 仓库内置技能（`luckagent`、`voice`、`luckagent-team`、`image-gen`）刷新到 `~/.claude/skills` 与 `~/.codex/skills`；
 2. 若本机装过 lark-cli：升级 `@larksuite/cli` 并刷新 19 个 `lark-*` 技能，再镜像进两个全局技能目录；
-3. 把上述技能（含已手动启用的 `metaskill` / `metaschedule`）同步进**首个 bot** 的工作目录 `.claude/skills` + `.codex/skills`；
+3. 把上述技能同步进**首个 bot** 的工作目录 `.claude/skills` + `.codex/skills`；
 4. ⚠️ 把首个 bot 工作目录的 `CLAUDE.md` 刷新为最新模板（**会覆盖本地修改**，改过模板的注意先备份或升级后 `git diff` 找回；`AGENTS.md` 仅缺失时补建）。
 
 ## 添加第三方 / 自定义技能

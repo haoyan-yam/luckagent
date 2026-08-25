@@ -48,7 +48,7 @@
 解开发行包，跑安装脚本，跟着交互提示走完即可：
 
 ```bash
-tar -xzf luckagent-installer-v0.3.0.tar.gz && cd luckagent && bash install.sh
+tar -xzf luckagent-installer-v0.3.1.tar.gz && cd luckagent && bash install.sh
 ```
 
 安装完成后：
