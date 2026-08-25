@@ -23,17 +23,14 @@
 
 ## 1. 把代码放到 Mac mini
 
-> **目标机能联网？两条捷径任选其一，然后直接跳到第 2 节的 `bash install.sh`：**
+> **目标机能联网？一行命令完成全部安装（零前置依赖，可完全替代第 1、2 节）：**
 >
 > ```bash
-> npx luckagent init        # npm 引导器：取代码到 ~/luckagent 并自动进入安装流程
+> curl -fsSL https://github.com/haoyan-yam/luckagent/releases/latest/download/get.sh | bash
 > ```
 >
-> ```bash
-> git clone https://github.com/haoyan-yam/luckagent.git ~/luckagent
-> ```
->
-> （`npx luckagent init` 会自动接着跑 install.sh，可完全替代第 2 节。）
+> 只想先取代码不装：`git clone https://github.com/haoyan-yam/luckagent.git ~/luckagent`，
+> 然后从第 2 节的 `bash install.sh` 继续。已有 Node 的机器也可用 `npx luckagent init`。
 
 用安装包的话，把它传到目标机，任选其一：
 

@@ -68,13 +68,15 @@
 
 三选一，装完效果相同（推荐方式 A）：
 
-**方式 A · npm（推荐）**
+**方式 A · 一行命令（推荐，零前置依赖）**
 
 ```bash
-npx luckagent init
+curl -fsSL https://github.com/haoyan-yam/luckagent/releases/latest/download/get.sh | bash
 ```
 
-（或 `npm install -g luckagent && luckagent init`。）引导器会把仓库取到 `~/luckagent` 并运行交互式安装脚本；装好后 `luckagent` 命令自动变成完整 CLI。
+只用 macOS 自带的 curl/tar/bash——全新机器（没有 Node、没有 git）也能直接跑。脚本把仓库取到 `~/luckagent` 后转交交互式 install.sh；重复执行安全（检测到现有安装会给升级指引）。想先看脚本内容：[scripts/get.sh](scripts/get.sh)。可用 `LUCKAGENT_DIR` / `LUCKAGENT_YES=1` 等环境变量定制，见脚本头部注释。
+
+> 机器上已有 Node 的话，`npx luckagent init` 效果相同。
 
 **方式 B · git clone**
 
