@@ -342,5 +342,168 @@ export async function handleAdminRoutes(
     return true;
   }
 
+  // GET /admin/api/feishu/chats?bot=<name> — groups the bot is a member of
+  if (method === 'GET' && url.startsWith('/admin/api/feishu/chats')) {
+    const parsed = new URL(url, `http://${req.headers.host || 'localhost'}`);
+    const botName = parsed.searchParams.get('bot') || '';
+    const bot = registry.get(botName);
+    if (!bot?.feishuClient) {
+      jsonResponse(res, 404, { error: bot ? 'bot has no Feishu client (not running?)' : `Bot not running: ${botName}` });
+      return true;
+    }
+    try {
+      const chats = await collectBotChats(bot.feishuClient);
+      jsonResponse(res, 200, { chats });
+    } catch (err: any) {
+      jsonResponse(res, 502, { error: `Feishu chat list failed: ${err?.message || err}` });
+    }
+    return true;
+  }
+
+  // GET /admin/api/feishu/chat-members?bot=<name>&chatId=<oc_> — group members (bots excluded by Feishu)
+  if (method === 'GET' && url.startsWith('/admin/api/feishu/chat-members')) {
+    const parsed = new URL(url, `http://${req.headers.host || 'localhost'}`);
+    const botName = parsed.searchParams.get('bot') || '';
+    const chatId = parsed.searchParams.get('chatId') || '';
+    const bot = registry.get(botName);
+    if (!bot?.feishuClient) {
+      jsonResponse(res, 404, { error: bot ? 'bot has no Feishu client (not running?)' : `Bot not running: ${botName}` });
+      return true;
+    }
+    if (!chatId) {
+      jsonResponse(res, 400, { error: 'Missing chatId' });
+      return true;
+    }
+    try {
+      const members = await collectChatMembers(bot.feishuClient, chatId);
+      jsonResponse(res, 200, { members });
+    } catch (err: any) {
+      jsonResponse(res, 502, { error: `Feishu member list failed: ${err?.message || err}` });
+    }
+    return true;
+  }
+
+  // GET /admin/api/group-summary?bot=<name> — per-bot summary prefs (excluded chats)
+  if (method === 'GET' && url.startsWith('/admin/api/group-summary')) {
+    const parsed = new URL(url, `http://${req.headers.host || 'localhost'}`);
+    const botName = parsed.searchParams.get('bot') || '';
+    if (!botName) {
+      jsonResponse(res, 400, { error: 'Missing bot' });
+      return true;
+    }
+    const prefs = readSummaryPrefs();
+    jsonResponse(res, 200, { bot: botName, excluded: prefs[botName]?.excluded ?? [] });
+    return true;
+  }
+
+  // PUT /admin/api/group-summary — replace a bot's excluded list
+  if (method === 'PUT' && url === '/admin/api/group-summary') {
+    const body = await parseJsonBody(req);
+    const botName = typeof body.bot === 'string' ? body.bot.trim() : '';
+    const excluded = Array.isArray(body.excluded)
+      ? (body.excluded as unknown[]).filter((v): v is string => typeof v === 'string' && v.startsWith('oc_'))
+      : null;
+    if (!botName || excluded === null) {
+      jsonResponse(res, 400, { error: 'Body must be {bot, excluded: ["oc_..."]}' });
+      return true;
+    }
+    const prefs = readSummaryPrefs();
+    prefs[botName] = { excluded };
+    writeSummaryPrefs(prefs);
+    jsonResponse(res, 200, { bot: botName, excluded });
+    return true;
+  }
+
   return false;
+}
+
+// ---------------------------------------------------------------------------
+// Feishu lookups (used by the admin console's group-summary + member pickers)
+// ---------------------------------------------------------------------------
+
+interface FeishuChatLister {
+  im: {
+    chat: {
+      list: (payload?: { params?: Record<string, unknown> }) => Promise<{
+        code?: number;
+        msg?: string;
+        data?: { items?: Array<{ chat_id?: string; name?: string; avatar?: string }>; page_token?: string; has_more?: boolean };
+      }>;
+    };
+    chatMembers: {
+      get: (payload?: { params?: Record<string, unknown>; path: { chat_id: string } }) => Promise<{
+        code?: number;
+        msg?: string;
+        data?: { items?: Array<{ member_id?: string; name?: string }>; page_token?: string; has_more?: boolean };
+      }>;
+    };
+  };
+}
+
+const FEISHU_PAGE_CAP = 20; // 20 pages × 100 = up to 2000 rows; plenty for an ops tool
+
+/** All groups the bot is in (paginated; P2P chats are not returned by Feishu). */
+export async function collectBotChats(client: FeishuChatLister): Promise<Array<{ chatId: string; name: string; avatar?: string }>> {
+  const out: Array<{ chatId: string; name: string; avatar?: string }> = [];
+  let pageToken: string | undefined;
+  for (let i = 0; i < FEISHU_PAGE_CAP; i++) {
+    const resp = await client.im.chat.list({
+      params: { page_size: 100, sort_type: 'ByActiveTimeDesc', ...(pageToken ? { page_token: pageToken } : {}) },
+    });
+    if (resp.code !== 0) throw new Error(resp.msg || `feishu code ${resp.code}`);
+    for (const it of resp.data?.items ?? []) {
+      if (it.chat_id) out.push({ chatId: it.chat_id, name: it.name || it.chat_id, ...(it.avatar ? { avatar: it.avatar } : {}) });
+    }
+    if (!resp.data?.has_more || !resp.data.page_token) break;
+    pageToken = resp.data.page_token;
+  }
+  return out;
+}
+
+/** Human members of one group, as open_ids (Feishu omits bot members). */
+export async function collectChatMembers(client: FeishuChatLister, chatId: string): Promise<Array<{ openId: string; name: string }>> {
+  const out: Array<{ openId: string; name: string }> = [];
+  let pageToken: string | undefined;
+  for (let i = 0; i < FEISHU_PAGE_CAP; i++) {
+    const resp = await client.im.chatMembers.get({
+      path: { chat_id: chatId },
+      params: { member_id_type: 'open_id', page_size: 100, ...(pageToken ? { page_token: pageToken } : {}) },
+    });
+    if (resp.code !== 0) throw new Error(resp.msg || `feishu code ${resp.code}`);
+    for (const it of resp.data?.items ?? []) {
+      if (it.member_id) out.push({ openId: it.member_id, name: it.name || it.member_id });
+    }
+    if (!resp.data?.has_more || !resp.data.page_token) break;
+    pageToken = resp.data.page_token;
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Group-summary prefs (which chats are explicitly excluded from daily digests)
+// ---------------------------------------------------------------------------
+
+type SummaryPrefs = Record<string, { excluded: string[] }>;
+
+function summaryPrefsPath(): string {
+  const dir = process.env.SESSION_STORE_DIR || path.join(os.homedir(), '.luckagent');
+  return path.join(dir, 'group-summary.json');
+}
+
+export function readSummaryPrefs(): SummaryPrefs {
+  try {
+    const raw = fs.readFileSync(summaryPrefsPath(), 'utf-8');
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? (parsed as SummaryPrefs) : {};
+  } catch {
+    return {};
+  }
+}
+
+export function writeSummaryPrefs(prefs: SummaryPrefs): void {
+  const file = summaryPrefsPath();
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = `${file}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(prefs, null, 2) + '\n');
+  fs.renameSync(tmp, file);
 }

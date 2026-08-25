@@ -9,6 +9,7 @@ import {
   SettingOutlined,
   ReloadOutlined,
   LogoutOutlined,
+  CommentOutlined,
 } from '@ant-design/icons';
 import { api } from './api/client';
 import { getToken, clearToken } from './auth';
@@ -17,6 +18,7 @@ import LoginPage from './pages/LoginPage';
 import OverviewPage from './pages/OverviewPage';
 import BotsPage from './pages/BotsPage';
 import SchedulePage from './pages/SchedulePage';
+import GroupSummaryPage from './pages/GroupSummaryPage';
 import LogsPage from './pages/LogsPage';
 import ConfigPage from './pages/ConfigPage';
 
@@ -26,6 +28,7 @@ const MENU = [
   { key: '/overview', icon: <DashboardOutlined />, label: '系统总览' },
   { key: '/bots', icon: <RobotOutlined />, label: '机器人管理' },
   { key: '/schedule', icon: <FieldTimeOutlined />, label: '定时任务' },
+  { key: '/summary', icon: <CommentOutlined />, label: '群日报' },
   { key: '/logs', icon: <FileTextOutlined />, label: '运行日志' },
   { key: '/config', icon: <SettingOutlined />, label: '系统配置' },
 ];
@@ -137,6 +140,7 @@ export default function App() {
             <Route path="/overview" element={<OverviewPage onConfigDirty={setConfigDirty} onRestart={doRestart} />} />
             <Route path="/bots" element={<BotsPage onChanged={() => setConfigDirty(true)} />} />
             <Route path="/schedule" element={<SchedulePage />} />
+            <Route path="/summary" element={<GroupSummaryPage />} />
             <Route path="/logs" element={<LogsPage />} />
             <Route path="/config" element={<ConfigPage onRestart={doRestart} />} />
             <Route path="*" element={<Navigate to="/overview" replace />} />

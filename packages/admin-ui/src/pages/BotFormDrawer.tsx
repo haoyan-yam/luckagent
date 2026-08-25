@@ -14,6 +14,7 @@ import {
 } from 'antd';
 import { api } from '../api/client';
 import type { BotEntry } from '../api/types';
+import MemberPicker from '../components/MemberPicker';
 
 const MASK_PREFIX = '••••';
 
@@ -50,7 +51,7 @@ export default function BotFormDrawer({
         const cfg = r.config || {};
         form.setFieldsValue({
           ...cfg,
-          groupOnlyAllowUsers: (cfg.groupOnlyAllowUsers || []).join(','),
+          groupOnlyAllowUsers: cfg.groupOnlyAllowUsers || [],
         });
       });
     }
@@ -58,29 +59,41 @@ export default function BotFormDrawer({
 
   const isMasked = (v: unknown) => typeof v === 'string' && v.startsWith(MASK_PREFIX);
 
+  // Non-secret top-level fields that may be CLEARED from the edit form.
+  // In edit mode an empty value is sent as '' — the server's updateBot treats
+  // '' as "delete this key", so clearing the whitelist / model override etc.
+  // actually removes it from bots.json instead of being ignored.
+  const CLEARABLE = [
+    'description', 'model', 'maxTurns', 'maxBudgetUsd', 'budgetLimitDaily',
+    'maxConcurrentTasks', 'downloadsDir', 'ttsVoice', 'groupOnlyAllowUsers',
+  ];
+
+  const isEmpty = (v: unknown) =>
+    v === '' || v === undefined || v === null || (Array.isArray(v) && v.length === 0);
+
   const buildPayload = (values: Record<string, unknown>): Record<string, unknown> => {
     const payload: Record<string, unknown> = { ...values };
-    // groupOnlyAllowUsers: comma string → array
-    if (typeof payload.groupOnlyAllowUsers === 'string') {
-      const arr = (payload.groupOnlyAllowUsers as string)
-        .split(',')
+    if (Array.isArray(payload.groupOnlyAllowUsers)) {
+      payload.groupOnlyAllowUsers = (payload.groupOnlyAllowUsers as string[])
         .map((s) => s.trim())
         .filter(Boolean);
-      if (arr.length) payload.groupOnlyAllowUsers = arr;
-      else delete payload.groupOnlyAllowUsers;
     }
     // Never send masked/unchanged secrets or empty strings.
     const scrub = (obj: Record<string, unknown>) => {
       for (const [k, v] of Object.entries(obj)) {
         if (isMasked(v)) delete obj[k];
-        else if (v === '' || v === undefined || v === null) delete obj[k];
+        else if (isEmpty(v)) delete obj[k];
         else if (v && typeof v === 'object' && !Array.isArray(v)) {
           scrub(v as Record<string, unknown>);
           if (Object.keys(v as object).length === 0) delete obj[k];
         }
       }
     };
+    // Edit mode: record which clearable fields the user emptied BEFORE scrub
+    // removes them, then re-add them as explicit '' delete-markers.
+    const cleared = editing ? CLEARABLE.filter((k) => k in values && isEmpty(values[k])) : [];
     scrub(payload);
+    for (const k of cleared) payload[k] = '';
     return payload;
   };
 
@@ -200,6 +213,7 @@ export default function BotFormDrawer({
             items={[
               {
                 key: 'kimi',
+                forceRender: true,
                 label: 'Kimi 引擎设置',
                 children: (
                   <>
@@ -226,6 +240,7 @@ export default function BotFormDrawer({
             items={[
               {
                 key: 'codex',
+                forceRender: true,
                 label: 'Codex 引擎设置',
                 children: (
                   <>
@@ -263,6 +278,7 @@ export default function BotFormDrawer({
           items={[
             {
               key: 'limits',
+              forceRender: true,
               label: '限制与预算（可选）',
               children: (
                 <>
@@ -286,17 +302,15 @@ export default function BotFormDrawer({
             },
             {
               key: 'group',
+              forceRender: true,
               label: '群聊限制（可选）',
               children: (
                 <>
                   <Form.Item name="groupOnly" label="仅群聊模式（私聊只允许白名单）" valuePropName="checked">
                     <Switch />
                   </Form.Item>
-                  <Form.Item
-                    name="groupOnlyAllowUsers"
-                    label="私聊白名单 open_id（逗号分隔）"
-                  >
-                    <Input placeholder="ou_xxx,ou_yyy" />
+                  <Form.Item name="groupOnlyAllowUsers" label="私聊白名单（按姓名选群成员，或粘贴 open_id）">
+                    <MemberPicker botName={editing} />
                   </Form.Item>
                   <Form.Item name="groupNoMention" label="群里无需 @ 也响应" valuePropName="checked">
                     <Switch />
@@ -306,6 +320,7 @@ export default function BotFormDrawer({
             },
             {
               key: 'paths',
+              forceRender: true,
               label: '目录与语音（可选）',
               children: (
                 <>
