@@ -141,12 +141,12 @@ if [[ ! -d "$LUCKAGENT_HOME/.git" ]]; then
   # agents to the luckagent-core feature CLI). luckagent-team is the compact
   # Agent Teams coordination skill. metaskill / metaschedule remain opt-in;
   # sources still ship in src/skills/* for manual copy.
-  for skill in luckagent voice luckagent-team openai-image-gen; do
+  for skill in luckagent voice luckagent-team image-gen; do
     case "$skill" in
       luckagent)      src="$LUCKAGENT_HOME/packages/skills/luckagent" ;;
       voice)        src="$LUCKAGENT_HOME/src/skills/voice" ;;
       luckagent-team) src="$LUCKAGENT_HOME/src/skills/luckagent-team" ;;
-      openai-image-gen) src="$LUCKAGENT_HOME/src/skills/openai-image-gen" ;;
+      image-gen) src="$LUCKAGENT_HOME/src/skills/image-gen" ;;
       *)            src="" ;;
     esac
     if [[ -n "$src" && -d "$src" ]]; then

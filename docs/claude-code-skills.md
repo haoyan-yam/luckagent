@@ -21,7 +21,7 @@
 | --- | --- | --- |
 | `luckagent` | **CLI 参考技能**：教 agent 用 `luckagent memory / skills / agents / inbox / teams / schedule / talk / voice` 等全部命令，是 bot 融入协作体系的说明书 | `packages/skills/luckagent/` |
 | `voice` | 文本转语音：`luckagent voice tts` 的用法（生成 MP3、发语音） | `src/skills/voice/` |
-| `openai-image-gen` | 文生图 / 图生图 / 改图，**双 provider**：OpenAI gpt-image-2（`OPENAI_IMAGE_API_KEY`/`OPENAI_API_KEY`）与火山 Seedream（`ARK_API_KEY`，需在方舟控制台开通模型；支持 4K、组图、多参考图）。脚本零依赖，含提示词打法参考与绿幕抠图 | `src/skills/openai-image-gen/` |
+| `image-gen` | 文生图 / 图生图 / 改图，**双 provider 统一入口 `gen.py`**：按 key 自动判定——配了 OpenAI key（`OPENAI_IMAGE_API_KEY`/`OPENAI_API_KEY`）走 gpt-image-2，仅配 `ARK_API_KEY` 走火山 Seedream（4K、组图、多参考图，需在方舟控制台开通模型）。脚本零依赖，含提示词打法参考与绿幕抠图 | `src/skills/image-gen/` |
 
 **飞书 bot 额外装 19 个 `lark-*` 技能**（lark-doc、lark-im、lark-calendar、lark-sheets、lark-base、lark-task、lark-drive、lark-mail、lark-wiki 等），让 agent 会用 `lark-cli` 操作飞书文档/消息/日历/多维表格等 11 个业务域。lark-cli 是**必备组件**，安装脚本会自动装好（含 19 个技能）；若曾安装失败可手动补：
 
@@ -65,7 +65,7 @@ cp -r ~/luckagent/src/skills/metaskill ~/.codex/skills/
 
 `luckagent update` 在拉代码、重建之后会做一轮技能同步：
 
-1. 仓库内置技能（`luckagent`、`voice`、`luckagent-team`、`openai-image-gen`）刷新到 `~/.claude/skills` 与 `~/.codex/skills`；
+1. 仓库内置技能（`luckagent`、`voice`、`luckagent-team`、`image-gen`）刷新到 `~/.claude/skills` 与 `~/.codex/skills`；
 2. 若本机装过 lark-cli：升级 `@larksuite/cli` 并刷新 19 个 `lark-*` 技能，再镜像进两个全局技能目录；
 3. 把上述技能（含已手动启用的 `metaskill` / `metaschedule`）同步进**首个 bot** 的工作目录 `.claude/skills` + `.codex/skills`；
 4. ⚠️ 把首个 bot 工作目录的 `CLAUDE.md` 刷新为最新模板（**会覆盖本地修改**，改过模板的注意先备份或升级后 `git diff` 找回；`AGENTS.md` 仅缺失时补建）。

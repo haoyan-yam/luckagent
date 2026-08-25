@@ -12,6 +12,8 @@ API key：环境变量 ARK_API_KEY，或自动从 ~/luckagent/.env 读取，无�
 模型 id 会随火山滚版本——报「model 不存在」时用 --model 指定控制台里的当前 id。
 """
 
+from __future__ import annotations
+
 import argparse
 import base64
 import json

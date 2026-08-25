@@ -1,9 +1,9 @@
 ---
-name: openai-image-gen
-description: 直接调 API 生图（文生图 / 图生图 / 编辑），双 provider：OpenAI gpt-image-2 与火山 Seedream，均零第三方依赖。用户说"seedream""豆包生图""火山生图"时用 Seedream 脚本。当用户说"生图""画一张""生成图片""做张海报""画个 logo""画个 icon""出张图""生成 banner""做张封面""生成插画""image generation""text to image""img2img""图生图""编辑这张图""把这张图改成 XXX""换背景""透明背景图""出张参考图""文生图"，或任何明显在请求生成/编辑视觉图像产物的场景时使用此 skill。品牌营销物料（海报/货品卡/H5 界面图/长图文/封面/banner，画面含品牌 logo/产品包装/真实文案）也直接用本 skill 整图直出——产出定位是 ref/提案稿，美观第一，打法见正文「品牌物料出图法」一节。即使没有明确说 "OpenAI" 或 "gpt-image-2"，只要意图是生成一张新图或编辑现有图，且没有指定走 Midjourney / Stable Diffusion / Gemini 等其他模型，就触发本 skill。本 skill 不适用于：视频生成（走 seedance-video）、3D 模型、矢量图 SVG 设计稿（走对应专门工具）、实拍照片修图/合焦/清晰化/放大（走 refocus-composite）。
+name: image-gen
+description: 直接调 API 生图（文生图 / 图生图 / 编辑），双 provider：OpenAI gpt-image-2 与火山 Seedream，均零第三方依赖。provider 由已配置的 API key 自动判定（统一入口 gen.py），不靠语义猜测。当用户说"生图""画一张""生成图片""做张海报""画个 logo""画个 icon""出张图""生成 banner""做张封面""生成插画""image generation""text to image""img2img""图生图""编辑这张图""把这张图改成 XXX""换背景""透明背景图""出张参考图""文生图"，或任何明显在请求生成/编辑视觉图像产物的场景时使用此 skill。品牌营销物料（海报/货品卡/H5 界面图/长图文/封面/banner，画面含品牌 logo/产品包装/真实文案）也直接用本 skill 整图直出——产出定位是 ref/提案稿，美观第一，打法见正文「品牌物料出图法」一节。即使没有明确说 "OpenAI" 或 "gpt-image-2"，只要意图是生成一张新图或编辑现有图，且没有指定走 Midjourney / Stable Diffusion / Gemini 等其他模型，就触发本 skill。本 skill 不适用于：视频生成（走 seedance-video）、3D 模型、矢量图 SVG 设计稿（走对应专门工具）、实拍照片修图/合焦/清晰化/放大（走 refocus-composite）。
 ---
 
-# openai-image-gen — API 直调生图（gpt-image-2 / 火山 Seedream）
+# image-gen — API 直调生图（gpt-image-2 / 火山 Seedream）
 
 > 通过 `scripts/gen_image.py` 直接调用 OpenAI Images API（端点 `/v1/images/generations` 和 `/v1/images/edits`），用 `gpt-image-2` 模型生成或编辑图像。
 > 适用于：海报、icon、产品图、插画、参考图、概念图、社交媒体素材、文生图与图生图。
@@ -23,15 +23,24 @@ description: 直接调 API 生图（文生图 / 图生图 / 编辑），双 prov
 
 ---
 
-## Provider 选择
+## 统一入口与 provider 判定（一律用 gen.py）
 
-| 场景 | 用哪个 |
+**永远调 `scripts/gen.py`**，不要自己挑后端脚本。provider 由已配置的 key 确定性判定：
+
+| 配置情况 | 生效 provider |
 | --- | --- |
-| 默认 / 英文提示词打磨 / 已有 OpenAI key | gpt-image-2（`gen_image.py`，下文「核心命令」） |
-| 国内网络直连、中文提示词、要 4K、要组图（同风格多张）、成本敏感 | Seedream（`gen_seedream.py`，见文末「火山 Seedream」节） |
-| 用户点名 seedream / 豆包 / 火山 | Seedream |
+| 配了 `OPENAI_IMAGE_API_KEY` 或 `OPENAI_API_KEY`（无论是否也配了火山） | **openai**（gpt-image-2） |
+| 只配了 `ARK_API_KEY` | **seedream**（火山方舟） |
+| 都没配 | 报错并给出配置指引 |
 
-两者产出都是本地图片文件，后续发送/归档流程完全一致。
+```bash
+python3 scripts/gen.py "提示词" -o out.png [--image ref.jpg]... [--size WxH] [--n 4]
+```
+
+- 仅当用户**明确点名**要某家时才加 `--provider openai|seedream` 强制指定；其余情况不要根据提示词内容猜 provider。
+- `--n` 自动翻译（openai 的多图 / seedream 的组图）；provider 专属参数（`--quality`/`--mask`/`--seed`/`--watermark` 等）错配时会警告并忽略，不会失败。
+- 调试：`--print-cmd` 只打印将执行的后端命令。
+- 两家产出都是本地图片文件，后续发送/归档流程完全一致。下文两节是各后端的参数细节，仅在需要专属能力时参考。
 
 ## 核心命令
 
@@ -186,7 +195,7 @@ key 从环境变量读取，优先级：`OPENAI_IMAGE_API_KEY` > `OPENAI_API_KEY
 
 ---
 
-## 火山 Seedream 生图（gen_seedream.py）
+## 火山 Seedream 生图（gen_seedream.py，通常经 gen.py 自动调用）
 
 前置：`.env` 配 `ARK_API_KEY`（火山方舟控制台创建），且账号已在方舟「开通管理」开通 Doubao-Seedream 模型。脚本自动绕过系统代理（国内直连域名）。
 

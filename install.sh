@@ -136,7 +136,7 @@ s = open(p).read()
 s = s.replace('# OPENAI_IMAGE_API_KEY=sk-...', 'OPENAI_IMAGE_API_KEY=' + os.environ['IMAGE_KEY_VALUE'], 1)
 open(p, 'w').write(s)
 PYEOF
-      success "OPENAI_IMAGE_API_KEY 已写入（openai-image-gen 生图技能可用）"
+      success "OPENAI_IMAGE_API_KEY 已写入（image-gen 生图技能可用）"
     fi
   fi
 else
@@ -162,12 +162,12 @@ esac
 # ---- 技能同步（Claude Code / Codex 双目录）----
 info "同步技能到 ~/.claude/skills 与 ~/.codex/skills ..."
 mkdir -p "$HOME/.claude/skills" "$HOME/.codex/skills"
-for skill in luckagent voice luckagent-team openai-image-gen; do
+for skill in luckagent voice luckagent-team image-gen; do
   case "$skill" in
     luckagent)      src="$LUCKAGENT_HOME/packages/skills/luckagent" ;;
     voice)          src="$LUCKAGENT_HOME/src/skills/voice" ;;
     luckagent-team) src="$LUCKAGENT_HOME/src/skills/luckagent-team" ;;
-    openai-image-gen) src="$LUCKAGENT_HOME/src/skills/openai-image-gen" ;;
+    image-gen) src="$LUCKAGENT_HOME/src/skills/image-gen" ;;
   esac
   if [[ -d "$src" ]]; then
     for dst_root in "$HOME/.claude/skills" "$HOME/.codex/skills"; do
@@ -175,7 +175,14 @@ for skill in luckagent voice luckagent-team openai-image-gen; do
     done
   fi
 done
-success "技能已同步（luckagent / voice / luckagent-team / openai-image-gen）"
+success "技能已同步（luckagent / voice / luckagent-team / image-gen）"
+# 清理旧名技能目录（仅限本项目早期版本装出的副本，以脱敏标记识别；个人同名技能不受影响）
+for dst_root in "$HOME/.claude/skills" "$HOME/.codex/skills"; do
+  old="$dst_root/openai-image-gen"
+  if [[ -f "$old/SKILL.md" ]] && grep -q "当用户说" "$old/SKILL.md" 2>/dev/null; then
+    rm -rf "$old" && info "已移除旧名技能目录: $old（更名为 image-gen）"
+  fi
+done
 
 # ---- lark-cli（必装：bot 操作飞书文档/表格/日历、群日报拉群消息都依赖它）----
 LARK_CLI_TODO=""
