@@ -88,7 +88,34 @@ else
 fi
 
 # ============================================================
-# 第二段：项目本体
+# 第二段：工具与引擎盘点（信息 + 可选代装，全部可跳过）
+# ============================================================
+_mark(){ command -v "$1" &>/dev/null && echo "✓ 已安装" || echo "✗ 未安装"; }
+echo ""
+echo -e "${BOLD}—— 工具与引擎盘点 ——${NC}"
+echo "  引擎（bot 按 bots.json 选择，至少配一种认证即可干活）:"
+echo "    Claude Code CLI   $(_mark claude)    （订阅登录路线；或稍后在 .env 填 ANTHROPIC_API_KEY 走 API 路线）"
+echo "    Codex CLI         $(_mark codex)    （可选引擎；装法与登录见 docs/engines.md）"
+echo "    Kimi CLI          $(_mark kimi)    （可选引擎；装法与登录见 docs/engines.md）"
+echo "  增强工具:"
+echo "    opencli           $(_mark opencli)    （网站自动化；检测到即自动启用其技能，之后安装的话跑一次 luckagent update 生效）"
+echo "    lark-cli          $(_mark lark-cli)    （必备，稍后自动安装）"
+echo "  需要申请的 key（安装中可粘贴，也可之后编辑 .env）:"
+echo "    Claude API:  https://console.anthropic.com  → ANTHROPIC_API_KEY"
+echo "    生图（二选一）: OpenAI https://platform.openai.com → OPENAI_IMAGE_API_KEY"
+echo "                   火山方舟 https://console.volcengine.com/ark → ARK_API_KEY（需开通 Doubao-Seedream 模型）"
+echo "    语音 TTS（可选）: 火山 VOLCENGINE_TTS_*（不配则用免费 Edge TTS）"
+echo ""
+if [[ "$NO_SYSTEM" != "true" ]] && ! command -v claude &>/dev/null; then
+  if ask_yn "现在安装 Claude Code CLI（默认引擎的订阅登录路线）？" y; then
+    curl -fsSL https://claude.ai/install.sh | bash \
+      && success "Claude Code CLI 已安装——稍后在终端跑一次 claude 完成登录（走 API key 路线则无需登录）" \
+      || warn "Claude Code CLI 安装失败，可稍后手动: curl -fsSL https://claude.ai/install.sh | bash"
+  fi
+fi
+
+# ============================================================
+# 第三段：项目本体
 # ============================================================
 info "安装依赖（首次需要几分钟，better-sqlite3 等原生模块会本地编译）..."
 npm install --no-audit --no-fund
@@ -127,16 +154,27 @@ open(p, 'w').write(s)
 PYEOF
       success "ANTHROPIC_API_KEY 已写入"
     fi
-    read -r -p "填入 OpenAI key 启用生图技能吗？（回车跳过） " ikey || ikey=""
+    read -r -p "填入生图 key 吗？OpenAI(sk-…) 或火山(ark-…) 均可，按前缀自动识别（回车跳过） " ikey || ikey=""
     if [[ -n "$ikey" ]]; then
-      IMAGE_KEY_VALUE="$ikey" python3 - <<'PYEOF'
+      if [[ "$ikey" == ark-* ]]; then
+        IMAGE_KEY_VALUE="$ikey" python3 - <<'PYEOF'
+import os
+p = '.env'
+s = open(p).read()
+s = s.replace('# ARK_API_KEY=', 'ARK_API_KEY=' + os.environ['IMAGE_KEY_VALUE'], 1)
+open(p, 'w').write(s)
+PYEOF
+        success "ARK_API_KEY 已写入（生图走火山 Seedream；记得在方舟控制台开通 Doubao-Seedream 模型）"
+      else
+        IMAGE_KEY_VALUE="$ikey" python3 - <<'PYEOF'
 import os
 p = '.env'
 s = open(p).read()
 s = s.replace('# OPENAI_IMAGE_API_KEY=sk-...', 'OPENAI_IMAGE_API_KEY=' + os.environ['IMAGE_KEY_VALUE'], 1)
 open(p, 'w').write(s)
 PYEOF
-      success "OPENAI_IMAGE_API_KEY 已写入（image-gen 生图技能可用）"
+        success "OPENAI_IMAGE_API_KEY 已写入（生图走 gpt-image-2）"
+      fi
     fi
   fi
 else
@@ -162,12 +200,15 @@ esac
 # ---- 技能同步（Claude Code / Codex 双目录）----
 info "同步技能到 ~/.claude/skills 与 ~/.codex/skills ..."
 mkdir -p "$HOME/.claude/skills" "$HOME/.codex/skills"
-for skill in luckagent voice luckagent-team image-gen; do
+SYNC_SKILLS="luckagent voice luckagent-team image-gen"
+command -v opencli &>/dev/null && SYNC_SKILLS="$SYNC_SKILLS opencli"
+for skill in $SYNC_SKILLS; do
   case "$skill" in
     luckagent)      src="$LUCKAGENT_HOME/packages/skills/luckagent" ;;
     voice)          src="$LUCKAGENT_HOME/src/skills/voice" ;;
     luckagent-team) src="$LUCKAGENT_HOME/src/skills/luckagent-team" ;;
-    image-gen) src="$LUCKAGENT_HOME/src/skills/image-gen" ;;
+    image-gen)      src="$LUCKAGENT_HOME/src/skills/image-gen" ;;
+    opencli)        src="$LUCKAGENT_HOME/src/skills/opencli" ;;
   esac
   if [[ -d "$src" ]]; then
     for dst_root in "$HOME/.claude/skills" "$HOME/.codex/skills"; do
@@ -175,7 +216,7 @@ for skill in luckagent voice luckagent-team image-gen; do
     done
   fi
 done
-success "技能已同步（luckagent / voice / luckagent-team / image-gen）"
+success "技能已同步（$SYNC_SKILLS）"
 # 清理旧名技能目录（仅限本项目早期版本装出的副本，以脱敏标记识别；个人同名技能不受影响）
 for dst_root in "$HOME/.claude/skills" "$HOME/.codex/skills"; do
   old="$dst_root/openai-image-gen"
@@ -264,8 +305,8 @@ if [[ -n "$LARK_CLI_TODO" ]]; then
 fi
 echo "  可选能力（编辑 .env 填 key 后 luckagent restart 生效）:"
 echo "     生图: OPENAI_IMAGE_API_KEY 或 火山 ARK_API_KEY（Seedream）   语音TTS: VOLCENGINE_TTS_*（不填则用免费 Edge TTS）"
-echo "  从旧机器迁移个人技能（如 opencli）: 拷到 ~/.claude/skills/ 即可，迁移前自查清单见"
-echo "     docs/claude-code-skills.md「从旧机器迁移个人技能」"
+echo "  可选增强: 安装 opencli（网站自动化）后跑一次 luckagent update，其技能自动启用；"
+echo "     要用 Codex / Kimi 引擎: 装对应 CLI 并登录，见 docs/engines.md"
 echo ""
 echo "  常用命令:  luckagent status | logs | restart | doctor --json | help"
 echo "  详细文档:  INSTALL.md 与 docs/ 目录"

@@ -21,6 +21,7 @@
 | --- | --- | --- |
 | `luckagent` | **CLI 参考技能**：教 agent 用 `luckagent memory / skills / agents / inbox / teams / schedule / talk / voice` 等全部命令，是 bot 融入协作体系的说明书 | `packages/skills/luckagent/` |
 | `voice` | 文本转语音：`luckagent voice tts` 的用法（生成 MP3、发语音） | `src/skills/voice/` |
+| `opencli`（条件启用） | 把 155+ 网站变成 CLI、驱动本机已登录的 Chrome 做浏览器自动化。**仅当检测到 `opencli` 二进制时才安装**——之后装了二进制，跑一次 `luckagent update` 即启用；还需本机装 Chrome 并登录目标网站 | `src/skills/opencli/` |
 | `image-gen` | 文生图 / 图生图 / 改图，**双 provider 统一入口 `gen.py`**：按 key 自动判定——配了 OpenAI key（`OPENAI_IMAGE_API_KEY`/`OPENAI_API_KEY`）走 gpt-image-2，仅配 `ARK_API_KEY` 走火山 Seedream（4K、组图、多参考图，需在方舟控制台开通模型）。脚本零依赖，含提示词打法参考与绿幕抠图 | `src/skills/image-gen/` |
 
 **飞书 bot 额外装 19 个 `lark-*` 技能**（lark-doc、lark-im、lark-calendar、lark-sheets、lark-base、lark-task、lark-drive、lark-mail、lark-wiki 等），让 agent 会用 `lark-cli` 操作飞书文档/消息/日历/多维表格等 11 个业务域。lark-cli 是**必备组件**，安装脚本会自动装好（含 19 个技能）；若曾安装失败可手动补：
@@ -70,16 +71,16 @@ cp -r ~/luckagent/src/skills/metaskill ~/.codex/skills/
 3. 把上述技能（含已手动启用的 `metaskill` / `metaschedule`）同步进**首个 bot** 的工作目录 `.claude/skills` + `.codex/skills`；
 4. ⚠️ 把首个 bot 工作目录的 `CLAUDE.md` 刷新为最新模板（**会覆盖本地修改**，改过模板的注意先备份或升级后 `git diff` 找回；`AGENTS.md` 仅缺失时补建）。
 
-## 从旧机器迁移个人技能
+## 添加第三方 / 自定义技能
 
-全局技能就是普通目录，从旧机器拷到新机的 `~/.claude/skills/`（Codex bot 再镜像一份到 `~/.codex/skills/`）即可被所有 bot 发现：
+全局技能就是普通目录——把技能放进 `~/.claude/skills/`（有 Codex bot 时再镜像到 `~/.codex/skills/`）即可被所有 bot 发现：
 
 ```bash
-scp -r 旧机器:~/.claude/skills/某技能 ~/.claude/skills/
-cp -r ~/.claude/skills/某技能 ~/.codex/skills/   # 有 codex bot 时
+cp -r 某技能目录 ~/.claude/skills/
+cp -r 某技能目录 ~/.codex/skills/   # 有 codex bot 时
 ```
 
-迁移前自查三件事：**①** SKILL.md 里有没有旧机器的绝对路径、真实群/人 ID、人名（有就改掉）；**②** 依赖的密钥是否已进新机 `.env`；**③** 依赖的本地二进制是否已装。典型例子 `opencli`（把网站变成 CLI、驱动已登录的 Chrome）：技能文本可直接拷，但需在新机安装 opencli 二进制、装 Chrome 并完成目标网站登录后才可用——浏览器登录态迁移不了，属于每台机器的现场配置。
+引入外部技能前自查三件事：**①** SKILL.md 里不要有其他机器的绝对路径、真实群/人 ID；**②** 依赖的密钥是否已进本机 `.env`；**③** 依赖的本地二进制是否已装（缺二进制的技能只会误导 agent）。
 
 ## 中央技能中心（跨 bot 共享）
 

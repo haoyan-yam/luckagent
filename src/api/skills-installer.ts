@@ -36,6 +36,23 @@ export interface InstallSkillsOptions {
   botName?: string;
 }
 
+/** opencli is an optional third-party binary; its skill is only installed
+ *  when the binary is actually present (a skill for a missing tool would
+ *  just mislead the agent). PATH-based so tests can control it. */
+export function opencliAvailable(): boolean {
+  const pathEnv = process.env.PATH || '';
+  for (const dir of pathEnv.split(path.delimiter)) {
+    if (!dir) continue;
+    try {
+      fs.accessSync(path.join(dir, 'opencli'), fs.constants.X_OK);
+      return true;
+    } catch {
+      /* keep scanning */
+    }
+  }
+  return false;
+}
+
 export function installSkillsToWorkDir(workDir: string, logger: Logger, options?: InstallSkillsOptions): void {
   const userSkillsDir = path.join(os.homedir(), '.claude', 'skills');
   const destSkillDirs = [
@@ -45,7 +62,8 @@ export function installSkillsToWorkDir(workDir: string, logger: Logger, options?
 
   const skillNames = options?.platform === 'feishu'
     ? [...COMMON_SKILLS, ...LARK_CLI_SKILLS]
-    : COMMON_SKILLS;
+    : [...COMMON_SKILLS];
+  if (opencliAvailable()) skillNames.push('opencli');
 
   for (const skill of skillNames) {
     const src = fs.existsSync(path.join(userSkillsDir, skill))
@@ -188,6 +206,10 @@ function bundledSkillSource(skill: string): string | undefined {
     metaschedule: [
       path.join(thisDir, '..', 'skills', 'metaschedule'),
       path.join(thisDir, '..', '..', 'src', 'skills', 'metaschedule'),
+    ],
+    opencli: [
+      path.join(thisDir, '..', 'skills', 'opencli'),
+      path.join(thisDir, '..', '..', 'src', 'skills', 'opencli'),
     ],
     luckagent: [
       path.join(thisDir, '..', 'skills', 'luckagent'),

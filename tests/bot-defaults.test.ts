@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { loadAppConfig } from '../src/config.js';
-import { larkCliHasApp, installSkillsToWorkDir } from '../src/api/skills-installer.js';
+import { larkCliHasApp, installSkillsToWorkDir, opencliAvailable } from '../src/api/skills-installer.js';
 
 const noopLogger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} } as any;
 
@@ -31,6 +31,32 @@ describe('workspace instruction deployment (engine-neutral)', () => {
     expect(fs.readFileSync(agentsMd, 'utf-8')).toContain('<!-- edited -->');
     // Parent shared conventions deployed alongside.
     expect(fs.existsSync(path.join(dir, 'bots', 'CLAUDE.md'))).toBe(true);
+  });
+
+  it('opencli skill is installed only when the binary is on PATH', () => {
+    const savedPath = process.env.PATH;
+    try {
+      // Fake bin dir containing an executable `opencli`
+      const fakeBin = path.join(dir, 'bin');
+      fs.mkdirSync(fakeBin, { recursive: true });
+      fs.writeFileSync(path.join(fakeBin, 'opencli'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+
+      process.env.PATH = fakeBin;
+      expect(opencliAvailable()).toBe(true);
+      const withDir = path.join(dir, 'bots', 'with-opencli');
+      fs.mkdirSync(withDir, { recursive: true });
+      installSkillsToWorkDir(withDir, noopLogger);
+      expect(fs.existsSync(path.join(withDir, '.claude', 'skills', 'opencli', 'SKILL.md'))).toBe(true);
+
+      process.env.PATH = path.join(dir, 'empty-bin');
+      expect(opencliAvailable()).toBe(false);
+      const withoutDir = path.join(dir, 'bots', 'without-opencli');
+      fs.mkdirSync(withoutDir, { recursive: true });
+      installSkillsToWorkDir(withoutDir, noopLogger);
+      expect(fs.existsSync(path.join(withoutDir, '.claude', 'skills', 'opencli'))).toBe(false);
+    } finally {
+      process.env.PATH = savedPath;
+    }
   });
 
   it('an existing regular AGENTS.md (user-customized) is left untouched', () => {
