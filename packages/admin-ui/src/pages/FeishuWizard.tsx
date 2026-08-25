@@ -14,8 +14,14 @@ import { api } from '../api/client';
 
 const { Paragraph, Text, Link } = Typography;
 
-const PERMISSIONS = ['im:message', 'im:message:readonly', 'im:resource', 'im:chat:readonly'];
-const OPTIONAL_PERMISSIONS = ['docx:document:readonly', 'wiki:wiki', 'docx:document', 'drive:drive'];
+import permissionScopes from '../../../../docs/feishu-permissions.json';
+
+/** 批量导入 JSON（默认必备权限全集，与 docs/feishu-permissions.json 同源） */
+const PERMISSIONS_JSON = JSON.stringify(permissionScopes, null, 2);
+const TENANT_COUNT = permissionScopes.scopes.tenant.length;
+const USER_COUNT = permissionScopes.scopes.user.length;
+/** 手动最小集：只想先跑通消息收发时逐个开通这四项 */
+const MINIMAL_PERMISSIONS = ['im:message', 'im:message:readonly', 'im:resource', 'im:chat:readonly'];
 
 /**
  * 飞书接入向导：七步引导从开放平台建应用到落库为 bots.json 条目。
@@ -138,18 +144,21 @@ export default function FeishuWizard({
       content: (
         <>
           <Paragraph>
-            左侧菜单 → <Text strong>权限管理</Text>，搜索并开通以下权限（可批量导入）：
+            左侧菜单 → <Text strong>权限管理</Text> → 点击 <Text strong>批量导入</Text>
+            （部分版本入口叫「导入权限配置」/「批量开通」），把下面的 JSON 整段粘贴进去提交：
           </Paragraph>
-          <Paragraph copyable={{ text: PERMISSIONS.join(', ') }}>
-            {PERMISSIONS.map((p) => (
-              <Text code key={p} style={{ marginRight: 8 }}>
-                {p}
-              </Text>
-            ))}
+          <Paragraph copyable={{ text: PERMISSIONS_JSON, tooltips: ['复制权限 JSON', '已复制'] }}>
+            <Text strong>复制默认权限 JSON</Text>（应用身份 {TENANT_COUNT} 项 + 用户身份 {USER_COUNT} 项，
+            覆盖消息、文档、表格、多维表格、日历、任务、知识库等全部内置能力）
           </Paragraph>
           <Paragraph type="secondary">
-            可选（文档/云盘能力）：
-            {OPTIONAL_PERMISSIONS.map((p) => (
+            用户身份（user）权限供 lark-cli 以 <Text code>--as user</Text> 操作日历/云文档等场景使用，
+            走用户授权，首次使用时飞书会引导授权。部分权限（如通讯录）提交后可能需要管理员在
+            后台审批开通。
+          </Paragraph>
+          <Paragraph type="secondary">
+            只想先跑通消息收发？也可以手动只开这四项最小集：
+            {MINIMAL_PERMISSIONS.map((p) => (
               <Text code key={p} style={{ marginRight: 8 }}>
                 {p}
               </Text>
