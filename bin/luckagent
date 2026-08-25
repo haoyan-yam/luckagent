@@ -507,6 +507,24 @@ check("voice_defaults", voice_ok, "voice_defaults_missing" if not voice_ok else 
       False,
       voice_default)
 
+lark_bin = shutil.which("lark-cli")
+lark_cfg = Path.home() / ".lark-cli" / "config.json"
+lark_apps = 0
+if lark_cfg.exists():
+    try:
+        lark_apps = len(json.loads(lark_cfg.read_text()).get("apps", []))
+    except Exception:
+        lark_apps = -1  # config unreadable
+lark_ok = bool(lark_bin) and lark_apps > 0
+check("lark_cli", lark_ok,
+      ("lark_cli_missing" if not lark_bin else "lark_cli_unconfigured") if not lark_ok else "ok",
+      f"lark-cli installed with {lark_apps} app profile(s)." if lark_ok
+      else ("lark-cli binary not found — required for doc/sheet ops and group digests." if not lark_bin
+            else "lark-cli installed but no app profile configured yet."),
+      "Install: npm i -g @larksuite/cli && npx skills add larksuite/cli --all -y -g; profiles are added automatically when a bot is created via the admin console.",
+      False,
+      {"binary": lark_bin, "configExists": lark_cfg.exists(), "appProfiles": lark_apps})
+
 codex_path = env("CODEX_EXECUTABLE_PATH") or shutil.which("codex")
 codex_home = Path(env("CODEX_HOME", str(Path.home() / ".codex"))).expanduser()
 codex_config = codex_home / "config.toml"

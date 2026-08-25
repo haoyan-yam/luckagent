@@ -11,7 +11,7 @@
 
 | 东西 | 说明 |
 | --- | --- |
-| 安装包 | `luckagent-installer-v0.2.1.tar.gz`（+ 同名 `.sha256` 校验文件） |
+| 安装包 | `luckagent-installer-v0.2.2.tar.gz`（+ 同名 `.sha256` 校验文件） |
 | 网络 | 目标机需联网（下载 Homebrew/node/npm 依赖、连飞书与模型 API） |
 | 飞书账号 | 有权限在 [飞书开放平台](https://open.feishu.cn/app) 创建企业自建应用 |
 | Claude 认证 | 二选一：Anthropic API Key，或 Claude Code 订阅账号 |
@@ -23,19 +23,19 @@
 
 任选其一：
 
-- **隔空投送（AirDrop）**：从旧机器把 `luckagent-installer-v0.2.1.tar.gz` 投过去（默认落在 `~/Downloads`）
+- **隔空投送（AirDrop）**：从旧机器把 `luckagent-installer-v0.2.2.tar.gz` 投过去（默认落在 `~/Downloads`）
 - **U 盘**：拷贝到 U 盘再拷进 `~/Downloads`
 - **scp**（两台机器同一局域网时）：
 
 ```bash
-scp luckagent-installer-v0.2.1.tar.gz 用户名@mac-mini.local:~/Downloads/
+scp luckagent-installer-v0.2.2.tar.gz 用户名@mac-mini.local:~/Downloads/
 ```
 
 （可选）校验包完整性：
 
 ```bash
 cd ~/Downloads
-shasum -a 256 -c luckagent-installer-v0.2.1.tar.gz.sha256
+shasum -a 256 -c luckagent-installer-v0.2.2.tar.gz.sha256
 ```
 
 看到 `OK` 即通过。
@@ -48,7 +48,7 @@ shasum -a 256 -c luckagent-installer-v0.2.1.tar.gz.sha256
 
 ```bash
 cd ~/Downloads
-tar -xzf luckagent-installer-v0.2.1.tar.gz
+tar -xzf luckagent-installer-v0.2.2.tar.gz
 mv luckagent ~/luckagent
 cd ~/luckagent
 bash install.sh
@@ -63,7 +63,7 @@ bash install.sh
 | npm install + 构建 | 下载依赖并本地编译原生模块，几分钟 | 无 |
 | 生成 `.env` | 自动生成随机 `API_SECRET`（管理台登录密钥） | 提示时可顺手粘贴 `ANTHROPIC_API_KEY`（也可跳过，第 4 步再填） |
 | 生成 `bots.json` | 空列表——机器人稍后用管理台向导创建 | 无 |
-| lark-cli（可选） | 询问是否安装飞书官方 CLI + 19 个技能 | 建议回车（默认安装） |
+| lark-cli（必装） | 自动安装飞书官方 CLI + 19 个 AI 技能（文档/表格/日历操作、群日报拉消息都依赖它） | 无；万一安装失败，结尾会打印待办命令 |
 | PM2 启动 | 启动 `luckagent-bridge` + `luckagent-core` 两个常驻进程 | 无 |
 
 结尾会打印：**管理台地址、API_SECRET、下一步指引**。把 API_SECRET 复制下来。

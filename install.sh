@@ -165,17 +165,20 @@ for skill in luckagent voice luckagent-team; do
 done
 success "技能已同步（luckagent / voice / luckagent-team）"
 
-# ---- lark-cli（可选，飞书文档/表格等 200+ 命令 + 19 个 AI 技能）----
+# ---- lark-cli（必装：bot 操作飞书文档/表格/日历、群日报拉群消息都依赖它）----
+LARK_CLI_TODO=""
 if [[ "$NO_SYSTEM" != "true" ]]; then
   if ! command -v lark-cli &>/dev/null; then
-    if ask_yn "安装 lark-cli（飞书官方 CLI，供 bot 操作文档/表格/日历等）？" y; then
-      npm install -g @larksuite/cli && success "lark-cli 已安装" || warn "lark-cli 安装失败（可稍后手动: npm i -g @larksuite/cli）"
-    fi
+    info "安装 lark-cli（飞书官方 CLI，Luckagent 必备组件）..."
+    npm install -g @larksuite/cli       || npm install -g --prefix "$HOME/.local" @larksuite/cli       || { error "lark-cli 安装失败——群日报/文档操作等能力不可用"; LARK_CLI_TODO="npm install -g @larksuite/cli && npx skills add larksuite/cli --all -y -g"; }
   fi
   if command -v lark-cli &>/dev/null; then
+    success "lark-cli $(lark-cli --version 2>/dev/null || echo '已安装')"
     info "安装 lark-cli AI Agent 技能（19 个）..."
-    npx skills add larksuite/cli --all -y -g 2>/dev/null && success "lark 技能已装" || warn "lark 技能安装失败（可稍后手动: npx skills add larksuite/cli --all -y -g）"
+    npx skills add larksuite/cli --all -y -g 2>/dev/null && success "lark 技能已装"       || { warn "lark 技能安装失败"; LARK_CLI_TODO="npx skills add larksuite/cli --all -y -g"; }
   fi
+else
+  command -v lark-cli &>/dev/null || warn "--no-system：跳过 lark-cli 安装，但它是必备组件——正式环境请确保已装（npm i -g @larksuite/cli）"
 fi
 
 # ---- 工作区目录 ----
@@ -228,6 +231,11 @@ if [[ "$NO_SYSTEM" != "true" ]]; then
   echo "  4. 开机自启（推荐）：执行  pm2 startup  并按提示运行输出的 sudo 命令，再 pm2 save"
 fi
 echo ""
+if [[ -n "$LARK_CLI_TODO" ]]; then
+  echo -e "  ${RED}❗ 待办${NC}: lark-cli 未装齐（必备组件），请手动执行:"
+  echo "     $LARK_CLI_TODO"
+  echo ""
+fi
 echo "  常用命令:  luckagent status | logs | restart | doctor --json | help"
 echo "  详细文档:  INSTALL.md 与 docs/ 目录"
 echo ""
