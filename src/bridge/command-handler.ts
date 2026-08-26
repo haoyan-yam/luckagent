@@ -380,8 +380,10 @@ export class CommandHandler {
     if (normalized === 'list' || normalized === 'ls') {
       const active = session.model || botDefault;
       const claudeModels = [
-        { id: 'claude-fable-5', label: 'Fable 5', note: 'Latest Claude Code model · 1M context · 128k max output · adaptive thinking' },
-        { id: 'claude-opus-4-8', label: 'Opus 4.8', note: 'High-capability legacy default · 200k context · 128k max output' },
+        { id: 'claude-fable-5', label: 'Fable 5', note: 'Most capable (Mythos-class) · 1M context · adaptive thinking · needs a plan that serves it' },
+        { id: 'claude-opus-5', label: 'Opus 5', note: 'Claude 5 flagship · high capability' },
+        { id: 'claude-sonnet-5', label: 'Sonnet 5', note: 'Claude 5 balanced · fast' },
+        { id: 'claude-opus-4-8', label: 'Opus 4.8', note: 'Legacy high-capability · 200k context' },
         { id: 'claude-opus-4-8[1m]', label: 'Opus 4.8 (1M)', note: '1M context window' },
         { id: 'claude-opus-4-7', label: 'Opus 4.7', note: '200k context' },
         { id: 'claude-opus-4-7[1m]', label: 'Opus 4.7 (1M)', note: '1M context window' },
@@ -544,7 +546,7 @@ export class CommandHandler {
   private exampleModelsForEngine(engine: EngineName): string {
     switch (engine) {
       case 'claude':
-        return '`claude-fable-5`, `claude-opus-4-8`, `claude-sonnet-4-6`, `claude-haiku-4-5`';
+        return '`claude-fable-5`, `claude-opus-5`, `claude-sonnet-5`, `claude-haiku-4-5`';
       case 'deepseek':
         return '`deepseek-v4-flash`, `deepseek-v4-pro`, `deepseek-v4-flash-vision-exp`';
     }
