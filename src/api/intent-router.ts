@@ -42,7 +42,7 @@ export class IntentRouter {
    */
   async route(
     message: string,
-    availableBots: BotInfo[],
+    availableBots: Array<Omit<BotInfo, 'engine'> & { engine: string }>,
     currentBot?: string,
   ): Promise<RouteResult> {
     if (this.mode === 'manual' || availableBots.length <= 1) {

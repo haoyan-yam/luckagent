@@ -15,7 +15,7 @@
 | 飞书账号 | 有权限在 [飞书开放平台](https://open.feishu.cn/app) 创建企业自建应用 |
 | Claude 认证 | 二选一：[Anthropic API Key](https://console.anthropic.com)，或 Claude Code 订阅账号（安装脚本可代装 CLI，登录需自己跑一次 `claude`） |
 | 生图 key（可选） | 二选一：[OpenAI](https://platform.openai.com) 的 key，或 [火山方舟](https://console.volcengine.com/ark) 的 ARK key（需在控制台开通 Doubao-Seedream 模型） |
-| 其他引擎（可选） | Codex / Kimi 需装各自 CLI 并登录；**DeepSeek 无需装任何东西，只要一个 [API key](https://platform.deepseek.com)**。详见 [docs/engines.md](docs/engines.md) |
+| DeepSeek 引擎（可选） | **无需装任何东西，只要一个 [API key](https://platform.deepseek.com)**。详见 [docs/engines.md](docs/engines.md) |
 | 时间 | 全程约 20–40 分钟（首次装 Xcode 命令行工具占大头） |
 
 ---
@@ -93,8 +93,6 @@ CLAUDE_EXECUTABLE_PATH=~/.local/bin/claude
 
 然后 `luckagent restart`。
 
-> 想用 **Codex 或 Kimi** 引擎的 bot？各需在终端多做两步（装对应 CLI + 登录），见 [docs/engines.md](docs/engines.md)。
-
 ---
 
 ## 4. 打开管理台，创建第一个机器人
@@ -144,7 +142,7 @@ pm2 save
 ```bash
 luckagent status          # luckagent-bridge / luckagent-core 均 online
 luckagent health          # {"status":"ok",...}
-luckagent doctor --json   # 本机体检（runtime/PM2/core/bots/voice/codex 等检查项）
+luckagent doctor --json   # 本机体检（runtime/PM2/core/bots/voice 等检查项）
 ```
 
 - 管理台「系统总览」：桥接与 core 均绿色，机器人显示「运行中」
@@ -161,7 +159,7 @@ luckagent doctor --json   # 本机体检（runtime/PM2/core/bots/voice/codex 等
 | `~/projects/` | 各机器人的工作目录（`<bot>/inputs\|outputs\|work` + 共用规范 `CLAUDE.md`） |
 | `~/.luckagent/` | 运行状态（定时任务、会话、活动记录数据库） |
 | `~/.luckagent-core/` | core 数据（`token`、`data/central.db` 共享记忆库） |
-| `~/.claude/skills/`、`~/.codex/skills/` | 随装技能（luckagent / voice / lark-* 等） |
+| `~/.claude/skills/` | 随装技能（luckagent / voice / lark-* / frontend-slides 等） |
 | `~/.local/bin/luckagent` | CLI 命令 |
 
 详细说明见 [docs/directory-layout.md](docs/directory-layout.md)。

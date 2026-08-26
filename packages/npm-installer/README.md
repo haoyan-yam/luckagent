@@ -1,6 +1,6 @@
 # luckagent
 
-把 Claude Code / Codex / Kimi / DeepSeek 变成飞书里的常驻 AI 同事——自托管的多 bot 平台。
+把 Claude Code / DeepSeek 变成飞书里的常驻 AI 同事——自托管的多 bot 平台。
 
 本 npm 包是 **安装引导器**：
 

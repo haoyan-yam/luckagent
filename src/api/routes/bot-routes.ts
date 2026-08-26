@@ -161,8 +161,6 @@ export async function handleBotRoutes(
     const entry: Record<string, unknown> = {
       name, ...(body.description ? { description: body.description } : {}),
       ...(body.engine ? { engine: body.engine } : {}),
-      ...(body.codex ? { codex: body.codex } : {}),
-      ...(body.kimi ? { kimi: body.kimi } : {}),
       ...(body.deepseek ? { deepseek: body.deepseek } : {}),
       feishuAppId: appId, feishuAppSecret: appSecret, defaultWorkingDirectory: workDirInput,
       downloadsDir,
@@ -337,10 +335,6 @@ function defaultModelForConfig(config: import('../../config.js').BotConfigBase):
   switch (resolveEngineName(config)) {
     case 'claude':
       return config.claude.model;
-    case 'kimi':
-      return config.kimi?.model;
-    case 'codex':
-      return config.codex?.model || config.codex?.displayModel;
     case 'deepseek':
       return config.deepseek?.model || 'deepseek-v4-flash';
   }

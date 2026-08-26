@@ -50,10 +50,7 @@ export function opencliAvailable(): boolean {
 
 export async function installSkillsToWorkDir(workDir: string, logger: Logger, options?: InstallSkillsOptions): Promise<void> {
   const userSkillsDir = path.join(os.homedir(), '.claude', 'skills');
-  const destSkillDirs = [
-    path.join(workDir, '.claude', 'skills'),
-    path.join(workDir, '.codex', 'skills'),
-  ];
+  const destSkillDirs = [path.join(workDir, '.claude', 'skills')];
 
   const skillNames = options?.platform === 'feishu'
     ? [...COMMON_SKILLS, ...LARK_CLI_SKILLS]
@@ -171,9 +168,9 @@ function deployWorkspaceInstructions(workDir: string, logger: Logger): void {
     if (!fs.existsSync(candidate)) continue;
 
     copyInstructionFile(candidate, existingClaudeMd, 'CLAUDE.md', logger);
-    // AGENTS.md (read by Codex/Kimi) is a SYMLINK to CLAUDE.md — one document,
-    // two names, so later edits to CLAUDE.md reach every engine with zero
-    // drift. An existing regular AGENTS.md (user-customized) is left alone.
+    // AGENTS.md is a SYMLINK to CLAUDE.md — one document, two names, kept for
+    // compatibility with any agent tools run manually in this workdir. An
+    // existing regular AGENTS.md (user-customized) is left alone.
     const agentsMd = path.join(workDir, 'AGENTS.md');
     if (!fs.existsSync(agentsMd)) {
       try {

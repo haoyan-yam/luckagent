@@ -293,16 +293,6 @@ describe('StreamProcessor background task events', () => {
     expect(state.backgroundEvents).toBeUndefined();
   });
 
-  it('renders Codex translator task_notification events too', () => {
-    const p = new StreamProcessor('hi');
-    const state = p.processMessage(msg({
-      type: 'task_notification', session_id: 'codex-sess', result: 'rate limited',
-    } as unknown as SDKMessage));
-    expect(state.backgroundEvents?.[0]).toMatchObject({
-      taskId: 'codex-sess', lastEvent: 'rate limited',
-    });
-  });
-
   it('propagates backgroundEvents through the result message', () => {
     const p = new StreamProcessor('hi');
     p.processMessage(msg({

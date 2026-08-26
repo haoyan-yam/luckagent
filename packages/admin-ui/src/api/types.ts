@@ -27,7 +27,7 @@ export interface Overview {
 export interface BotEntry {
   name: string;
   description?: string;
-  engine?: 'claude' | 'kimi' | 'codex' | 'deepseek';
+  engine?: 'claude' | 'deepseek';
   feishuAppId?: string;
   feishuAppSecret?: string;
   defaultWorkingDirectory?: string;
@@ -42,16 +42,7 @@ export interface BotEntry {
   groupOnlyAllowUsers?: string[];
   groupNoMention?: boolean;
   ttsVoice?: string;
-  kimi?: { model?: string; thinking?: boolean; apiKey?: string; contextWindow?: number };
   deepseek?: { apiKey?: string; model?: string; baseUrl?: string };
-  codex?: {
-    model?: string;
-    apiKey?: string;
-    baseUrl?: string;
-    approvalPolicy?: string;
-    sandbox?: string;
-    reasoningEffort?: string;
-  };
   [key: string]: unknown;
 }
 

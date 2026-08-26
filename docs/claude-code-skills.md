@@ -1,6 +1,6 @@
 # 技能体系
 
-技能（skill）是给 agent 的可复用操作手册：一个含 `SKILL.md` 的目录，描述「什么时候用、怎么用」。Claude Code / Kimi / Codex 会在会话里自动发现工作目录下的技能并按需加载。Luckagent 负责把该装的技能装到每个 bot 的工作目录里，并在升级时保持同步。
+技能（skill）是给 agent 的可复用操作手册：一个含 `SKILL.md` 的目录，描述「什么时候用、怎么用」。Claude Code 会在会话里自动发现工作目录下的技能并按需加载（DeepSeek 引擎共享同一运行时，行为一致）。Luckagent 负责把该装的技能装到每个 bot 的工作目录里，并在升级时保持同步。
 
 ## 双目录发现机制
 
@@ -8,10 +8,9 @@
 
 | 目录 | 谁来读 |
 | --- | --- |
-| `<工作目录>/.claude/skills/` | Claude、Kimi 引擎 |
-| `<工作目录>/.codex/skills/` | Codex 引擎 |
+| `<工作目录>/.claude/skills/` | Claude / DeepSeek 引擎（同一运行时） |
 
-安装器（`src/api/skills-installer.ts`）每次都成对写入两个目录，所以**换引擎不用重装技能**。全局层面同理：`~/.claude/skills` 与 `~/.codex/skills` 是一对。
+全局层面是 `~/.claude/skills`；安装器（`src/api/skills-installer.ts`）建 bot 时把随装技能镜像进工作目录。
 
 ## 随装技能
 
@@ -36,7 +35,7 @@ npx skills add larksuite/cli --all -y -g   # 拉取 19 个官方技能到全局
 
 ## 可选技能（手动启用）
 
-不默认安装，需要时从源码目录拷贝到 `~/.claude/skills/`（或某个 bot 的 `.claude/skills/`）即可；管理台创建 bot 时会自动把随装技能装进该 bot 工作目录的 `.claude/skills` 与 `.codex/skills`；`luckagent update` 检测到已启用会跟着同步进工作区：
+不默认安装，需要时从源码目录拷贝到 `~/.claude/skills/`（或某个 bot 的 `.claude/skills/`）即可；管理台创建 bot 时会自动把随装技能装进该 bot 工作目录的 `.claude/skills`；`luckagent update` 检测到已启用会跟着同步进工作区：
 
 | 技能 | 作用 | 源 |
 | --- | --- | --- |
@@ -51,7 +50,7 @@ npx skills add larksuite/cli --all -y -g   # 拉取 19 个官方技能到全局
 | 共用层（部署一次） | 各 bot 工作目录的**父目录**下的 `CLAUDE.md`（如 `~/projects/CLAUDE.md`） | `src/workspace/PROJECTS-CLAUDE.md` | 对该目录下**所有** bot 生效的共用规范：inputs/work/outputs 文件存放约定、发送暂存目录语义、出站内容纪律、lark-cli 身份硬规则、`luckagent` 能力速查 |
 | bot 层（每 bot 一份） | `<工作目录>/CLAUDE.md` + 镜像 `AGENTS.md` | `src/workspace/CLAUDE.md` | 只写**本 bot 专属**事实：项目背景、对应飞书群、lark-cli profile 名等（模板里的 `<占位>` 补齐后删说明段） |
 
-分工原则：**共用规则只写在父目录那份里，bot 层不要复制**——否则改一条规则要改 N 个文件。`AGENTS.md` 是给 Kimi/Codex 引擎看的镜像（它们读这个文件名），内容与 `CLAUDE.md` 保持一致。
+分工原则：**共用规则只写在父目录那份里，bot 层不要复制**——否则改一条规则要改 N 个文件。`AGENTS.md` 是 `CLAUDE.md` 的符号链接镜像——为你在工作目录里手动运行的其他 agent 工具保留的兼容位。
 
 部署时机：新建 bot 时安装器部署两级文件（已存在则不覆盖）。
 
@@ -59,18 +58,17 @@ npx skills add larksuite/cli --all -y -g   # 拉取 19 个官方技能到全局
 
 `luckagent update`（仅 git 检出可用；无 `.git` 安装的等价操作是用 codeload tarball 覆盖后重跑 `bash install.sh`，见 INSTALL.md 升级一节）在拉代码、重建之后会做一轮技能同步：
 
-1. 仓库内置技能（`luckagent`、`voice`、`luckagent-team`、`image-gen`，检测到 opencli 二进制时还有 `opencli`）刷新到 `~/.claude/skills` 与 `~/.codex/skills`；第三方 `frontend-slides` 若为 git 检出则拉取上游最新；
-2. 若本机装过 lark-cli：升级 `@larksuite/cli` 并刷新 19 个 `lark-*` 技能，再镜像进两个全局技能目录；
-3. 把上述技能同步进**每个 bot** 的工作目录 `.claude/skills` + `.codex/skills`（按 `bots.json` 逐个遍历）；
+1. 仓库内置技能（`luckagent`、`voice`、`luckagent-team`、`image-gen`，检测到 opencli 二进制时还有 `opencli`）刷新到 `~/.claude/skills`；第三方 `frontend-slides` 若为 git 检出则拉取上游最新；
+2. 若本机装过 lark-cli：升级 `@larksuite/cli` 并刷新 19 个 `lark-*` 技能，再镜像进全局技能目录；
+3. 把上述技能同步进**每个 bot** 的工作目录 `.claude/skills`（按 `bots.json` 逐个遍历）；
 4. ⚠️ 把各 bot 工作目录的 `CLAUDE.md` 刷新为最新模板（**会覆盖本地修改**，改过模板的注意先备份或升级后 `git diff` 找回；`AGENTS.md` 仅缺失时补建）。
 
 ## 添加第三方 / 自定义技能
 
-全局技能就是普通目录——把技能放进 `~/.claude/skills/`（有 Codex bot 时再镜像到 `~/.codex/skills/`）即可被所有 bot 发现：
+全局技能就是普通目录——把技能放进 `~/.claude/skills/` 即可被所有 bot 发现：
 
 ```bash
 cp -r 某技能目录 ~/.claude/skills/
-cp -r 某技能目录 ~/.codex/skills/   # 有 codex bot 时
 ```
 
 引入外部技能前自查三件事：**①** SKILL.md 里不要有其他机器的绝对路径、真实群/人 ID；**②** 依赖的密钥是否已进本机 `.env`；**③** 依赖的本地二进制是否已装（缺二进制的技能只会误导 agent）。

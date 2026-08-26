@@ -200,36 +200,10 @@ export default function BotFormDrawer({
           <Select
             options={[
               { value: 'claude', label: 'Claude Code' },
-              { value: 'kimi', label: 'Kimi' },
-              { value: 'codex', label: 'Codex' },
               { value: 'deepseek', label: 'DeepSeek' },
             ]}
           />
         </Form.Item>
-
-        {engine === 'kimi' && (
-          <Collapse
-            size="small"
-            defaultActiveKey={['kimi']}
-            items={[
-              {
-                key: 'kimi',
-                forceRender: true,
-                label: 'Kimi 引擎设置',
-                children: (
-                  <>
-                    <Form.Item name={['kimi', 'model']} label="模型">
-                      <Input placeholder="kimi-latest" />
-                    </Form.Item>
-                    <Form.Item name={['kimi', 'thinking']} label="思考模式" valuePropName="checked">
-                      <Switch />
-                    </Form.Item>
-                  </>
-                ),
-              },
-            ]}
-          />
-        )}
 
         {engine === 'deepseek' && (
           <Collapse
@@ -254,45 +228,6 @@ export default function BotFormDrawer({
                           { value: 'deepseek-v4-pro', label: 'deepseek-v4-pro（更强推理）' },
                           { value: 'deepseek-v4-flash-vision-exp', label: 'deepseek-v4-flash-vision-exp（视觉理解 · 实验）' },
                         ]}
-                      />
-                    </Form.Item>
-                  </>
-                ),
-              },
-            ]}
-          />
-        )}
-
-        {engine === 'codex' && (
-          <Collapse
-            size="small"
-            defaultActiveKey={['codex']}
-            items={[
-              {
-                key: 'codex',
-                forceRender: true,
-                label: 'Codex 引擎设置',
-                children: (
-                  <>
-                    <Form.Item name={['codex', 'model']} label="模型">
-                      <Input placeholder="gpt-5.5" />
-                    </Form.Item>
-                    <Form.Item name={['codex', 'baseUrl']} label="Base URL">
-                      <Input placeholder="https://api.openai.com/v1" />
-                    </Form.Item>
-                    <Form.Item name={['codex', 'apiKey']} label="API Key（留空 = 不修改/用全局）">
-                      <Input.Password />
-                    </Form.Item>
-                    <Form.Item name={['codex', 'approvalPolicy']} label="审批策略">
-                      <Select
-                        allowClear
-                        options={['untrusted', 'on-failure', 'on-request', 'never'].map((v) => ({ value: v, label: v }))}
-                      />
-                    </Form.Item>
-                    <Form.Item name={['codex', 'sandbox']} label="沙箱">
-                      <Select
-                        allowClear
-                        options={['read-only', 'workspace-write', 'danger-full-access'].map((v) => ({ value: v, label: v }))}
                       />
                     </Form.Item>
                   </>

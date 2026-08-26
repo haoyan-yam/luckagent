@@ -8,17 +8,17 @@ import type {
   ApiContext,
   TeamEvent,
 } from './claude/executor.js';
-import type { CodexExecutor } from './codex/executor.js';
 import type { StreamProcessor } from './claude/stream-processor.js';
 
-export type EngineName = 'claude' | 'kimi' | 'codex' | 'deepseek';
+export type EngineName = 'claude' | 'deepseek';
 
 /**
- * An Engine is a programmable agent backend (Claude Code, Kimi Code, …).
+ * An Engine is a programmable agent backend (Claude Code, or Claude Code
+ * pointed at DeepSeek's Anthropic-compatible endpoint).
  * It produces an Executor that the bridge drives for a single chat session.
  *
  * In Phase 1 we only ship the Claude implementation; the interface lets us
- * drop in a Kimi implementation without touching the bridge.
+ * drop in another implementation without touching the bridge.
  */
 export interface Engine {
   readonly name: EngineName;
@@ -34,7 +34,7 @@ export interface Engine {
  * and the one-shot `execute` path used by voice mode.
  *
  * Phase 1 aliases these to the Claude types. Phase 2 will generalise
- * SDKMessage into a union (EngineMessage) with Kimi-specific events.
+ * SDKMessage into a union (EngineMessage) with engine-specific events.
  */
 export interface Executor {
   startExecution(options: ExecutorOptions): ExecutionHandle;
@@ -45,7 +45,6 @@ export type StreamProcessorLike = StreamProcessor;
 
 export type {
   ClaudeExecutor,
-  CodexExecutor,
   ExecutionHandle,
   ExecutorOptions,
   SDKMessage,

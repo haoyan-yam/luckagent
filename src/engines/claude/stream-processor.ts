@@ -79,11 +79,6 @@ export class StreamProcessor {
         this.processStreamEvent(message);
         break;
 
-      case 'task_notification':
-        // Codex translator synthesizes this shape for top-level error events.
-        this.recordCodexTaskNotification(message);
-        break;
-
       case 'tool_use_summary':
         break;
     }
@@ -206,19 +201,6 @@ export class StreamProcessor {
       if (n >= 8 && norm.slice(0, n) === cmd.slice(0, n)) return entry;
     }
     return undefined;
-  }
-
-  private recordCodexTaskNotification(message: SDKMessage): void {
-    const m = message as Record<string, unknown>;
-    const result = typeof m.result === 'string' ? m.result : undefined;
-    if (!result) return;
-    const taskId = typeof m.session_id === 'string' ? m.session_id : 'codex';
-    this._backgroundEvents.set(taskId, {
-      taskId,
-      description: 'Codex notification',
-      status: 'running',
-      lastEvent: result,
-    });
   }
 
   private processAssistantMessage(message: SDKMessage): void {

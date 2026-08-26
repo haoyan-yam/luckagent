@@ -1,4 +1,4 @@
-import type { BotConfigBase, CodexReasoningEffort } from '../config.js';
+import type { BotConfigBase } from '../config.js';
 import type { Logger } from '../utils/logger.js';
 import type { IncomingMessage } from '../types.js';
 import type { IMessageSender } from './message-sender.interface.js';
@@ -72,19 +72,17 @@ export class CommandHandler {
           '`/stop` - Abort current running task',
           '`/status` - Show current session info',
           '`/model` - Show current engine/model; `/model list` - Available options',
-          '`/model claude`, `/model kimi`, `/model codex`, or `/model deepseek` - Switch engine (resets session)',
+          '`/model claude` or `/model deepseek` - Switch engine (resets session)',
           '`/model <name>` - Set model for current engine',
-          '`/effort low|medium|high|xhigh` - Set Codex reasoning effort for this chat',
           '`/resume` - List & switch to a previous Claude session (Claude only)',
           '`/resume <id>` - Resume a session directly by id prefix',
           '`/memory` - Memory document commands',
           '`/help` - Show this help message',
           '',
           '**Agent Commands:**',
-          '`/goal <description>` - Set a goal the agent keeps pursuing across turns (Claude native, Codex bridge-managed)',
+          '`/goal <description>` - Set a goal the agent keeps pursuing across turns',
           '`/goal status|clear` - Show or clear the current goal',
-          '`/background <prompt>` - Run a task in the background while you continue chatting (Claude native, Codex bridge-managed)',
-          '`/background list|logs <id>|stop <id>` - Manage Codex background tasks',
+          '`/background <prompt>` - Run a task in the background while you continue chatting',
           '',
           '**Usage:**',
           'Send any text message to start a conversation with the configured agent engine.',
@@ -179,7 +177,6 @@ export class CommandHandler {
           `**Working Directory:** \`${session.workingDirectory}\``,
           `**Session:** ${session.sessionId ? `\`${session.sessionId.slice(0, 8)}...\`` : '_None_'}`,
           `**Model:** \`${activeModel}\`${session.model ? ' (session override)' : ''}`,
-          `**Effort:** \`${session.reasoningEffort || this.config.codex?.reasoningEffort || 'codex default'}\`${session.reasoningEffort ? ' (session override)' : ''}`,
           `**Running:** ${isRunning ? 'Yes ⏳' : 'No'}`,
         ].join('\n'));
         return true;
@@ -200,12 +197,6 @@ export class CommandHandler {
       case '/model': {
         const args = text.slice('/model'.length).trim();
         await this.handleModelCommand(chatId, args);
-        return true;
-      }
-
-      case '/effort': {
-        const args = text.slice('/effort'.length).trim();
-        await this.handleEffortCommand(chatId, args);
         return true;
       }
 
@@ -349,7 +340,7 @@ export class CommandHandler {
         '',
         'Usage:',
         '- `/model list` — Show available engines + models',
-        '- `/model claude`, `/model kimi`, `/model codex`, or `/model deepseek` — Switch engine (resets session)',
+        '- `/model claude` or `/model deepseek` — Switch engine (resets session)',
         `- \`/model <name>\` — Set session model (e.g. ${exampleModels})`,
         '- `/model reset` — Clear overrides, use bot defaults',
       ];
@@ -359,7 +350,7 @@ export class CommandHandler {
 
     const normalized = args.toLowerCase();
 
-    // Engine switch — /model claude, /model kimi, or /model codex
+    // Engine switch — /model claude or /model deepseek
     if (isEngineName(normalized)) {
       if (activeEngine === normalized) {
         await this.sender.sendTextNotice(
@@ -400,35 +391,19 @@ export class CommandHandler {
         { id: 'claude-sonnet-4-6[1m]', label: 'Sonnet 4.6 (1M)', note: '1M context window' },
         { id: 'claude-haiku-4-5', label: 'Haiku 4.5', note: 'Fastest · 200k context' },
       ];
-      const kimiModels = [
-        { id: 'kimi-for-coding', label: 'Kimi for Coding', note: 'Subscription default · 256k context · thinking' },
-        { id: 'kimi-k2', label: 'Kimi K2', note: 'Legacy coding model' },
-      ];
-      const codexModels = [
-        { id: 'gpt-5.5', label: 'GPT 5.5', note: 'Recommended Codex model for ChatGPT subscription users' },
-        { id: 'gpt-5.5-codex', label: 'GPT 5.5 Codex', note: 'Codex coding model, when available in your Codex account' },
-        { id: 'gpt-5.2-codex', label: 'GPT-5.2 Codex', note: 'Legacy Codex coding model' },
-      ];
       const deepseekModels = [
         { id: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash', note: 'Fast + cheap default' },
         { id: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro', note: 'Stronger reasoning' },
         { id: 'deepseek-v4-flash-vision-exp', label: 'DeepSeek V4 Flash Vision', note: 'Image understanding (experimental)' },
       ];
-      const models = activeEngine === 'kimi' ? kimiModels
-        : activeEngine === 'codex' ? codexModels
-        : activeEngine === 'deepseek' ? deepseekModels
-        : claudeModels;
-      const header = activeEngine === 'kimi'
-        ? '**Available Kimi models:**'
-        : activeEngine === 'codex'
-          ? '**Common Codex models:**'
-          : activeEngine === 'deepseek'
-            ? '**Available DeepSeek models:**'
-            : '**Available Claude models:**';
+      const models = activeEngine === 'deepseek' ? deepseekModels : claudeModels;
+      const header = activeEngine === 'deepseek'
+        ? '**Available DeepSeek models:**'
+        : '**Available Claude models:**';
       const lines = [
         `**Current engine:** \`${activeEngine}\`${session.engine ? ' (session override)' : ''}`,
         '',
-        '**Engines:** `/model claude`, `/model kimi`, `/model codex`, or `/model deepseek` to switch.',
+        '**Engines:** `/model claude` or `/model deepseek` to switch.',
         '',
         header,
         '',
@@ -440,10 +415,6 @@ export class CommandHandler {
       lines.push('');
       if (activeEngine === 'claude') {
         lines.push('_Tip: Fable 5 uses its native 1M context. For Opus/Sonnet, append `[1m]` to enable the 1M context window._');
-      } else if (activeEngine === 'codex') {
-        lines.push('_Tip: leave unset to use the Codex CLI default from `~/.codex/config.toml`._');
-      } else {
-        lines.push('_Tip: leave unset to use the kimi-cli default (recommended for subscription users — the server picks the best available)._');
       }
       lines.push('Use `/model <name>` to set the model for the current engine.');
       await this.sender.sendTextNotice(chatId, '🤖 Available Models', lines.join('\n'));
@@ -454,7 +425,6 @@ export class CommandHandler {
     if (normalized === 'reset' || normalized === 'clear' || normalized === 'default') {
       this.sessionManager.setSessionModel(chatId, undefined);
       this.sessionManager.setSessionEngine(chatId, undefined);
-      this.sessionManager.setReasoningEffort(chatId, undefined);
       const fallback = botDefault || '_default_';
       await this.sender.sendTextNotice(
         chatId,
@@ -472,71 +442,6 @@ export class CommandHandler {
       chatId,
       '✅ Model Set',
       `Session model set to \`${newModel}\` on engine \`${activeEngine}\`. It will take effect on the next message.`,
-      'green',
-    );
-  }
-
-  private async handleEffortCommand(chatId: string, args: string): Promise<void> {
-    const session = this.sessionManager.getSession(chatId);
-    const activeEngine = session.engine ?? resolveEngineName(this.config);
-    const normalized = normalizeCodexEffort(args);
-
-    if (!args) {
-      const current = session.reasoningEffort || this.config.codex?.reasoningEffort || '_codex default_';
-      await this.sender.sendTextNotice(
-        chatId,
-        '🧠 Effort',
-        [
-          `**Engine:** \`${activeEngine}\``,
-          `**Current:** \`${current}\`${session.reasoningEffort ? ' (session override)' : ''}`,
-          '',
-          'Usage:',
-          '- `/effort low` — fastest',
-          '- `/effort medium` — balanced',
-          '- `/effort high` — deeper reasoning',
-          '- `/effort xhigh` — maximum Codex-supported effort',
-          '- `/effort reset` — clear session override',
-        ].join('\n'),
-      );
-      return;
-    }
-
-    if (activeEngine !== 'codex') {
-      await this.sender.sendTextNotice(
-        chatId,
-        'ℹ️ Codex effort only',
-        `This chat is on \`${activeEngine}\`. Switch with \`/model codex\`, then use \`/effort high\` or \`/effort xhigh\`.`,
-        'blue',
-      );
-      return;
-    }
-
-    if (normalized === 'reset') {
-      this.sessionManager.setReasoningEffort(chatId, undefined);
-      await this.sender.sendTextNotice(
-        chatId,
-        '✅ Effort Reset',
-        `Codex reasoning effort override cleared. Using \`${this.config.codex?.reasoningEffort || 'codex default'}\`.`,
-        'green',
-      );
-      return;
-    }
-
-    if (!normalized) {
-      await this.sender.sendTextNotice(
-        chatId,
-        '❌ Invalid Effort',
-        'Use one of: `low`, `medium`, `high`, `xhigh`. `max` is accepted as an alias for `xhigh`.',
-        'red',
-      );
-      return;
-    }
-
-    this.sessionManager.setReasoningEffort(chatId, normalized);
-    await this.sender.sendTextNotice(
-      chatId,
-      '✅ Effort Set',
-      `Codex reasoning effort set to \`${normalized}\`. It will take effect on the next message.`,
       'green',
     );
   }
@@ -632,10 +537,6 @@ export class CommandHandler {
     switch (engine) {
       case 'claude':
         return this.config.claude.model;
-      case 'kimi':
-        return this.config.kimi?.model;
-      case 'codex':
-        return this.config.codex?.model || this.config.codex?.displayModel;
       case 'deepseek':
         return this.config.deepseek?.model || 'deepseek-v4-flash';
     }
@@ -645,10 +546,6 @@ export class CommandHandler {
     switch (engine) {
       case 'claude':
         return '`claude-fable-5`, `claude-opus-4-8`, `claude-sonnet-4-6`, `claude-haiku-4-5`';
-      case 'kimi':
-        return '`kimi-for-coding`, `kimi-k2`';
-      case 'codex':
-        return '`gpt-5.5`, `gpt-5.5-codex`, `gpt-5.2-codex`';
       case 'deepseek':
         return '`deepseek-v4-flash`, `deepseek-v4-pro`, `deepseek-v4-flash-vision-exp`';
     }
@@ -658,10 +555,6 @@ export class CommandHandler {
     switch (engine) {
       case 'claude':
         return '_Make sure Claude Code is authenticated (`claude login`)._';
-      case 'kimi':
-        return '_Make sure `kimi login` has been completed on this host._';
-      case 'codex':
-        return '_Make sure Codex CLI is authenticated (`codex login`) or configured with an API key._';
       case 'deepseek':
         return '_Make sure a DeepSeek API key is configured (bots.json `deepseek.apiKey` or env `DEEPSEEK_API_KEY`)._';
     }
@@ -669,13 +562,5 @@ export class CommandHandler {
 }
 
 function isEngineName(value: string): value is EngineName {
-  return value === 'claude' || value === 'kimi' || value === 'codex' || value === 'deepseek';
-}
-
-function normalizeCodexEffort(value: string): CodexReasoningEffort | 'reset' | undefined {
-  const normalized = value.trim().toLowerCase();
-  if (normalized === 'reset' || normalized === 'clear' || normalized === 'default') return 'reset';
-  if (normalized === 'max') return 'xhigh';
-  if (normalized === 'low' || normalized === 'medium' || normalized === 'high' || normalized === 'xhigh') return normalized;
-  return undefined;
+  return value === 'claude' || value === 'deepseek';
 }

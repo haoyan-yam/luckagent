@@ -20,10 +20,10 @@ describe('AgentTeamStore', () => {
     const agent = store.createAgent('demo', {
       name: 'reviewer',
       role: 'review',
-      engine: 'codex',
+      engine: 'deepseek',
       prompt: 'Review changes',
     });
-    expect(agent).toMatchObject({ teamName: 'demo', name: 'reviewer', status: 'idle', engine: 'codex' });
+    expect(agent).toMatchObject({ teamName: 'demo', name: 'reviewer', status: 'idle', engine: 'deepseek' });
     expect(store.deleteAgent('demo', 'missing')).toBe(false);
 
     const task = store.createTask('demo', {
@@ -84,12 +84,12 @@ describe('AgentTeamStore', () => {
     const store = new AgentTeamStore(logger, join(dir, 'teams.db'));
 
     store.createTeam('demo', 'Demo team');
-    expect(store.createAgent('demo', { name: 'lead', engine: 'codex' })).toMatchObject({ name: 'lead', status: 'idle' });
+    expect(store.createAgent('demo', { name: 'lead', engine: 'deepseek' })).toMatchObject({ name: 'lead', status: 'idle' });
     store.reconcileTeams([{
       name: 'demo',
       agents: [
-        { name: 'lead', role: 'lead', engine: 'codex' },
-        { name: 'worker', role: 'worker', engine: 'codex' },
+        { name: 'lead', role: 'lead', engine: 'deepseek' },
+        { name: 'worker', role: 'worker', engine: 'deepseek' },
       ],
     }]);
 
@@ -111,7 +111,7 @@ describe('AgentTeamStore', () => {
       name: 'resident-team',
       description: 'From bots.json',
       displayChatIds: ['oc_resident'],
-      agents: [{ name: 'lead', engine: 'codex' }],
+      agents: [{ name: 'lead', engine: 'deepseek' }],
     }]);
 
     expect(store.getTeam('manual-team')).toMatchObject({ status: 'active', managedByConfig: false });
@@ -137,8 +137,8 @@ describe('AgentTeamStore', () => {
       chatIds: ['team:luckagent-dev:runtime-engineer'],
       displayChatIds: ['oc_chat_123'],
       agents: [
-        { name: 'lead', role: 'lead', engine: 'codex' },
-        { name: 'runtime-engineer', role: 'runtime', engine: 'codex', prompt: 'Own runtime' },
+        { name: 'lead', role: 'lead', engine: 'deepseek' },
+        { name: 'runtime-engineer', role: 'runtime', engine: 'deepseek', prompt: 'Own runtime' },
       ],
       tasks: [
         { id: 5, subject: 'Implement supervisor', owner: 'runtime-engineer' },
@@ -151,8 +151,8 @@ describe('AgentTeamStore', () => {
       displayChatIds: ['oc_chat_123'],
       managedByConfig: true,
     });
-    expect(store.getAgent('luckagent-dev', 'runtime-engineer')).toMatchObject({ role: 'runtime', engine: 'codex' });
-    expect(store.getAgent('luckagent-dev', 'lead')).toMatchObject({ role: 'lead', engine: 'codex' });
+    expect(store.getAgent('luckagent-dev', 'runtime-engineer')).toMatchObject({ role: 'runtime', engine: 'deepseek' });
+    expect(store.getAgent('luckagent-dev', 'lead')).toMatchObject({ role: 'lead', engine: 'deepseek' });
     expect(store.getTask('luckagent-dev', 5)).toMatchObject({ subject: 'Implement supervisor', owner: 'runtime-engineer' });
     expect(store.findTeamForChat('oc_chat_123')).toMatchObject({ name: 'luckagent-dev' });
     expect(store.findTeamForChat('team:luckagent-dev:runtime-engineer')).toMatchObject({ name: 'luckagent-dev' });
@@ -163,7 +163,7 @@ describe('AgentTeamStore', () => {
       description: 'Runtime team',
       displayChatIds: ['oc_chat_456'],
       agents: [
-        { name: 'lead', role: 'lead', engine: 'codex' },
+        { name: 'lead', role: 'lead', engine: 'deepseek' },
       ],
     }]);
 
@@ -185,7 +185,7 @@ describe('AgentTeamStore', () => {
     store.reconcileTeams([{
       name: 'resident',
       displayChatIds: ['resident-chat'],
-      agents: [{ name: 'worker', engine: 'codex' }],
+      agents: [{ name: 'worker', engine: 'deepseek' }],
     }]);
 
     expect(store.getTeam('manual')).toMatchObject({ status: 'active', managedByConfig: false });

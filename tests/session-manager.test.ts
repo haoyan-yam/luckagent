@@ -47,16 +47,16 @@ describe('SessionManager', () => {
   it('sets session ID', () => {
     manager = new SessionManager('/tmp/test-dir', createLogger());
     manager.getSession('chat1');
-    manager.setSessionId('chat1', 'sess-abc', 'codex');
+    manager.setSessionId('chat1', 'sess-abc', 'deepseek');
     const session = manager.getSession('chat1');
     expect(session.sessionId).toBe('sess-abc');
-    expect(session.sessionIdEngine).toBe('codex');
+    expect(session.sessionIdEngine).toBe('deepseek');
   });
 
   it('resets session (clears sessionId)', () => {
     manager = new SessionManager('/tmp/test-dir', createLogger());
     manager.getSession('chat1');
-    manager.setSessionId('chat1', 'sess-abc', 'codex');
+    manager.setSessionId('chat1', 'sess-abc', 'deepseek');
     manager.resetSession('chat1');
     const session = manager.getSession('chat1');
     expect(session.sessionId).toBeUndefined();
@@ -65,11 +65,11 @@ describe('SessionManager', () => {
 
   it('tracks model engine and clears it with the model override', () => {
     manager = new SessionManager('/tmp/test-dir', createLogger());
-    manager.setSessionModel('chat1', 'gpt-5.5-codex', 'codex');
+    manager.setSessionModel('chat1', 'deepseek-v4-pro', 'deepseek');
 
     let session = manager.getSession('chat1');
-    expect(session.model).toBe('gpt-5.5-codex');
-    expect(session.modelEngine).toBe('codex');
+    expect(session.model).toBe('deepseek-v4-pro');
+    expect(session.modelEngine).toBe('deepseek');
 
     manager.setSessionModel('chat1', undefined);
     session = manager.getSession('chat1');
@@ -79,29 +79,16 @@ describe('SessionManager', () => {
 
   it('persists session and model engine metadata', () => {
     manager = new SessionManager('/tmp/test-dir', createLogger(), 'persist-test');
-    manager.setSessionId('chat1', 'sess-abc', 'codex');
-    manager.setSessionModel('chat1', 'gpt-5.5-codex', 'codex');
+    manager.setSessionId('chat1', 'sess-abc', 'deepseek');
+    manager.setSessionModel('chat1', 'deepseek-v4-pro', 'deepseek');
     manager.destroy();
 
     manager = new SessionManager('/tmp/test-dir', createLogger(), 'persist-test');
     const session = manager.getSession('chat1');
     expect(session.sessionId).toBe('sess-abc');
-    expect(session.sessionIdEngine).toBe('codex');
-    expect(session.model).toBe('gpt-5.5-codex');
-    expect(session.modelEngine).toBe('codex');
-  });
-
-  it('persists Codex reasoning effort metadata', () => {
-    manager = new SessionManager('/tmp/test-dir', createLogger(), 'effort-test');
-    manager.setReasoningEffort('chat1', 'high');
-    manager.destroy();
-
-    manager = new SessionManager('/tmp/test-dir', createLogger(), 'effort-test');
-    const session = manager.getSession('chat1');
-    expect(session.reasoningEffort).toBe('high');
-
-    manager.setReasoningEffort('chat1', undefined);
-    expect(manager.getSession('chat1').reasoningEffort).toBeUndefined();
+    expect(session.sessionIdEngine).toBe('deepseek');
+    expect(session.model).toBe('deepseek-v4-pro');
+    expect(session.modelEngine).toBe('deepseek');
   });
 
   it('repairs persisted sessions whose working directory no longer exists', () => {
@@ -110,7 +97,7 @@ describe('SessionManager', () => {
     writeFileSync(storePath, JSON.stringify({
       chat1: {
         sessionId: 'stale-session',
-        sessionIdEngine: 'codex',
+        sessionIdEngine: 'deepseek',
         workingDirectory: join(storeDir, 'missing-workdir'),
         lastUsed: Date.now(),
       },

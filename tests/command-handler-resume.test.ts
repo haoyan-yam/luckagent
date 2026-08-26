@@ -100,8 +100,8 @@ describe('CommandHandler /resume', () => {
     expect(notices.at(-1)?.color).toBe('red');
   });
 
-  it('is gated to the claude engine (red) on a kimi chat', async () => {
-    const { handler, notices, resumed } = buildHandler({ engine: 'kimi' });
+  it('is gated to the claude engine (red) on a deepseek chat', async () => {
+    const { handler, notices, resumed } = buildHandler({ engine: 'deepseek' });
     await handler.handle(msg('/resume abc12345'));
     expect(resumed).toEqual([]);
     expect(notices.at(-1)?.color).toBe('red');

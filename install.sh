@@ -117,8 +117,6 @@ echo ""
 echo -e "${BOLD}—— 工具与引擎盘点 ——${NC}"
 echo "  引擎（bot 按 bots.json 选择，至少配一种认证即可干活）:"
 echo "    Claude Code CLI   $(_mark claude)    （订阅登录路线；或稍后在 .env 填 ANTHROPIC_API_KEY 走 API 路线）"
-echo "    Codex CLI         $(_mark codex)    （可选引擎；装法与登录见 docs/engines.md）"
-echo "    Kimi CLI          $(_mark kimi)    （可选引擎；装法与登录见 docs/engines.md）"
 echo "    DeepSeek          无需装 CLI    （可选引擎；只要 API key，见下方申请入口）"
 echo "  增强工具:"
 echo "    opencli           $(_mark opencli)    （网站自动化；检测到即自动启用其技能，之后安装的话重跑一次 bash install.sh 生效）"
@@ -226,9 +224,9 @@ case ":$PATH:" in
   *) warn '~/.local/bin 不在 PATH 里。把这行加进 ~/.zshrc:  export PATH="$HOME/.local/bin:$PATH"' ;;
 esac
 
-# ---- 技能同步（Claude Code / Codex 双目录）----
-info "同步技能到 ~/.claude/skills 与 ~/.codex/skills ..."
-mkdir -p "$HOME/.claude/skills" "$HOME/.codex/skills"
+# ---- 技能同步 ----
+info "同步技能到 ~/.claude/skills ..."
+mkdir -p "$HOME/.claude/skills"
 SYNC_SKILLS="luckagent voice luckagent-team image-gen"
 command -v opencli &>/dev/null && SYNC_SKILLS="$SYNC_SKILLS opencli"
 for skill in $SYNC_SKILLS; do
@@ -240,14 +238,14 @@ for skill in $SYNC_SKILLS; do
     opencli)        src="$LUCKAGENT_HOME/src/skills/opencli" ;;
   esac
   if [[ -d "$src" ]]; then
-    for dst_root in "$HOME/.claude/skills" "$HOME/.codex/skills"; do
+    for dst_root in "$HOME/.claude/skills"; do
       mkdir -p "$dst_root/$skill" && cp -r "$src/." "$dst_root/$skill/"
     done
   fi
 done
 success "技能已同步（$SYNC_SKILLS）"
 # 清理旧名技能目录（仅限本项目早期版本装出的副本，以脱敏标记识别；个人同名技能不受影响）
-for dst_root in "$HOME/.claude/skills" "$HOME/.codex/skills"; do
+for dst_root in "$HOME/.claude/skills"; do
   old="$dst_root/openai-image-gen"
   if [[ -f "$old/SKILL.md" ]] && grep -q "当用户说" "$old/SKILL.md" 2>/dev/null; then
     rm -rf "$old" && info "已移除旧名技能目录: $old（更名为 image-gen）"
@@ -261,11 +259,6 @@ if [[ -d "$FS_SKILL_DIR/.git" ]] && command -v git &>/dev/null; then
 elif [[ ! -d "$FS_SKILL_DIR" ]] && command -v git &>/dev/null; then
   info "拉取 frontend-slides 技能（HTML 演示文稿生成，MIT · zarazhangrui/frontend-slides）..."
   git clone --depth 1 https://github.com/zarazhangrui/frontend-slides "$FS_SKILL_DIR" 2>/dev/null     && success "frontend-slides 技能已安装"     || warn "frontend-slides 拉取失败（可选技能，不影响安装）。之后手动: git clone https://github.com/zarazhangrui/frontend-slides ~/.claude/skills/frontend-slides"
-fi
-if [[ -d "$FS_SKILL_DIR" ]]; then
-  mkdir -p "$HOME/.codex/skills/frontend-slides"
-  cp -r "$FS_SKILL_DIR/." "$HOME/.codex/skills/frontend-slides/" 2>/dev/null || true
-  rm -rf "$HOME/.codex/skills/frontend-slides/.git"
 fi
 
 # ---- lark-cli（必装：bot 操作飞书文档/表格/日历、群日报拉群消息都依赖它）----
@@ -290,13 +283,6 @@ mkdir -p "$BOTS_ROOT"
 if [[ ! -f "$BOTS_ROOT/CLAUDE.md" && -f "$LUCKAGENT_HOME/src/workspace/PROJECTS-CLAUDE.md" ]]; then
   cp "$LUCKAGENT_HOME/src/workspace/PROJECTS-CLAUDE.md" "$BOTS_ROOT/CLAUDE.md"
   success "工作区共用规范已部署: $BOTS_ROOT/CLAUDE.md"
-fi
-# Codex 引擎不向上遍历父目录，其全局指令位是 ~/.codex/AGENTS.md ——
-# 把共用规范镜像一份过去（仅在不存在时），codex bot 也能吃到同一套规范
-if [[ ! -e "$HOME/.codex/AGENTS.md" && -f "$BOTS_ROOT/CLAUDE.md" ]]; then
-  mkdir -p "$HOME/.codex"
-  cp "$BOTS_ROOT/CLAUDE.md" "$HOME/.codex/AGENTS.md"
-  success "共用规范已镜像到 Codex 全局指令: ~/.codex/AGENTS.md"
 fi
 
 # ============================================================
@@ -349,7 +335,6 @@ fi
 echo "  可选能力（编辑 .env 填 key 后 luckagent restart 生效）:"
 echo "     生图: OPENAI_IMAGE_API_KEY 或 火山 ARK_API_KEY（Seedream）   语音TTS: VOLCENGINE_TTS_*（不填则用免费 Edge TTS）"
 echo "  可选增强: 安装 opencli（网站自动化）后重跑一次 bash install.sh，其技能自动启用；"
-echo "     要用 Codex / Kimi 引擎: 装对应 CLI 并登录，见 docs/engines.md"
 echo ""
 echo "  常用命令:  luckagent status | logs | restart | doctor --json | help"
 echo "  详细文档:  INSTALL.md 与 docs/ 目录"

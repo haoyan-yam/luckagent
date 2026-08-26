@@ -6,7 +6,9 @@ import { proxyFetch } from '../utils/http.js';
 import type { PeerConfig } from '../config.js';
 import type { BotInfo } from './bot-registry.js';
 
-export interface PeerBotInfo extends BotInfo {
+export interface PeerBotInfo extends Omit<BotInfo, 'engine'> {
+  /** Peers may run engines this build doesn't ship — display-only, keep loose. */
+  engine: string;
   peerUrl: string;
   peerName: string;
 }
@@ -544,7 +546,7 @@ export class PeerManager {
                 : [{
                     name: entry.botName,
                     platform: 'agent-bus',
-                    engine: 'codex',
+                    engine: 'cli',
                     workingDirectory: '',
                     peerUrl: normalizedUrl,
                     peerName: entry.botName,
@@ -625,7 +627,7 @@ export class PeerManager {
         state.bots = [{
           name: config.name,
           platform: 'agent-bus',
-          engine: 'codex',
+          engine: 'cli',
           workingDirectory: '',
           peerUrl: 'inbox:',
           peerName: config.name,
@@ -677,7 +679,7 @@ export class PeerManager {
           name: b.name,
           ...(b.description ? { description: b.description } : {}),
           platform: b.platform,
-          engine: b.engine ?? 'codex',
+          engine: b.engine ?? 'cli',
           ...(b.model ? { model: b.model } : {}),
           workingDirectory: b.workingDirectory,
           peerUrl: config.url,

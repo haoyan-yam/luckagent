@@ -24,7 +24,7 @@ function tempDir(prefix: string): string {
 }
 
 describe('skills installer', () => {
-  it('mirrors bundled skills into Claude and Codex project directories and deploys AGENTS.md', async () => {
+  it('mirrors bundled skills into the Claude project directory and deploys AGENTS.md', async () => {
     const priorHome = process.env.HOME;
     const home = tempDir('luckagent-home-');
     const workDir = tempDir('luckagent-work-');
@@ -35,9 +35,10 @@ describe('skills installer', () => {
       await installSkillsToWorkDir(workDir, logger);
 
       // `luckagent` is in the default COMMON_SKILLS list, so its bundled SKILL.md
-      // must land in both Claude and Codex project directories.
+      // must land in the Claude project directory.
       expect(readFileSync(join(workDir, '.claude/skills/luckagent/SKILL.md'), 'utf-8')).toContain('luckagent');
-      expect(readFileSync(join(workDir, '.codex/skills/luckagent/SKILL.md'), 'utf-8')).toContain('luckagent');
+      // .codex mirroring is gone with the codex engine.
+      expect(existsSync(join(workDir, '.codex'))).toBe(false);
       // [design-note M] 工作区模板换成了本地初始模板，断言改为对模板标题不敏感的关键词
       expect(readFileSync(join(workDir, 'AGENTS.md'), 'utf-8')).toContain('Luckagent');
 
@@ -71,7 +72,7 @@ describe('third-party frontend-slides skill', () => {
 
       await installSkillsToWorkDir(workDir, logger);
 
-      for (const root of ['.claude/skills', '.codex/skills']) {
+      for (const root of ['.claude/skills']) {
         expect(readFileSync(join(workDir, root, 'frontend-slides/SKILL.md'), 'utf-8')).toContain('frontend-slides');
         expect(existsSync(join(workDir, root, 'frontend-slides/.git'))).toBe(false);
       }

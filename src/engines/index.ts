@@ -3,8 +3,6 @@ import type { Logger } from '../utils/logger.js';
 import type { Engine, EngineName } from './types.js';
 import { ClaudeEngine } from './claude/index.js';
 import { DEEPSEEK_DEFAULT_MODEL } from './claude/auth-env.js';
-import { KimiEngine } from './kimi/index.js';
-import { CodexEngine } from './codex/index.js';
 
 /**
  * Create an Engine for the given bot config.
@@ -12,7 +10,7 @@ import { CodexEngine } from './codex/index.js';
  * Engine selection:
  *   1. `config.engine` field (explicit)
  *   2. `LUCKAGENT_ENGINE` env var (global default)
- *   3. `'codex'` (fallback)
+ *   3. `'claude'` (fallback)
  */
 export function createEngine(
   config: BotConfigBase,
@@ -26,10 +24,6 @@ export function createEngine(
       // (/model claude on a deepseek bot) must not inherit the bot-level
       // engine field, or auth-env resolution would inject the wrong backend.
       return new ClaudeEngine({ ...config, engine: 'claude' }, logger);
-    case 'kimi':
-      return new KimiEngine(config, logger);
-    case 'codex':
-      return new CodexEngine(config, logger);
     case 'deepseek':
       return new ClaudeEngine(deriveDeepseekConfig(config), logger);
     default: {
@@ -68,20 +62,17 @@ export function resolveEngineName(config: BotConfigBase): EngineName {
   const explicit = config.engine;
   if (explicit) return explicit;
   const envDefault = process.env.LUCKAGENT_ENGINE as EngineName | undefined;
-  if (envDefault === 'claude' || envDefault === 'kimi' || envDefault === 'codex' || envDefault === 'deepseek') return envDefault;
+  if (envDefault === 'claude' || envDefault === 'deepseek') return envDefault;
   return 'claude';
 }
 
 export type { Engine, EngineName, Executor } from './types.js';
 export { ClaudeEngine } from './claude/index.js';
-export { KimiEngine } from './kimi/index.js';
-export { CodexEngine } from './codex/index.js';
 
 // Re-export shared types and classes currently used by the bridge and web/api layers.
 // Moving these behind the engine boundary lets consumers import from a single place.
 export {
   ClaudeExecutor,
-  DEFAULT_CODEX_GOAL_MAX_ITERATIONS,
   StreamProcessor,
   SessionManager,
   extractImagePaths,

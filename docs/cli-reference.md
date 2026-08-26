@@ -69,7 +69,6 @@ luckagent logs -n 200          # 先回放最近 200 行
 | `luckagent_core` | core `/health` 是否可达、token 是否就位 |
 | `bots_config` | bots.json 可解析、各 bot 工作目录是否存在 |
 | `voice_defaults` | TTS 凭证是否配置 |
-| `codex_cli` / `codex_agent_features` | Codex 引擎可用性与特性开关 |
 
 ```bash
 luckagent doctor           # 人类可读
@@ -127,7 +126,7 @@ luckagent teams watch <team> [--interval 秒] [--count n]
 
 # 成员
 luckagent teams agents list <team>
-luckagent teams agents spawn <team> <name> [--role r] [--engine claude|codex|kimi] [--prompt p]
+luckagent teams agents spawn <team> <name> [--role r] [--engine claude|deepseek] [--prompt p]
 luckagent teams agents stop|delete <team> <name>
 
 # 任务与消息
@@ -230,7 +229,7 @@ luckagent agents talk <peer>[/<bot>] [<chatId>] "<消息>"   # 经注册表解�
 
 ### `luckagent inbox` — CLI agent 收件箱
 
-给没有常驻桥接的纯 CLI agent（Claude Code / Codex 终端会话）收消息用：注册成 `url: inbox:` 的收件箱型 agent，消息在 core 里排队，自己拉取。
+给没有常驻桥接的纯 CLI agent（如 Claude Code 终端会话）收消息用：注册成 `url: inbox:` 的收件箱型 agent，消息在 core 里排队，自己拉取。
 
 ```bash
 luckagent inbox register [--bot-name <name>]   # 默认名 cli:<owner>@<hostname>

@@ -3,7 +3,6 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import type { Logger } from '../../utils/logger.js';
 import type { EngineName } from '../types.js';
-import type { CodexReasoningEffort } from '../../config.js';
 
 export interface UserSession {
   sessionId: string | undefined;
@@ -21,8 +20,6 @@ export interface UserSession {
   model?: string;
   /** Engine that owns model. Model names are engine-specific. */
   modelEngine?: EngineName;
-  /** Per-session Codex reasoning effort override. */
-  reasoningEffort?: CodexReasoningEffort;
   /** Per-session engine override. Falls back to bot default when undefined. */
   engine?: EngineName;
   /**
@@ -33,10 +30,6 @@ export interface UserSession {
   activeGoal?: string;
   /** Wall-clock when the current goal was set (ms since epoch). */
   goalSetAt?: number;
-  /** Codex bridge-level goal loop iteration counter. Claude owns its own /goal loop. */
-  goalIterations?: number;
-  /** Codex bridge-level goal loop safety cap. */
-  goalMaxIterations?: number;
 }
 
 interface PersistedSession {
@@ -49,12 +42,9 @@ interface PersistedSession {
   cumulativeDurationMs?: number;
   model?: string;
   modelEngine?: EngineName;
-  reasoningEffort?: CodexReasoningEffort;
   engine?: EngineName;
   activeGoal?: string;
   goalSetAt?: number;
-  goalIterations?: number;
-  goalMaxIterations?: number;
 }
 
 // Sessions never expire — user can /reset manually.
@@ -65,7 +55,6 @@ interface PersistedSession {
 // from config, not from the persisted session, so old sessions don't interfere.
 const SESSION_TTL_MS = Infinity;
 const MAX_SESSIONS = 10_000;
-export const DEFAULT_CODEX_GOAL_MAX_ITERATIONS = 25;
 
 export class SessionManager {
   private sessions = new Map<string, UserSession>();
@@ -152,14 +141,6 @@ export class SessionManager {
     this.saveToDisk();
   }
 
-  /** Set per-session Codex reasoning effort override. Pass undefined to clear. */
-  setReasoningEffort(chatId: string, effort: CodexReasoningEffort | undefined): void {
-    const session = this.getSession(chatId);
-    session.reasoningEffort = effort;
-    this.logger.info({ chatId, effort }, 'Session reasoning effort override updated');
-    this.saveToDisk();
-  }
-
   /**
    * Set per-session engine override. Pass undefined to clear and fall back
    * to the bot's configured engine. Switching engines also clears the prior
@@ -174,7 +155,6 @@ export class SessionManager {
     session.sessionIdEngine = undefined;
     session.model = undefined;
     session.modelEngine = undefined;
-    session.reasoningEffort = undefined;
     this.logger.info({ chatId, engine }, 'Session engine override updated (session reset)');
     this.saveToDisk();
   }
@@ -189,27 +169,12 @@ export class SessionManager {
     if (condition) {
       session.activeGoal = condition;
       session.goalSetAt = Date.now();
-      session.goalIterations = 0;
-      const maxIterations = Number(process.env.LUCKAGENT_CODEX_GOAL_MAX_ITERATIONS);
-      session.goalMaxIterations = Number.isFinite(maxIterations) && maxIterations > 0
-        ? maxIterations
-        : DEFAULT_CODEX_GOAL_MAX_ITERATIONS;
     } else {
       session.activeGoal = undefined;
       session.goalSetAt = undefined;
-      session.goalIterations = undefined;
-      session.goalMaxIterations = undefined;
-      session.reasoningEffort = undefined;
     }
     this.logger.info({ chatId, hasGoal: !!condition }, 'Session goal updated');
     this.saveToDisk();
-  }
-
-  incrementGoalIteration(chatId: string): number {
-    const session = this.getSession(chatId);
-    session.goalIterations = (session.goalIterations ?? 0) + 1;
-    this.saveToDisk();
-    return session.goalIterations;
   }
 
   /** Accumulate token/cost/duration from a completed query into the session totals. */
@@ -247,8 +212,6 @@ export class SessionManager {
       session.cumulativeDurationMs = 0;
       session.activeGoal = undefined;
       session.goalSetAt = undefined;
-      session.goalIterations = undefined;
-      session.goalMaxIterations = undefined;
       // Keep working directory
       this.logger.info({ chatId }, 'Session reset');
       this.saveToDisk();
@@ -275,7 +238,7 @@ export class SessionManager {
       const data: Record<string, PersistedSession> = {};
       for (const [chatId, session] of this.sessions) {
         // Persist sessions that have a sessionId, model, engine override, effort override, or active goal
-        if (session.sessionId || session.model || session.engine || session.reasoningEffort || session.activeGoal) {
+        if (session.sessionId || session.model || session.engine || session.activeGoal) {
           data[chatId] = {
             sessionId: session.sessionId || '',
             sessionIdEngine: session.sessionIdEngine,
@@ -286,12 +249,9 @@ export class SessionManager {
             cumulativeDurationMs: session.cumulativeDurationMs,
             model: session.model,
             modelEngine: session.modelEngine,
-            reasoningEffort: session.reasoningEffort,
             engine: session.engine,
             activeGoal: session.activeGoal,
             goalSetAt: session.goalSetAt,
-            goalIterations: session.goalIterations,
-            goalMaxIterations: session.goalMaxIterations,
           };
         }
       }
@@ -321,12 +281,9 @@ export class SessionManager {
           cumulativeDurationMs: persisted.cumulativeDurationMs ?? 0,
           model: persisted.model,
           modelEngine: persisted.modelEngine,
-          reasoningEffort: persisted.reasoningEffort,
           engine: persisted.engine,
           activeGoal: persisted.activeGoal,
           goalSetAt: persisted.goalSetAt,
-          goalIterations: persisted.goalIterations,
-          goalMaxIterations: persisted.goalMaxIterations,
         });
         loaded++;
       }

@@ -26,7 +26,6 @@ function buildHandler(opts: BuildOpts = {}) {
   const notices: RecordedNotice[] = [];
   let sessionEngine: string | undefined = opts.engine;
   let sessionModel: string | undefined = opts.sessionModel;
-  let reasoningEffort: string | undefined;
 
   const sender = {
     sendCard: async () => undefined,
@@ -45,7 +44,6 @@ function buildHandler(opts: BuildOpts = {}) {
     getSession: (_chatId: string) => ({
       engine: sessionEngine,
       model: sessionModel,
-      reasoningEffort,
       workingDirectory: '/workspace',
       sessionId: opts.sessionId,
     }),
@@ -55,9 +53,6 @@ function buildHandler(opts: BuildOpts = {}) {
     },
     setSessionModel: (_chatId: string, model: string | undefined) => {
       sessionModel = model;
-    },
-    setReasoningEffort: (_chatId: string, effort: string | undefined) => {
-      reasoningEffort = effort;
     },
   } as any;
 
@@ -82,8 +77,6 @@ function buildHandler(opts: BuildOpts = {}) {
   const config = {
     name: 'test-bot',
     claude: { model: 'claude-opus-4-6' },
-    kimi: { model: 'kimi-for-coding' },
-    codex: { model: 'gpt-5.5', displayModel: 'gpt-5.5' },
   } as any;
 
   const handler = new CommandHandler(
@@ -114,7 +107,6 @@ function buildHandler(opts: BuildOpts = {}) {
     notices,
     getSessionEngine: () => sessionEngine,
     getSessionModel: () => sessionModel,
-    getReasoningEffort: () => reasoningEffort,
   };
 }
 
@@ -162,7 +154,7 @@ describe('CommandHandler /status', () => {
   });
 
   it('shows session override label when engine is overridden', async () => {
-    const { handler, notices } = buildHandler({ engine: 'kimi' });
+    const { handler, notices } = buildHandler({ engine: 'deepseek' });
     await handler.handle(msg('/status'));
     expect(notices[0].content).toContain('session override');
   });
@@ -195,41 +187,38 @@ describe('CommandHandler /model', () => {
     expect(notices[0].content).toContain('claude-haiku-4-5');
   });
 
-  it('lists kimi models on /model list when engine is kimi', async () => {
-    const { handler, notices } = buildHandler({ engine: 'kimi' });
+  it('lists deepseek models on /model list when engine is deepseek', async () => {
+    const { handler, notices } = buildHandler({ engine: 'deepseek' });
     await handler.handle(msg('/model list'));
-    expect(notices[0].content).toContain('kimi-for-coding');
-    expect(notices[0].content).toContain('kimi-k2');
-  });
-
-  it('lists codex models on /model list when engine is codex', async () => {
-    const { handler, notices } = buildHandler({ engine: 'codex' });
-    await handler.handle(msg('/model list'));
-    expect(notices[0].content).toContain('gpt-5.5');
+    expect(notices[0].content).toContain('deepseek-v4-flash');
+    expect(notices[0].content).toContain('deepseek-v4-pro');
   });
 
   it('accepts /model ls as alias for list', async () => {
-    const { handler, notices } = buildHandler({ engine: 'codex' });
+    const { handler, notices } = buildHandler({ engine: 'deepseek' });
     await handler.handle(msg('/model ls'));
-    expect(notices[0].content).toContain('gpt-5.5');
+    expect(notices[0].content).toContain('deepseek-v4-flash');
   });
 
-  it('switches engine to kimi on /model kimi', async () => {
+  it('switches engine to deepseek on /model deepseek', async () => {
     const { handler, notices, getSessionEngine } = buildHandler({});
-    await handler.handle(msg('/model kimi'));
-    expect(getSessionEngine()).toBe('kimi');
+    await handler.handle(msg('/model deepseek'));
+    expect(getSessionEngine()).toBe('deepseek');
     expect(notices[0].color).toBe('green');
-    expect(notices[0].content).toContain('kimi');
+    expect(notices[0].content).toContain('deepseek');
   });
 
-  it('switches engine to codex on /model codex', async () => {
-    const { handler, getSessionEngine } = buildHandler({ engine: 'claude' });
+  it('rejects unknown engines as model names, not engine switches', async () => {
+    const { handler, getSessionEngine, getSessionModel } = buildHandler({ engine: 'claude' });
     await handler.handle(msg('/model codex'));
-    expect(getSessionEngine()).toBe('codex');
+    // 'codex' is no longer an engine — it falls through to the model setter,
+    // leaving the seeded engine override untouched.
+    expect(getSessionEngine()).toBe('claude');
+    expect(getSessionModel()).toBe('codex');
   });
 
   it('switches engine to claude on /model claude', async () => {
-    const { handler, notices, getSessionEngine } = buildHandler({ engine: 'kimi' });
+    const { handler, notices, getSessionEngine } = buildHandler({ engine: 'deepseek' });
     await handler.handle(msg('/model claude'));
     expect(getSessionEngine()).toBe('claude');
     expect(notices[0].color).toBe('green');
@@ -254,7 +243,7 @@ describe('CommandHandler /model', () => {
 
   it('clears overrides on /model reset', async () => {
     const { handler, notices, getSessionEngine, getSessionModel } = buildHandler({
-      engine: 'kimi',
+      engine: 'deepseek',
       sessionModel: 'kimi-k2',
     });
     await handler.handle(msg('/model reset'));
@@ -265,7 +254,7 @@ describe('CommandHandler /model', () => {
   });
 
   it('clears overrides on /model clear alias', async () => {
-    const { handler, getSessionEngine } = buildHandler({ engine: 'kimi' });
+    const { handler, getSessionEngine } = buildHandler({ engine: 'deepseek' });
     await handler.handle(msg('/model clear'));
     expect(getSessionEngine()).toBeUndefined();
   });
@@ -280,46 +269,6 @@ describe('CommandHandler /model', () => {
     const { handler, getSessionModel } = buildHandler({ engine: 'claude' });
     await handler.handle(msg('/model claude-opus-4-8 extra-junk'));
     expect(getSessionModel()).toBe('claude-opus-4-8');
-  });
-});
-
-// =====================================================================
-// /effort
-// =====================================================================
-
-describe('CommandHandler /effort', () => {
-  it('shows current Codex effort when called with no args', async () => {
-    const { handler, notices } = buildHandler({ engine: 'codex' });
-    await handler.handle(msg('/effort'));
-    expect(notices[0].title).toContain('Effort');
-    expect(notices[0].content).toContain('codex');
-  });
-
-  it('sets Codex effort for the current session', async () => {
-    const { handler, notices, getReasoningEffort } = buildHandler({ engine: 'codex' });
-    await handler.handle(msg('/effort high'));
-    expect(getReasoningEffort()).toBe('high');
-    expect(notices[0].color).toBe('green');
-  });
-
-  it('accepts max as an alias for xhigh', async () => {
-    const { handler, getReasoningEffort } = buildHandler({ engine: 'codex' });
-    await handler.handle(msg('/effort max'));
-    expect(getReasoningEffort()).toBe('xhigh');
-  });
-
-  it('refuses effort changes when the active engine is not Codex', async () => {
-    const { handler, notices, getReasoningEffort } = buildHandler({ engine: 'claude' });
-    await handler.handle(msg('/effort high'));
-    expect(getReasoningEffort()).toBeUndefined();
-    expect(notices[0].color).toBe('blue');
-  });
-
-  it('clears Codex effort override', async () => {
-    const { handler, getReasoningEffort } = buildHandler({ engine: 'codex' });
-    await handler.handle(msg('/effort xhigh'));
-    await handler.handle(msg('/effort reset'));
-    expect(getReasoningEffort()).toBeUndefined();
   });
 });
 

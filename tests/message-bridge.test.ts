@@ -2,13 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   MessageBridge,
   isStaleSessionError,
-  normalizePromptForEngine,
   extractSpontaneousSnippet,
   formatSpontaneousCardBody,
   resolvePersistentExecutorEnvDefault,
 } from '../src/bridge/message-bridge.js';
-import { CodexCommandController } from '../src/bridge/codex-command-controller.js';
-import { DEFAULT_CODEX_GOAL_MAX_ITERATIONS } from '../src/engines/index.js';
 import { classifyBurstSource } from '../src/engines/claude/persistent-executor.js';
 import type { BotConfigBase } from '../src/config.js';
 import type { CardState } from '../src/types.js';
@@ -38,16 +35,6 @@ function makeConfig(): BotConfigBase {
     },
     persistentExecutor: { enabled: true },
   };
-}
-
-function makeCodexConfig(): BotConfigBase {
-  return {
-    ...makeConfig(),
-    engine: 'codex',
-    codex: {
-      model: 'gpt-5.5-codex',
-    },
-  } as BotConfigBase;
 }
 
 function makeSender() {
@@ -94,12 +81,6 @@ describe('isStaleSessionError', () => {
     expect(isStaleSessionError('Conversation not found')).toBe(true);
   });
 
-  it('matches Codex stale thread resume errors', () => {
-    expect(
-      isStaleSessionError('Error: Codex exited with code 1: Error: thread/resume: thread/resume failed: no rollout found for thread id ea0dd6d2-7418-4545-8427-63cc8aed81f2'),
-    ).toBe(true);
-  });
-
   it('matches conversation corruption errors (duplicate tool_result)', () => {
     expect(
       isStaleSessionError('API Error: 400 {"type":"error","error":{"type":"invalid_request_error","message":"messages.148.content.1: each tool_use must have a single result. Found multiple `tool_result` blocks with id: toolu_01TPsHXcmpuz5cAY97fM5vXv"}}'),
@@ -119,122 +100,22 @@ describe('isStaleSessionError', () => {
   });
 });
 
-describe('normalizePromptForEngine', () => {
-  it('converts slash skill invocations to Codex explicit skill syntax', () => {
-    expect(normalizePromptForEngine('/scaffold ios app', 'codex')).toBe('$scaffold ios app');
-    expect(normalizePromptForEngine('/skill-name', 'codex')).toBe('$skill-name');
-  });
-
-  it('leaves Codex bridge-managed slash commands untouched', () => {
-    expect(normalizePromptForEngine('/goal ship it', 'codex')).toBe('/goal ship it');
-    expect(normalizePromptForEngine('/background run tests', 'codex')).toBe('/background run tests');
-    expect(normalizePromptForEngine('/bg run tests', 'codex')).toBe('/bg run tests');
-  });
-
-  it('leaves non-Codex and non-skill prompts unchanged', () => {
-    expect(normalizePromptForEngine('/scaffold ios app', 'claude')).toBe('/scaffold ios app');
-    expect(normalizePromptForEngine('/scaffold ios app', 'kimi')).toBe('/scaffold ios app');
-    expect(normalizePromptForEngine('hello /scaffold', 'codex')).toBe('hello /scaffold');
-    expect(normalizePromptForEngine('/bad/path', 'codex')).toBe('/bad/path');
-  });
-});
-
 describe('MessageBridge between-turn questions', () => {
-  it('handles Codex /goal in the bridge instead of sending it to Codex', async () => {
+  it('mirrors /goal text into session state so cards can badge it', () => {
     const sender = makeSender() as any;
-    const notices: Array<{ title: string; content: string; color?: string }> = [];
-    sender.sendTextNotice = async (_chatId: string, title: string, content: string, color?: string) => {
-      notices.push({ title, content, color });
-    };
-    const bridge = new MessageBridge(makeCodexConfig(), mockLogger, sender as any);
+    const bridge = new MessageBridge(makeConfig(), mockLogger, sender as any);
+    const sm = bridge.getSessionManager();
 
-    await bridge.handleMessage({
-      messageId: 'm1',
-      chatId: 'chat-1',
-      chatType: 'private',
-      userId: 'u1',
-      text: '/goal ship Codex support',
-    });
+    (bridge as any).mirrorGoalCommand('chat-1', '/goal ship the release');
+    expect(sm.getSession('chat-1').activeGoal).toBe('ship the release');
 
-    expect(notices.at(-1)?.title).toContain('Goal Set');
-    expect(notices.at(-1)?.content).toContain('ship Codex support');
-    expect(bridge.getSessionManager().getSession('chat-1').activeGoal).toBe('ship Codex support');
-  });
+    // clear synonyms unset it
+    (bridge as any).mirrorGoalCommand('chat-1', '/goal clear');
+    expect(sm.getSession('chat-1').activeGoal).toBeUndefined();
 
-  it('starts the first Codex goal turn after setting a goal', async () => {
-    vi.useFakeTimers();
-    const sender = makeSender() as any;
-    const notices: Array<{ title: string; content: string; color?: string }> = [];
-    sender.sendTextNotice = async (_chatId: string, title: string, content: string, color?: string) => {
-      notices.push({ title, content, color });
-    };
-    const session: any = {
-      sessionId: undefined,
-      workingDirectory: '/tmp',
-      lastUsed: Date.now(),
-      cumulativeTokens: 0,
-      cumulativeCostUsd: 0,
-      cumulativeDurationMs: 0,
-    };
-    const executeQuery = vi.fn(async () => {});
-    const controller = new CodexCommandController({
-      config: makeCodexConfig(),
-      logger: mockLogger,
-      sender,
-      sessionManager: {
-        getSession: () => session,
-        setGoal: (_chatId: string, condition: string | undefined) => {
-          session.activeGoal = condition;
-          session.goalIterations = condition ? 0 : undefined;
-          session.goalMaxIterations = condition ? DEFAULT_CODEX_GOAL_MAX_ITERATIONS : undefined;
-        },
-      } as any,
-      outputsManager: {} as any,
-      outputHandler: {} as any,
-      audit: {} as any,
-      runOneTurn: vi.fn() as any,
-      executeQuery,
-      hasRunningTask: () => false,
-      hasQueuedMessages: () => false,
-    });
-
-    const handled = await controller.tryHandleBridgeCommand({
-      messageId: 'm1',
-      chatId: 'chat-1',
-      chatType: 'private',
-      userId: 'u1',
-      text: '/goal ship Codex support',
-    });
-    await vi.advanceTimersByTimeAsync(100);
-
-    expect(handled).toBe(true);
-    expect(notices.at(-1)?.content).toContain(`reaches ${DEFAULT_CODEX_GOAL_MAX_ITERATIONS} iterations`);
-    expect(executeQuery).toHaveBeenCalledOnce();
-    expect(executeQuery.mock.calls[0][0]).toMatchObject({
-      chatId: 'chat-1',
-      text: 'Start working toward the active goal: ship Codex support',
-    });
-  });
-
-  it('handles Codex /background list without starting a model turn', async () => {
-    const sender = makeSender() as any;
-    const notices: Array<{ title: string; content: string; color?: string }> = [];
-    sender.sendTextNotice = async (_chatId: string, title: string, content: string, color?: string) => {
-      notices.push({ title, content, color });
-    };
-    const bridge = new MessageBridge(makeCodexConfig(), mockLogger, sender as any);
-
-    await bridge.handleMessage({
-      messageId: 'm1',
-      chatId: 'chat-1',
-      chatType: 'private',
-      userId: 'u1',
-      text: '/background list',
-    });
-
-    expect(notices.at(-1)?.title).toContain('Background');
-    expect(notices.at(-1)?.content).toContain('No Codex background tasks');
-    expect(sender.sent).toHaveLength(0);
+    // non-goal text is ignored
+    (bridge as any).mirrorGoalCommand('chat-1', 'hello /goal-ish');
+    expect(sm.getSession('chat-1').activeGoal).toBeUndefined();
   });
 
   it('treats a bare reset message as /reset instead of queueing it', async () => {

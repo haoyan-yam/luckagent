@@ -145,8 +145,8 @@ describe('AgentTeamStore.setAgentSessionId', () => {
     store.createTeam('team3');
     store.createAgent('team3', { name: 'a', engine: 'claude' });
 
-    store.setAgentSessionId('team3', 'a', 'sess-xyz', 'kimi');
-    expect(store.getAgent('team3', 'a')?.engine).toBe('kimi');
+    store.setAgentSessionId('team3', 'a', 'sess-xyz', 'deepseek');
+    expect(store.getAgent('team3', 'a')?.engine).toBe('deepseek');
     store.close();
   });
 
@@ -177,10 +177,10 @@ describe('AgentTeamStore.upsertAgent', () => {
   it('preserves working status when re-upserting a working agent', () => {
     const store = makeStore();
     store.createTeam('team6');
-    store.createAgent('team6', { name: 'w', engine: 'codex' });
+    store.createAgent('team6', { name: 'w', engine: 'deepseek' });
     store.setAgentStatus('team6', 'w', 'working');
 
-    store.upsertAgent('team6', { name: 'w', engine: 'codex' });
+    store.upsertAgent('team6', { name: 'w', engine: 'deepseek' });
     expect(store.getAgent('team6', 'w')?.status).toBe('working');
     store.close();
   });

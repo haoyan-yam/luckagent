@@ -19,7 +19,6 @@ import type {
 import { resolveClaudeAuthEnv, DEEPSEEK_DEFAULT_MODEL } from '../engines/claude/auth-env.js';
 import {
   createEngine,
-  DEFAULT_CODEX_GOAL_MAX_ITERATIONS,
   resolveEngineName,
   // deepseek runs through the claude runtime — shared auth-env resolver:
   StreamProcessor,
@@ -45,20 +44,16 @@ import {
   SPONTANEOUS_COALESCE_MS,
   TASK_TIMEOUT_MESSAGE,
 } from './bridge-constants.js';
-import { CodexCommandController } from './codex-command-controller.js';
-import { buildCodexGoalPrompt } from './codex-goal-policy.js';
 import { isContextOverflowError, isStaleSessionError } from './error-classifiers.js';
 import { sendFinalCardWithRetry, sendPlanContent } from './final-delivery.js';
 import { isDefaultMediaText, mergeBatchMessages, mergeBatchWithText, mergeSameSenderMessages, type PendingBatch } from './media-batch.js';
 import { sendCompletionNotice } from './notification-policy.js';
-import { normalizePromptForEngine } from './prompt-normalizer.js';
 import { SlashPickerController } from './slash-picker-controller.js';
 import { extractSpontaneousSnippet, formatSpontaneousCardBody } from './spontaneous-activity.js';
 import type { AgentTeamStore } from '../agent-teams/team-store.js';
 import { buildAgentTeamCardSnapshot } from '../agent-teams/card-snapshot.js';
 
 export { isContextOverflowError, isStaleSessionError } from './error-classifiers.js';
-export { normalizePromptForEngine } from './prompt-normalizer.js';
 export { extractSpontaneousSnippet, formatSpontaneousCardBody } from './spontaneous-activity.js';
 
 /** [design-note N] 提取下载失败原因；成功判定必须用 `=== true`（失败对象是 truthy 的）。 */
@@ -184,7 +179,6 @@ export class MessageBridge {
   private outputsManager: OutputsManager;
   private audit: AuditLogger;
   private commandHandler: CommandHandler;
-  private codexCommands: CodexCommandController;
   private slashPickers: SlashPickerController;
   private outputHandler: OutputHandler;
   readonly costTracker: CostTracker;
@@ -309,19 +303,6 @@ export class MessageBridge {
     // [design-note Q] 延迟清理 rm 前先补扫发送(目录名即 chatId)——
     // 后台任务晚落盘的产物不再被 5 分钟定时 rmSync 静默销毁(2026-07-30 事故)。
     this.outputsManager.setSweeper((dir) => this.outputHandler.sweepDir(path.basename(dir), dir));
-    this.codexCommands = new CodexCommandController({
-      config,
-      logger,
-      sender,
-      sessionManager: this.sessionManager,
-      outputsManager: this.outputsManager,
-      outputHandler: this.outputHandler,
-      audit: this.audit,
-      runOneTurn: this.runOneTurn.bind(this),
-      executeQuery: this.executeQuery.bind(this),
-      hasRunningTask: (chatId) => this.runningTasks.has(chatId),
-      hasQueuedMessages: (chatId) => this.messageQueues.has(chatId),
-    });
     this.slashPickers = new SlashPickerController({
       config,
       logger,
@@ -374,7 +355,7 @@ export class MessageBridge {
 
   /**
    * Pick the executor for a chat based on its session engine override
-   * (set via `/model claude` or `/model kimi`), falling back to the bot's
+   * (set via `/model claude` or `/model deepseek`), falling back to the bot's
    * configured engine. Executors are cached per-engine so repeated turns
    * on the same engine don't re-instantiate the SDK wrapper.
    */
@@ -1380,6 +1361,23 @@ export class MessageBridge {
    * sessionId, so `acquire()` would otherwise hand back the same broken
    * instance.
    */
+  /**
+   * Mirror /goal state locally so cards can show a persistent badge across
+   * turns (the actual goal mechanism runs inside Claude Code).
+   */
+  private mirrorGoalCommand(chatId: string, text: string): void {
+    const trimmed = text.trim();
+    if (!/^\/goal(\s|$)/i.test(trimmed)) return;
+    const rest = trimmed.replace(/^\/goal\s*/i, '').trim();
+    if (!rest) return;
+    const lowered = rest.toLowerCase();
+    if (['clear', 'stop', 'off', 'reset', 'none', 'cancel'].includes(lowered)) {
+      this.sessionManager.setGoal(chatId, undefined);
+      return;
+    }
+    this.sessionManager.setGoal(chatId, rest);
+  }
+
   private async runOneTurn(
     chatId: string,
     engineName: EngineName,
@@ -1390,7 +1388,6 @@ export class MessageBridge {
       outputsDir: string;
       apiContext?: ApiContext;
       model?: string;
-      reasoningEffort?: import('../config.js').CodexReasoningEffort;
       onTeamEvent?: (event: TeamEvent) => void;
       maxTurns?: number;
       allowedTools?: string[];
@@ -1442,7 +1439,6 @@ export class MessageBridge {
       outputsDir: opts.outputsDir,
       apiContext: opts.apiContext,
       model: opts.model,
-      reasoningEffort: engineName === 'codex' ? opts.reasoningEffort ?? session.reasoningEffort : undefined,
       onTeamEvent: opts.onTeamEvent,
       maxTurns: opts.maxTurns,
       allowedTools: opts.allowedTools,
@@ -1612,15 +1608,12 @@ export class MessageBridge {
       // through to the TUI (which would just open an autocomplete menu).
       if (await this.slashPickers.tryOpen(msg)) return;
 
-      const activeEngine = this.sessionManager.getSession(chatId).engine ?? resolveEngineName(this.config);
-      if (activeEngine === 'codex' && await this.codexCommands.tryHandleBridgeCommand(msg)) return;
-
       const handled = await this.commandHandler.handle(msg);
       if (handled) return;
 
       // Mirror /goal state locally so the card can show a persistent badge
       // across turns. The actual goal mechanism still runs inside Claude Code.
-      this.codexCommands.mirrorGoalCommand(chatId, text);
+      this.mirrorGoalCommand(chatId, text);
 
       // Unrecognized /xxx command — pass through to Claude
       if (this.runningTasks.has(chatId)) {
@@ -1990,7 +1983,7 @@ export class MessageBridge {
     const cwd = session.workingDirectory;
     const abortController = new AbortController();
     const activeEngine = session.engine ?? resolveEngineName(this.config);
-    const enginePromptText = normalizePromptForEngine(text, activeEngine);
+    const enginePromptText = text;
 
     // Prepare downloads directory (bot-isolated)
     const downloadsDir = this.config.claude.downloadsDir;
@@ -2140,7 +2133,7 @@ export class MessageBridge {
     // 发文档权限时只能翻聊天记录猜人、容易错授（实测曾错授过人）。注入 prompt 而非
     // system prompt append：persistent 模式的 system prompt 在 executor 生命周期内
     // 固定（会把首回合提问人冻结到整个长会话），且 prompt 注入天然覆盖
-    // claude/kimi/codex 三引擎的每一个回合。API 路径（runApiTask）不经过本函数。
+    // claude/deepseek 每一个回合。API 路径（runApiTask）不经过本函数。
     if (userId) {
       prompt =
         `<system-reminder>\n` +
@@ -2168,13 +2161,6 @@ export class MessageBridge {
       this.logger.info({ chatId, secondsAgo: secs }, 'injected post-restart reminder into first turn');
     }
 
-    let codexGoalIteration = 0;
-    let codexGoalMaxIterations = 0;
-    if (engineName === 'codex' && activeGoal) {
-      codexGoalIteration = this.sessionManager.incrementGoalIteration(chatId);
-      codexGoalMaxIterations = this.sessionManager.getSession(chatId).goalMaxIterations ?? DEFAULT_CODEX_GOAL_MAX_ITERATIONS;
-      prompt = buildCodexGoalPrompt(prompt, activeGoal, codexGoalIteration, codexGoalMaxIterations);
-    }
 
     // All turn-starting paths (initial + retry) route through runOneTurn so
     // persistent mode is enforced consistently and stale-session retries
@@ -2515,13 +2501,6 @@ export class MessageBridge {
 
       // Send any output files produced by Claude
       await this.outputHandler.sendOutputFiles(chatId, outputsDir, processor, lastState);
-      this.codexCommands.maybeScheduleGoalContinuation(
-        msg,
-        lastState,
-        engineName,
-        codexGoalIteration,
-        codexGoalMaxIterations,
-      );
     } catch (err: any) {
       this.logger.error({ err, chatId, userId }, 'Claude execution error');
 

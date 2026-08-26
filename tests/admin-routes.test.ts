@@ -67,11 +67,11 @@ describe('bot secret redaction', () => {
       feishuAppId: 'cli_test1234567890ab',
       feishuAppSecret: 'supersecretvalue9876',
       defaultWorkingDirectory: '/tmp/demo',
-      codex: { model: 'gpt-5.5', apiKey: 'sk-abcdef123456' },
+      deepseek: { model: 'deepseek-v4-flash', apiKey: 'sk-abcdef123456' },
     };
     const out = redactBotEntry(entry);
     expect(out.feishuAppSecret).toBe('••••9876');
-    expect((out.codex as any).apiKey).toBe('••••3456');
+    expect((out.deepseek as any).apiKey).toBe('••••3456');
     expect(out.feishuAppId).toBe('cli_test1234567890ab');
     expect(out.name).toBe('demo');
     // The original object must be untouched (deep copy).
@@ -82,12 +82,12 @@ describe('bot secret redaction', () => {
     const body: Record<string, unknown> = {
       description: 'updated',
       feishuAppSecret: '••••9876',
-      codex: { model: 'gpt-5.5', apiKey: '••••3456' },
+      deepseek: { model: 'deepseek-v4-flash', apiKey: '••••3456' },
     };
     stripMaskedSecrets(body);
     expect(body.feishuAppSecret).toBeUndefined();
-    expect((body.codex as any).apiKey).toBeUndefined();
-    expect((body.codex as any).model).toBe('gpt-5.5');
+    expect((body.deepseek as any).apiKey).toBeUndefined();
+    expect((body.deepseek as any).model).toBe('deepseek-v4-flash');
     expect(body.description).toBe('updated');
   });
 

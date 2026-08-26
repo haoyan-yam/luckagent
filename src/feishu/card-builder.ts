@@ -166,8 +166,7 @@ export function buildCard(state: CardState): string {
         parts.push(`$${state.sessionCostUsd.toFixed(2)}`);
       }
       if (state.model) {
-        // Strip the claude- prefix (claude-opus-4-7 → opus-4-7) but keep the
-        // full Kimi model name since e.g. `for-coding` loses too much context.
+        // Strip the claude- prefix (claude-opus-4-7 → opus-4-7).
         parts.push(state.model.replace(/^claude-/, ''));
       }
       if (state.durationMs !== undefined) {

@@ -36,7 +36,7 @@ function makeRegistry(executeApiTask: any, stopChatTask = vi.fn(), sendAgentActi
     sender: {},
     config: {
       name: 'luckagent',
-      engine: 'codex',
+      engine: 'deepseek',
       claude: { defaultWorkingDirectory: process.cwd() },
     },
   } as any);
@@ -62,7 +62,7 @@ describe('AgentTeamSupervisor', () => {
   it('recovers stale running runs left by a previous bridge process', async () => {
     const store = makeStore();
     store.createTeam('demo', 'Demo');
-    store.createAgent('demo', { name: 'worker', engine: 'codex' });
+    store.createAgent('demo', { name: 'worker', engine: 'deepseek' });
     const task = store.createTask('demo', { subject: 'Interrupted task', owner: 'worker', blockedBy: [99] });
     store.updateTask('demo', task.id, { status: 'in_progress' });
     const run = store.createRun('demo', { agentName: 'worker', taskId: task.id });
@@ -94,7 +94,7 @@ describe('AgentTeamSupervisor', () => {
   it('runs a member in an independent team chat session and reports to lead', async () => {
     const store = makeStore();
     store.createTeam('demo', 'Demo');
-    store.createAgent('demo', { name: 'worker', engine: 'kimi', role: 'Worker' });
+    store.createAgent('demo', { name: 'worker', engine: 'deepseek', role: 'Worker' });
     store.createTask('demo', { subject: 'Inspect supervisor', owner: 'worker' });
     store.sendMessage('demo', { fromName: 'lead', toName: 'worker', body: 'Please inspect task 1' });
 
@@ -115,7 +115,7 @@ describe('AgentTeamSupervisor', () => {
         sendCards: false,
       }));
     });
-    expect(setSessionEngine).toHaveBeenCalledWith('team:demo:worker', 'kimi');
+    expect(setSessionEngine).toHaveBeenCalledWith('team:demo:worker', 'deepseek');
     expect(store.listTasks('demo')[0]).toMatchObject({ status: 'completed', result: 'done from team:demo:worker' });
     expect(store.getAgent('demo', 'worker')).toMatchObject({ sessionId: 'session-team:demo:worker' });
     expect(store.listMessages('demo', 'worker', true)).toHaveLength(0);
@@ -139,7 +139,7 @@ describe('AgentTeamSupervisor', () => {
   it('sends an agent activity card to display chats when a member finishes', async () => {
     const store = makeStore();
     store.createTeam('demo', 'Demo', { displayChatIds: ['oc_main'] });
-    store.createAgent('demo', { name: 'worker', engine: 'codex' });
+    store.createAgent('demo', { name: 'worker', engine: 'deepseek' });
     store.createTask('demo', { subject: 'Notify task', owner: 'worker' });
 
     const executeApiTask = vi.fn(async () => ({
@@ -167,7 +167,7 @@ describe('AgentTeamSupervisor', () => {
   it('emits one idle digest when a busy team drains all open work', async () => {
     const store = makeStore();
     store.createTeam('demo', 'Demo', { displayChatIds: ['oc_main'] });
-    store.createAgent('demo', { name: 'worker', engine: 'codex' });
+    store.createAgent('demo', { name: 'worker', engine: 'deepseek' });
     store.createTask('demo', { subject: 'Digest task', owner: 'worker' });
 
     const executeApiTask = vi.fn(async () => ({
@@ -207,7 +207,7 @@ describe('AgentTeamSupervisor', () => {
   it('does not emit an idle digest while open work remains', async () => {
     const store = makeStore();
     store.createTeam('demo', 'Demo', { displayChatIds: ['oc_main'] });
-    store.createAgent('demo', { name: 'worker', engine: 'codex' });
+    store.createAgent('demo', { name: 'worker', engine: 'deepseek' });
     store.createTask('demo', { subject: 'Blocked task', owner: 'worker', blockedBy: [1] });
 
     const sendAgentActivityCard = vi.fn();
@@ -255,7 +255,7 @@ describe('AgentTeamSupervisor', () => {
   it('runs lead as a normal nested member when the team defines one', async () => {
     const store = makeStore();
     store.createTeam('demo', 'Demo', { displayChatIds: ['oc_main'] });
-    store.createAgent('demo', { name: 'lead', engine: 'codex' });
+    store.createAgent('demo', { name: 'lead', engine: 'deepseek' });
     store.sendMessage('demo', {
       fromName: 'worker',
       toName: 'lead',
@@ -291,7 +291,7 @@ describe('AgentTeamSupervisor', () => {
   it('uses the member lead message as the agent activity body when one was sent during the run', async () => {
     const store = makeStore();
     store.createTeam('demo', 'Demo', { displayChatIds: ['oc_main'] });
-    store.createAgent('demo', { name: 'worker', engine: 'codex' });
+    store.createAgent('demo', { name: 'worker', engine: 'deepseek' });
     store.createTask('demo', { subject: 'Weather', owner: 'worker' });
 
     const executeApiTask = vi.fn(async () => {
@@ -329,7 +329,7 @@ describe('AgentTeamSupervisor', () => {
   it('persists heartbeat output while a member run is still running', async () => {
     const store = makeStore();
     store.createTeam('demo', 'Demo');
-    store.createAgent('demo', { name: 'worker', engine: 'codex' });
+    store.createAgent('demo', { name: 'worker', engine: 'deepseek' });
     store.createTask('demo', { subject: 'Long task', owner: 'worker' });
 
     let resolveRun!: () => void;
@@ -358,7 +358,7 @@ describe('AgentTeamSupervisor', () => {
   it('runs multiple pending tasks for the same member concurrently in isolated sessions', async () => {
     const store = makeStore();
     store.createTeam('demo', 'Demo');
-    store.createAgent('demo', { name: 'reviewer', engine: 'codex' });
+    store.createAgent('demo', { name: 'reviewer', engine: 'deepseek' });
     store.createTask('demo', { subject: 'Verify API routes', owner: 'reviewer' });
     store.createTask('demo', { subject: 'Verify web UI', owner: 'reviewer' });
 
@@ -410,7 +410,7 @@ describe('AgentTeamSupervisor', () => {
   it('pairs dispatch wake-up messages with their tasks instead of starting extra message lanes', async () => {
     const store = makeStore();
     store.createTeam('demo', 'Demo');
-    store.createAgent('demo', { name: 'reviewer', engine: 'codex' });
+    store.createAgent('demo', { name: 'reviewer', engine: 'deepseek' });
     const apiTask = store.createTask('demo', { subject: 'Verify API routes', owner: 'reviewer' });
     const uiTask = store.createTask('demo', { subject: 'Verify web UI', owner: 'reviewer' });
     store.sendMessage('demo', {
@@ -462,7 +462,7 @@ describe('AgentTeamSupervisor', () => {
   it('stops one same-agent parallel run without stopping its sibling lane', async () => {
     const store = makeStore();
     store.createTeam('demo', 'Demo');
-    store.createAgent('demo', { name: 'reviewer', engine: 'codex' });
+    store.createAgent('demo', { name: 'reviewer', engine: 'deepseek' });
     store.createTask('demo', { subject: 'Verify API routes', owner: 'reviewer' });
     store.createTask('demo', { subject: 'Verify web UI', owner: 'reviewer' });
 
@@ -514,7 +514,7 @@ describe('AgentTeamSupervisor', () => {
   it('requeues assigned tasks when a member run fails or crashes', async () => {
     const failedStore = makeStore();
     failedStore.createTeam('demo', 'Demo');
-    failedStore.createAgent('demo', { name: 'worker', engine: 'codex' });
+    failedStore.createAgent('demo', { name: 'worker', engine: 'deepseek' });
     failedStore.createTask('demo', { subject: 'Fail task', owner: 'worker' });
     const failed = makeRegistry(vi.fn(async () => ({ success: false, responseText: 'bad output', error: 'boom' })));
     const failedSupervisor = new AgentTeamSupervisor({ registry: failed.registry, store: failedStore, logger, intervalMs: 60_000 });
@@ -528,7 +528,7 @@ describe('AgentTeamSupervisor', () => {
 
     const crashedStore = makeStore();
     crashedStore.createTeam('demo', 'Demo');
-    crashedStore.createAgent('demo', { name: 'worker', engine: 'codex' });
+    crashedStore.createAgent('demo', { name: 'worker', engine: 'deepseek' });
     crashedStore.createTask('demo', { subject: 'Crash task', owner: 'worker' });
     const crashed = makeRegistry(vi.fn(async () => { throw new Error('crash'); }));
     const crashedSupervisor = new AgentTeamSupervisor({ registry: crashed.registry, store: crashedStore, logger, intervalMs: 60_000 });
@@ -544,7 +544,7 @@ describe('AgentTeamSupervisor', () => {
   it('stops in-flight runs and suppresses late executor results', async () => {
     const store = makeStore();
     store.createTeam('demo', 'Demo');
-    store.createAgent('demo', { name: 'worker', engine: 'codex' });
+    store.createAgent('demo', { name: 'worker', engine: 'deepseek' });
     store.createTask('demo', { subject: 'Stop task', owner: 'worker' });
 
     let resolveRun!: () => void;
@@ -577,7 +577,7 @@ describe('AgentTeamSupervisor', () => {
   it('suppresses crash notice when an intentionally stopped run rejects', async () => {
     const store = makeStore();
     store.createTeam('demo', 'Demo');
-    store.createAgent('demo', { name: 'worker', engine: 'codex' });
+    store.createAgent('demo', { name: 'worker', engine: 'deepseek' });
     store.createTask('demo', { subject: 'Stop reject task', owner: 'worker' });
 
     let rejectRun!: (err: Error) => void;
@@ -608,7 +608,7 @@ describe('AgentTeamSupervisor', () => {
   it('does not report a crash to lead when a stopped run aborts with an error', async () => {
     const store = makeStore();
     store.createTeam('demo', 'Demo');
-    store.createAgent('demo', { name: 'worker', engine: 'codex' });
+    store.createAgent('demo', { name: 'worker', engine: 'deepseek' });
     store.createTask('demo', { subject: 'Abort task', owner: 'worker' });
 
     let rejectRun!: (err: Error) => void;

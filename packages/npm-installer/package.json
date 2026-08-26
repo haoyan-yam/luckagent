@@ -1,7 +1,7 @@
 {
   "name": "luckagent",
-  "version": "0.5.0",
-  "description": "Luckagent — 把 Claude Code / Codex / Kimi / DeepSeek 变成飞书里的常驻 AI 同事（自托管）。此包为安装引导器：luckagent init 一键完成安装，装好后透传全部 CLI 子命令。",
+  "version": "0.6.0",
+  "description": "Luckagent — 把 Claude Code / DeepSeek 变成飞书里的常驻 AI 同事（自托管）。此包为安装引导器：luckagent init 一键完成安装，装好后透传全部 CLI 子命令。",
   "type": "commonjs",
   "bin": {
     "luckagent": "bin/luckagent.js"
@@ -21,8 +21,6 @@
     "lark",
     "bot",
     "claude-code",
-    "codex",
-    "kimi",
     "deepseek",
     "agent",
     "self-hosted"

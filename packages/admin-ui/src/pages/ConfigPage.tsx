@@ -64,7 +64,6 @@ export default function ConfigPage({ onRestart }: { onRestart: () => void }) {
           <Descriptions.Item label="Claude 模型">{cfg?.engineDefaults.claudeModel ?? '默认'}</Descriptions.Item>
           <Descriptions.Item label="Claude 后端">{cfg?.engineDefaults.claudeBackend ?? '—'}</Descriptions.Item>
           <Descriptions.Item label="调度时区">{cfg?.engineDefaults.scheduleTimezone ?? '系统默认'}</Descriptions.Item>
-          <Descriptions.Item label="Codex 模型">{cfg?.engineDefaults.codexModel ?? '未配置'}</Descriptions.Item>
         </Descriptions>
       </Card>
 

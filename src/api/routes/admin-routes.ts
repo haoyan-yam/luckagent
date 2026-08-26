@@ -133,7 +133,6 @@ function effectiveConfig(ctx: RouteContext): Record<string, unknown> {
     engineDefaults: {
       claudeModel: process.env.CLAUDE_MODEL || null,
       claudeBackend: process.env.CLAUDE_BACKEND === 'sdk' ? 'sdk' : 'pty',
-      codexModel: process.env.CODEX_MODEL || null,
       scheduleTimezone: process.env.SCHEDULE_TIMEZONE || null,
     },
     credentials: {

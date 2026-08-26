@@ -122,11 +122,10 @@ if [[ ! -d "$LUCKAGENT_HOME/.git" ]]; then
     success "CLI tools updated"
   fi
 
-  # Update skills in ~/.claude/skills and ~/.codex/skills
+  # Update skills in ~/.claude/skills
   SKILLS_DIR="$HOME/.claude/skills"
-  CODEX_SKILLS_DIR="$HOME/.codex/skills"
   AGENTS_SKILLS_DIR="$HOME/.agents/skills"
-  mkdir -p "$SKILLS_DIR" "$CODEX_SKILLS_DIR"
+  mkdir -p "$SKILLS_DIR"
   info "Updating skills..."
   local src=""
   local -a lark_skill_names=(
@@ -166,7 +165,7 @@ if [[ ! -d "$LUCKAGENT_HOME/.git" ]]; then
       *)            src="" ;;
     esac
     if [[ -n "$src" && -d "$src" ]]; then
-      for dst_root in "$SKILLS_DIR" "$CODEX_SKILLS_DIR"; do
+      for dst_root in "$SKILLS_DIR"; do
         mkdir -p "$dst_root/$skill"
         cp -r "$src/." "$dst_root/$skill/"
       done
@@ -177,7 +176,7 @@ if [[ ! -d "$LUCKAGENT_HOME/.git" ]]; then
   # New installs still opt in via install.sh; updates keep existing setups fresh.
   local has_lark_skills=false
   local skill_root
-  for skill_root in "$AGENTS_SKILLS_DIR" "$SKILLS_DIR" "$CODEX_SKILLS_DIR"; do
+  for skill_root in "$AGENTS_SKILLS_DIR" "$SKILLS_DIR"; do
     if [[ -d "$skill_root/lark-doc" ]]; then
       has_lark_skills=true
       break
@@ -199,23 +198,23 @@ if [[ ! -d "$LUCKAGENT_HOME/.git" ]]; then
     else
       warn "lark-cli skills update failed; keeping existing installed copies"
     fi
-    # Mirror lark-cli skills into Claude/Codex skill roots. Recent lark-cli
+    # Mirror lark-cli skills into the Claude skill root. Recent lark-cli
     # installs use ~/.agents/skills, while older installs may use ~/.claude.
     local lark_skill
     for lark_skill in "${lark_skill_names[@]}"; do
       local lark_src=""
-      for skill_root in "$AGENTS_SKILLS_DIR" "$SKILLS_DIR" "$CODEX_SKILLS_DIR"; do
+      for skill_root in "$AGENTS_SKILLS_DIR" "$SKILLS_DIR"; do
         if [[ -d "$skill_root/$lark_skill" ]]; then
           lark_src="$skill_root/$lark_skill"
           break
         fi
       done
       if [[ -n "$lark_src" ]]; then
-        for dst_root in "$SKILLS_DIR" "$CODEX_SKILLS_DIR"; do
+        for dst_root in "$SKILLS_DIR"; do
           mkdir -p "$dst_root/$lark_skill"
           # Skip when src and dst already resolve to the same inode
           # (lark-cli installs ~/.agents/skills/* and symlinks them into
-          # ~/.claude/skills + ~/.codex/skills — cp would error on same-file).
+          # ~/.claude/skills — cp would error on same-file).
           [[ "$lark_src" -ef "$dst_root/$lark_skill" ]] && continue
           if [[ "$lark_src" != "$dst_root/$lark_skill" ]]; then
             cp -r "$lark_src/." "$dst_root/$lark_skill/"
@@ -224,15 +223,10 @@ if [[ ! -d "$LUCKAGENT_HOME/.git" ]]; then
       fi
     done
   fi
-  # frontend-slides（第三方技能，git 检出时跟上游）→ 刷新后镜像进 Codex 目录
+  # frontend-slides（第三方技能，git 检出时跟上游）
   local fs_dir="$SKILLS_DIR/frontend-slides"
   if [[ -d "$fs_dir/.git" ]] && command -v git &>/dev/null; then
     git -C "$fs_dir" pull --ff-only --quiet 2>/dev/null || true
-  fi
-  if [[ -d "$fs_dir" ]]; then
-    mkdir -p "$CODEX_SKILLS_DIR/frontend-slides"
-    cp -r "$fs_dir/." "$CODEX_SKILLS_DIR/frontend-slides/" 2>/dev/null || true
-    rm -rf "$CODEX_SKILLS_DIR/frontend-slides/.git"
   fi
   success "Skills updated"
 
@@ -249,14 +243,13 @@ if [[ ! -d "$LUCKAGENT_HOME/.git" ]]; then
     while IFS= read -r work_dir; do
       [[ -z "$work_dir" ]] && continue
       local ws_skills_dir="$work_dir/.claude/skills"
-      local ws_codex_skills_dir="$work_dir/.codex/skills"
-      mkdir -p "$ws_skills_dir" "$ws_codex_skills_dir"
+      mkdir -p "$ws_skills_dir"
 
       # Copy common skills — same set the global sync refreshed above, plus
       # the third-party frontend-slides (sourced from ~/.claude/skills).
       for skill in $update_skills frontend-slides; do
         if [[ -d "$SKILLS_DIR/$skill" ]]; then
-          for dst_root in "$ws_skills_dir" "$ws_codex_skills_dir"; do
+          for dst_root in "$ws_skills_dir"; do
             mkdir -p "$dst_root/$skill"
             cp -r "$SKILLS_DIR/$skill/." "$dst_root/$skill/"
             rm -rf "$dst_root/$skill/.git"
@@ -268,14 +261,14 @@ if [[ ! -d "$LUCKAGENT_HOME/.git" ]]; then
         local lark_skill
         for lark_skill in "${lark_skill_names[@]}"; do
           local lark_src=""
-          for skill_root in "$AGENTS_SKILLS_DIR" "$SKILLS_DIR" "$CODEX_SKILLS_DIR"; do
+          for skill_root in "$AGENTS_SKILLS_DIR" "$SKILLS_DIR"; do
             if [[ -d "$skill_root/$lark_skill" ]]; then
               lark_src="$skill_root/$lark_skill"
               break
             fi
           done
           if [[ -n "$lark_src" ]]; then
-            for dst_root in "$ws_skills_dir" "$ws_codex_skills_dir"; do
+            for dst_root in "$ws_skills_dir"; do
               mkdir -p "$dst_root/$lark_skill"
               [[ "$lark_src" -ef "$dst_root/$lark_skill" ]] && continue
               cp -r "$lark_src/." "$dst_root/$lark_skill/"
@@ -555,95 +548,6 @@ check("lark_cli", lark_ok,
       False,
       {"binary": lark_bin, "configExists": lark_cfg.exists(), "appProfiles": lark_apps})
 
-codex_path = env("CODEX_EXECUTABLE_PATH") or shutil.which("codex")
-codex_home = Path(env("CODEX_HOME", str(Path.home() / ".codex"))).expanduser()
-codex_config = codex_home / "config.toml"
-
-def parse_codex_feature_list(output):
-    features = {}
-    for raw in output.splitlines():
-        line = raw.strip()
-        if not line or line.startswith("Usage:") or line.startswith("Commands:"):
-            continue
-        parts = line.split()
-        if len(parts) < 3 or parts[-1] not in ("true", "false"):
-            continue
-        name = parts[0]
-        stage = " ".join(parts[1:-1])
-        features[name] = {"stage": stage, "enabled": parts[-1] == "true"}
-    return features
-
-def count_codex_mcp_servers(config_path):
-    if not config_path.exists():
-        return 0
-    count = 0
-    for raw in config_path.read_text(errors="ignore").splitlines():
-        if raw.strip().startswith("[mcp_servers."):
-            count += 1
-    return count
-
-codex_data = {
-    "executable": codex_path,
-    "hasOpenAIKey": bool(env("OPENAI_API_KEY")),
-    "hasCodexApiKey": bool(env("CODEX_API_KEY")),
-    "baseUrl": env("CODEX_BASE_URL") or env("OPENAI_BASE_URL"),
-    "model": env("CODEX_MODEL"),
-    "codexHome": str(codex_home),
-    "configTomlExists": codex_config.exists(),
-    "skillsDirExists": (codex_home / "skills").is_dir(),
-    "agentsDirExists": (codex_home / "agents").is_dir(),
-    "memoriesDirExists": (codex_home / "memories").is_dir(),
-    "memoryDbExists": bool(list(codex_home.glob("memories_*.sqlite"))),
-    "mcpServerCount": count_codex_mcp_servers(codex_config),
-}
-codex_ok = bool(codex_path)
-if codex_path:
-    v = run([codex_path, "--version"], timeout=3)
-    codex_data["versionOk"] = v["ok"]
-    codex_data["version"] = v["stdout"] or v["stderr"]
-    features_result = run([codex_path, "features", "list"], timeout=5)
-    codex_data["featuresListOk"] = features_result["ok"]
-    if features_result["ok"]:
-        features = parse_codex_feature_list(features_result["stdout"])
-        important_features = [
-            "multi_agent",
-            "memories",
-            "plugins",
-            "hooks",
-            "browser_use",
-            "computer_use",
-            "image_generation",
-            "guardian_approval",
-            "prevent_idle_sleep",
-        ]
-        codex_data["features"] = {name: features.get(name) for name in important_features if name in features}
-check("codex_cli", codex_ok, "codex_missing" if not codex_ok else "ok",
-      "Codex executable found." if codex_ok else "Codex executable not found.",
-      "Install Codex CLI or set CODEX_EXECUTABLE_PATH.",
-      False,
-      codex_data)
-
-codex_features = codex_data.get("features", {})
-required_codex_features = ["multi_agent", "memories"]
-missing_codex_features = [
-    name for name in required_codex_features
-    if not codex_features.get(name, {}).get("enabled")
-]
-codex_agent_features_ok = bool(codex_path) and not missing_codex_features and codex_data["skillsDirExists"] and (codex_data["memoriesDirExists"] or codex_data["memoryDbExists"])
-check("codex_agent_features", codex_agent_features_ok,
-      "codex_agent_features_missing" if not codex_agent_features_ok else "ok",
-      "Codex multi-agent, memories, skills, and memory storage are ready." if codex_agent_features_ok else "Codex agent features are missing or disabled.",
-      "Run install.sh with Codex selected, or add [features] multi_agent=true and memories=true to ~/.codex/config.toml; ensure ~/.codex/skills and ~/.codex/memories exist.",
-      False,
-      {
-          "requiredFeatures": required_codex_features,
-          "missingFeatures": missing_codex_features,
-          "skillsDirExists": codex_data["skillsDirExists"],
-          "agentsDirExists": codex_data["agentsDirExists"],
-          "memoriesDirExists": codex_data["memoriesDirExists"],
-          "memoryDbExists": codex_data["memoryDbExists"],
-          "mcpServerCount": codex_data["mcpServerCount"],
-      })
 
 report["ok"] = all(c.get("ok") for c in checks if c["name"] in ("luckagent_home", "pm2_runtime", "bridge_health"))
 report["summary"] = {
@@ -941,7 +845,7 @@ def usage():
   luckagent teams next <team> <agent> [--read] [--summary|--plain]
   luckagent teams watch <team> [--interval sec] [--count n] [--summary|--plain]
   luckagent teams agents list <team>
-  luckagent teams agents spawn <team> <name> [--role r] [--engine claude|codex|kimi] [--prompt p]
+  luckagent teams agents spawn <team> <name> [--role r] [--engine claude|deepseek] [--prompt p]
   luckagent teams agents stop <team> <name>
   luckagent teams agents delete <team> <name>
   luckagent teams send <team> <to> <message> [--from name] [--summary text]
@@ -1244,7 +1148,7 @@ elif cmd == "agents":
         pos, flags = parse(args)
         if len(pos) < 2: raise SystemExit("Usage: luckagent teams agents spawn <team> <name>")
         req("POST", f"/api/agent-teams/{enc(pos[0])}/agents", {
-            "name": pos[1], "role": flags.get("role"), "engine": flags.get("engine") or "codex", "prompt": flags.get("prompt")
+            "name": pos[1], "role": flags.get("role"), "engine": flags.get("engine") or "claude", "prompt": flags.get("prompt")
         })
     elif sub == "stop":
         if len(args) < 2: raise SystemExit("Usage: luckagent teams agents stop <team> <name>")

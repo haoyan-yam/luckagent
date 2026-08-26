@@ -35,8 +35,7 @@ function loadEnvFiles(): void {
 loadEnvFiles();
 
 /** Agent engine backing a bot. */
-export type EngineName = 'claude' | 'kimi' | 'codex' | 'deepseek';
-export type CodexReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh';
+export type EngineName = 'claude' | 'deepseek';
 
 /** Shared config fields used by MessageBridge and Executors (platform-agnostic). */
 export interface BotConfigBase {
@@ -99,17 +98,6 @@ export interface BotConfigBase {
      */
     backend: 'sdk' | 'pty';
   };
-  /** Kimi-specific overrides. Populated only when engine === 'kimi'. Phase 2. */
-  kimi?: {
-    executable?: string;
-    model?: string;
-    thinking?: boolean;
-    apiKey?: string;
-    /** Context window size in tokens (defaults to 262144 — Kimi for Coding default). */
-    contextWindow?: number;
-  };
-  /** Codex-specific overrides. Populated only when engine === 'codex'. */
-  codex?: CodexBotConfig;
   /**
    * DeepSeek-specific overrides. Populated from DEEPSEEK_* env / bot config whenever present (used only when the effective engine is deepseek).
    * DeepSeek runs through the Claude engine pointed at DeepSeek's official
@@ -154,27 +142,6 @@ export interface VoiceReplyConfig {
   maxChars?: number;
   summaryProvider?: 'none' | 'openai';
   summaryModel?: string;
-}
-
-/** Codex-specific overrides. Populated only when engine === 'codex'. */
-export interface CodexBotConfig {
-  executable?: string;
-  model?: string;
-  displayModel?: string;
-  profile?: string;
-  /** Explicit OpenAI-compatible API key for Codex CLI API-key mode. */
-  apiKey?: string;
-  /** OpenAI-compatible API base URL for Codex CLI API-key mode. */
-  baseUrl?: string;
-  approvalPolicy?: 'untrusted' | 'on-failure' | 'on-request' | 'never';
-  sandbox?: 'read-only' | 'workspace-write' | 'danger-full-access';
-  dangerouslyBypassApprovalsAndSandbox?: boolean;
-  /** Context window size in tokens for display only. */
-  contextWindow?: number;
-  /** Default reasoning effort for Codex CLI (`model_reasoning_effort`). */
-  reasoningEffort?: CodexReasoningEffort;
-  extraArgs?: string[];
-  env?: Record<string, string>;
 }
 
 /** Feishu bot config (extends base with Feishu credentials). */
@@ -242,36 +209,6 @@ export function expandUserPath(value: string): string {
 
 // --- Feishu JSON entry (used in bots.json) ---
 
-/** Kimi-specific overrides in bots.json. */
-export interface KimiJsonConfig {
-  executable?: string;
-  model?: string;
-  thinking?: boolean;
-  apiKey?: string;
-  /** Context window size in tokens (defaults to 262144 — Kimi for Coding default). */
-  contextWindow?: number;
-}
-
-/** Codex-specific overrides in bots.json. */
-export interface CodexJsonConfig {
-  executable?: string;
-  model?: string;
-  displayModel?: string;
-  profile?: string;
-  /** Explicit OpenAI-compatible API key for Codex CLI API-key mode. */
-  apiKey?: string;
-  /** OpenAI-compatible API base URL for Codex CLI API-key mode. */
-  baseUrl?: string;
-  approvalPolicy?: 'untrusted' | 'on-failure' | 'on-request' | 'never';
-  sandbox?: 'read-only' | 'workspace-write' | 'danger-full-access';
-  dangerouslyBypassApprovalsAndSandbox?: boolean;
-  /** Context window size in tokens for display only. */
-  contextWindow?: number;
-  reasoningEffort?: CodexReasoningEffort;
-  extraArgs?: string[];
-  env?: Record<string, string>;
-}
-
 /** Fields shared across all bot JSON entries (engine selection and engine overrides). */
 export interface DeepseekJsonConfig {
   apiKey?: string;
@@ -281,8 +218,6 @@ export interface DeepseekJsonConfig {
 
 interface EngineJsonFields {
   engine?: EngineName;
-  kimi?: KimiJsonConfig;
-  codex?: CodexJsonConfig;
   deepseek?: DeepseekJsonConfig;
   /** Claude turn backend: 'pty' (default) or 'sdk' (legacy opt-out). Overrides env CLAUDE_BACKEND. */
   backend?: 'sdk' | 'pty';
@@ -319,7 +254,6 @@ export interface FeishuBotJsonEntry extends EngineJsonFields {
 }
 
 function feishuBotFromJson(entry: FeishuBotJsonEntry): BotConfig {
-  const codex = buildCodexConfig(entry.codex);
   return {
     name: entry.name,
     ...(entry.description ? { description: entry.description } : {}),
@@ -335,9 +269,7 @@ function feishuBotFromJson(entry: FeishuBotJsonEntry): BotConfig {
     ...(entry.groupOnly ? { groupOnly: true } : {}),
     ...(entry.groupOnlyAllowUsers?.length ? { groupOnlyAllowUsers: entry.groupOnlyAllowUsers } : {}),
     ...(entry.engine ? { engine: entry.engine } : {}),
-    ...(entry.kimi ? { kimi: entry.kimi } : {}),
     ...(buildDeepseekConfig(entry.deepseek) ? { deepseek: buildDeepseekConfig(entry.deepseek) } : {}),
-    ...(codex ? { codex } : {}),
     feishu: {
       appId: entry.feishuAppId,
       appSecret: entry.feishuAppSecret,
@@ -383,36 +315,12 @@ function buildDeepseekConfig(entry?: DeepseekJsonConfig): BotConfigBase['deepsee
   return Object.keys(cfg).length > 0 ? cfg : undefined;
 }
 
-function buildCodexConfig(entry?: CodexJsonConfig): BotConfigBase['codex'] | undefined {
-  const cfg: BotConfigBase['codex'] = {
-    ...(process.env.CODEX_EXECUTABLE_PATH ? { executable: process.env.CODEX_EXECUTABLE_PATH } : {}),
-    ...(process.env.CODEX_MODEL ? { model: process.env.CODEX_MODEL } : {}),
-    ...(process.env.CODEX_DISPLAY_MODEL ? { displayModel: process.env.CODEX_DISPLAY_MODEL } : {}),
-    ...(process.env.CODEX_PROFILE ? { profile: process.env.CODEX_PROFILE } : {}),
-    ...(process.env.CODEX_API_KEY || process.env.OPENAI_API_KEY ? { apiKey: process.env.CODEX_API_KEY || process.env.OPENAI_API_KEY } : {}),
-    ...(process.env.CODEX_BASE_URL || process.env.OPENAI_BASE_URL ? { baseUrl: process.env.CODEX_BASE_URL || process.env.OPENAI_BASE_URL } : {}),
-    ...(process.env.CODEX_APPROVAL_POLICY ? { approvalPolicy: process.env.CODEX_APPROVAL_POLICY as CodexJsonConfig['approvalPolicy'] } : {}),
-    ...(process.env.CODEX_SANDBOX ? { sandbox: process.env.CODEX_SANDBOX as CodexJsonConfig['sandbox'] } : {}),
-    ...(process.env.CODEX_BYPASS_APPROVALS_AND_SANDBOX === 'true' ? { dangerouslyBypassApprovalsAndSandbox: true } : {}),
-    ...(process.env.CODEX_CONTEXT_WINDOW ? { contextWindow: parseInt(process.env.CODEX_CONTEXT_WINDOW, 10) } : {}),
-    ...(isCodexReasoningEffort(process.env.CODEX_REASONING_EFFORT) ? { reasoningEffort: process.env.CODEX_REASONING_EFFORT } : {}),
-    ...(entry ?? {}),
-  };
-  return Object.keys(cfg).length > 0 ? cfg : undefined;
-}
-
-function isCodexReasoningEffort(value: unknown): value is CodexReasoningEffort {
-  return value === 'low' || value === 'medium' || value === 'high' || value === 'xhigh';
-}
-
 // --- Single-bot env var mode ---
 
 function feishuBotFromEnv(): BotConfig {
-  const codex = buildCodexConfig();
   return {
     name: 'default',
     ...(process.env.LUCKAGENT_ENGINE ? { engine: process.env.LUCKAGENT_ENGINE as EngineName } : {}),
-    ...(codex ? { codex } : {}),
     feishu: {
       appId: required('FEISHU_APP_ID'),
       appSecret: required('FEISHU_APP_SECRET'),
@@ -559,7 +467,7 @@ function normalizeAgentTeamConfig(team: AgentTeamConfig): AgentTeamConfig {
         .map((agent) => ({
           name: agent.name.trim(),
           ...(agent.role ? { role: agent.role } : {}),
-          ...(agent.engine === 'claude' || agent.engine === 'codex' || agent.engine === 'kimi' ? { engine: agent.engine } : {}),
+          ...(agent.engine === 'claude' || agent.engine === 'deepseek' ? { engine: agent.engine } : {}),
           ...(agent.prompt ? { prompt: agent.prompt } : {}),
           ...(agent.sessionId ? { sessionId: agent.sessionId } : {}),
           ...(agent.status === 'idle' || agent.status === 'working' || agent.status === 'stopped' ? { status: agent.status } : {}),

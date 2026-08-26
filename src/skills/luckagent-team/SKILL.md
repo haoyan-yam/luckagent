@@ -7,7 +7,7 @@ description: "Use when coordinating or working inside a Luckagent Agent Team via
 
 Luckagent Agent Teams mirror the compact Claude Agent Teams workflow, but the
 coordination model is Luckagent-native and engine-neutral. Teammates may be
-declared as Claude, Codex, Kimi, or future engines, but execution still goes
+declared as Claude or DeepSeek, but execution still goes
 through the current bridge/session-engine path. Do not assume every engine can
 handle every workflow until runtime capability validation or per-engine
 adapters are added.

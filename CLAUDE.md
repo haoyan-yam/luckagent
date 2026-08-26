@@ -1,6 +1,6 @@
 # Luckagent Workspace
 
-This workspace is managed by **Luckagent** — an AI assistant accessible via Feishu that runs the Claude Code, Kimi, Codex, or DeepSeek agent engine with full tool access. The bot's engine is configured per-bot in `bots.json` (`engine: "claude" | "kimi" | "codex" | "deepseek"`).
+This workspace is managed by **Luckagent** — an AI assistant accessible via Feishu that runs the Claude Code or DeepSeek agent engine with full tool access. The bot's engine is configured per-bot in `bots.json` (`engine: "claude" | "deepseek"`).
 
 ## Available Skills
 
@@ -54,7 +54,7 @@ lark-cli im +messages-send --chat-id oc_xxx --text "Hi"  # Send message
 lark-cli calendar +agenda --as user                      # View calendar
 ```
 
-19 AI Agent Skills (lark-doc, lark-im, lark-calendar, lark-sheets, lark-base, …) provide structured guidance for each domain. Claude/Kimi discover these under `.claude/skills`; Codex discovers the mirrored copies under `.codex/skills`. **硬规则：每条 lark-cli 命令必须带 `--profile <bot> --as bot`。**
+19 AI Agent Skills (lark-doc, lark-im, lark-calendar, lark-sheets, lark-base, …) provide structured guidance for each domain. Agents discover these under `.claude/skills`. **硬规则：每条 lark-cli 命令必须带 `--profile <bot> --as bot`。**
 
 ## Agent Harness — The Loop（默认工作循环）
 

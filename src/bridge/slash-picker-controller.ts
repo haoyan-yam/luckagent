@@ -1,5 +1,4 @@
 import type { BotConfigBase } from '../config.js';
-import type { CodexReasoningEffort } from '../config.js';
 import type { EngineName, ExecutionHandle, SessionManager } from '../engines/index.js';
 import { resolveEngineName } from '../engines/index.js';
 import type { IncomingMessage, CardState, PendingQuestion } from '../types.js';
@@ -9,16 +8,6 @@ import type { IMessageSender } from './message-sender.interface.js';
 import type { OutputsManager } from './outputs-manager.js';
 
 const SLASH_PICKERS: Record<string, { question: string; header: string; options: Array<{ label: string; description: string }> }> = {
-  '/effort': {
-    question: 'Set the reasoning effort level',
-    header: 'Effort',
-    options: [
-      { label: 'xhigh', description: 'Maximum Codex-supported effort for deep agentic/coding work' },
-      { label: 'high', description: 'Complex reasoning — quality over speed/cost' },
-      { label: 'medium', description: 'Balanced speed, cost & performance (default)' },
-      { label: 'low', description: 'Fastest — high-volume / latency-sensitive work' },
-    ],
-  },
 };
 
 interface PendingSlashPicker {
@@ -124,38 +113,6 @@ export class SlashPickerController {
         status: 'complete',
         userPrompt: '/resume',
         responseText: `✅ Resumed session \`${choice.slice(0, 8)}\`. Your next message continues that conversation.`,
-        toolCalls: [],
-      });
-      return true;
-    }
-
-    if (pending.command === '/effort') {
-      const session = this.deps.sessionManager.getSession(chatId);
-      const activeEngine = session.engine ?? resolveEngineName(this.deps.config);
-      if (activeEngine !== 'codex') {
-        await this.deps.finalizeQuestionCard(pending.cardMessageId, {
-          status: 'complete',
-          userPrompt: '/effort',
-          responseText: `ℹ️ This chat is on \`${activeEngine}\`. Use \`/model codex\` before setting Codex effort.`,
-          toolCalls: [],
-        });
-        return true;
-      }
-      const effort = normalizeCodexEffort(choice);
-      if (!effort || effort === 'reset') {
-        await this.deps.finalizeQuestionCard(pending.cardMessageId, {
-          status: 'error',
-          userPrompt: '/effort',
-          responseText: `Invalid effort: \`${choice}\``,
-          toolCalls: [],
-        });
-        return true;
-      }
-      this.deps.sessionManager.setReasoningEffort(chatId, effort);
-      await this.deps.finalizeQuestionCard(pending.cardMessageId, {
-        status: 'complete',
-        userPrompt: '/effort',
-        responseText: `✅ **effort** set to \`${effort}\``,
         toolCalls: [],
       });
       return true;
@@ -300,13 +257,6 @@ export class SlashPickerController {
   }
 }
 
-function normalizeCodexEffort(value: string): CodexReasoningEffort | 'reset' | undefined {
-  const normalized = value.trim().toLowerCase();
-  if (normalized === 'reset' || normalized === 'clear' || normalized === 'default') return 'reset';
-  if (normalized === 'max') return 'xhigh';
-  if (normalized === 'low' || normalized === 'medium' || normalized === 'high' || normalized === 'xhigh') return normalized;
-  return undefined;
-}
 
 export function formatRelativeTime(ms: number, now: number = Date.now()): string {
   const diff = Math.max(0, now - ms);

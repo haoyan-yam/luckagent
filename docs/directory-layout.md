@@ -40,9 +40,8 @@ Luckagent 涉及四类目录：安装目录、每个 bot 的工作目录、两�
 ├── work/             # 过程文件、草稿、中间产物
 ├── outputs/          # 归档目录：定稿产物的留存副本（⚠️ 放这里不会自动发群）
 ├── CLAUDE.md         # 本 bot 专属指令（模板 src/workspace/CLAUDE.md，已存在则不覆盖）
-├── AGENTS.md         # CLAUDE.md 的镜像（Kimi/Codex 引擎读这个名字）
-├── .claude/skills/   # Claude/Kimi 引擎发现的技能
-└── .codex/skills/    # Codex 引擎发现的技能（内容与上面一致）
+├── AGENTS.md         # CLAUDE.md 的符号链接（兼容读 AGENTS.md 的工具）
+└── .claude/skills/   # 引擎发现的技能
 ```
 
 另外，工作目录的**父目录**（如 `~/projects/`）会部署一份共用规范 `CLAUDE.md`（模板 `src/workspace/PROJECTS-CLAUDE.md`），对该目录下所有 bot 工作区生效。两级模板的分工见[技能体系](claude-code-skills.md#工作区指令文件两级模板)。
@@ -100,5 +99,5 @@ Luckagent 涉及四类目录：安装目录、每个 bot 的工作目录、两�
 ## 相关文档
 
 - [设计笔记](design-notes.md) —— 发送目录生命周期等行为的来龙去脉
-- [技能体系](claude-code-skills.md) —— `.claude`/`.codex` 双技能目录与两级指令模板
+- [技能体系](claude-code-skills.md) —— 技能目录与两级指令模板
 - [常见问题排查](troubleshooting.md) —— 目录相关的常见坑

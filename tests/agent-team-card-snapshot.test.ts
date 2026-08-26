@@ -6,8 +6,8 @@ describe('buildAgentTeamCardSnapshot', () => {
     const snapshot = buildAgentTeamCardSnapshot({
       team: { name: 'demo', status: 'active', createdAt: 1, updatedAt: 2 },
       agents: [
-        { teamName: 'demo', name: 'lead', role: 'orchestrator', engine: 'codex', status: 'idle', createdAt: 1, updatedAt: 1 },
-        { teamName: 'demo', name: 'reviewer', role: 'review', engine: 'kimi', status: 'working', createdAt: 1, updatedAt: 1 },
+        { teamName: 'demo', name: 'lead', role: 'orchestrator', engine: 'claude', status: 'idle', createdAt: 1, updatedAt: 1 },
+        { teamName: 'demo', name: 'reviewer', role: 'review', engine: 'deepseek', status: 'working', createdAt: 1, updatedAt: 1 },
       ],
       tasks: [
         { teamName: 'demo', id: 1, subject: 'Plan work', status: 'pending', owner: 'lead', blockedBy: [], createdAt: 1, updatedAt: 1 },
@@ -41,7 +41,7 @@ describe('buildAgentTeamCardSnapshot', () => {
     const snapshot = buildAgentTeamCardSnapshot({
       team: { name: 'demo', status: 'active', createdAt: 1, updatedAt: 2 },
       agents: [
-        { teamName: 'demo', name: 'lead', role: 'orchestrator', engine: 'codex', status: 'idle', createdAt: 1, updatedAt: 1 },
+        { teamName: 'demo', name: 'lead', role: 'orchestrator', engine: 'claude', status: 'idle', createdAt: 1, updatedAt: 1 },
       ],
       tasks: [
         { teamName: 'demo', id: 1, subject: 'Open implementation', status: 'in_progress', owner: 'lead', blockedBy: [], createdAt: 1, updatedAt: 3 },
