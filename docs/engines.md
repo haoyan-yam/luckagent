@@ -17,7 +17,9 @@ Agent Teams、`/goal`、后台任务、记忆体系（CLAUDE.md / auto-memory / 
 | API Key | `.env` 填 `ANTHROPIC_API_KEY`（可配 `ANTHROPIC_BASE_URL` 走中转网关）→ `luckagent restart` |
 | 订阅登录 | 装 Claude Code CLI（`curl -fsSL https://claude.ai/install.sh \| bash`）→ 终端跑 `claude` 完成登录 → `.env` 填 `CLAUDE_EXECUTABLE_PATH=~/.local/bin/claude` |
 
-常用参数：`.env` 的 `CLAUDE_MODEL` / `CLAUDE_MAX_TURNS` / `CLAUDE_MAX_BUDGET_USD` 是全局默认，
+模型默认**跟随订阅档位**（不指定时由 Claude 官方按你的计划选：Pro→Opus 5，Max→Fable 5）；
+要固定某个模型才设 `.env` 的 `CLAUDE_MODEL`（指定超出档位的会被静默降级，以回复页脚显示的实际模型为准）。
+其余参数：`CLAUDE_MAX_TURNS` / `CLAUDE_MAX_BUDGET_USD` 是全局默认，
 bot 级的 `model` / `maxTurns` / `maxBudgetUsd`（管理台「限制与预算」）可覆盖。
 
 ## DeepSeek（最省事：零安装，只要 key）

@@ -296,7 +296,11 @@ function buildClaudeConfig(entry: {
     backend: entry.backend ?? (backendEnv === 'sdk' ? 'sdk' : 'pty'),
     maxTurns: entry.maxTurns ?? (process.env.CLAUDE_MAX_TURNS ? parseInt(process.env.CLAUDE_MAX_TURNS, 10) : undefined),
     maxBudgetUsd: entry.maxBudgetUsd ?? (process.env.CLAUDE_MAX_BUDGET_USD ? parseFloat(process.env.CLAUDE_MAX_BUDGET_USD) : undefined),
-    model: entry.model || process.env.CLAUDE_MODEL || process.env.ANTHROPIC_MODEL || 'claude-fable-5',
+    // No hardcoded fallback: leaving model unset lets the Claude CLI/SDK pick
+    // the PLAN-APPROPRIATE default (Pro → Opus 5, Max → Fable 5, …). Forcing
+    // fable-5 made Pro subscriptions silently downgrade to sonnet-5 instead
+    // of the opus-5 their plan actually serves (field-verified).
+    model: entry.model || process.env.CLAUDE_MODEL || process.env.ANTHROPIC_MODEL || undefined,
     apiKey: entry.apiKey || undefined,
     outputsBaseDir: entry.outputsBaseDir || process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `luckagent-outputs-${os.userInfo().username}`),
     // Convention: chat attachments land in <workDir>/inputs (persistent),
@@ -329,7 +333,7 @@ function feishuBotFromEnv(): BotConfig {
       defaultWorkingDirectory: expandUserPath(required('CLAUDE_DEFAULT_WORKING_DIRECTORY')),
       maxTurns: process.env.CLAUDE_MAX_TURNS ? parseInt(process.env.CLAUDE_MAX_TURNS, 10) : undefined,
       maxBudgetUsd: process.env.CLAUDE_MAX_BUDGET_USD ? parseFloat(process.env.CLAUDE_MAX_BUDGET_USD) : undefined,
-      model: process.env.CLAUDE_MODEL || 'claude-fable-5',
+      model: process.env.CLAUDE_MODEL || undefined,
       apiKey: undefined,
       outputsBaseDir: process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `luckagent-outputs-${os.userInfo().username}`),
       downloadsDir: process.env.DOWNLOADS_DIR || path.join(expandUserPath(required('CLAUDE_DEFAULT_WORKING_DIRECTORY')), 'inputs'),
