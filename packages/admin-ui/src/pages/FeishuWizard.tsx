@@ -9,7 +9,6 @@ import {
   Steps,
   Typography,
   message,
-  Select,
 } from 'antd';
 import { api } from '../api/client';
 
@@ -38,7 +37,6 @@ export default function FeishuWizard({
 }) {
   const [step, setStep] = useState(0);
   const [form] = Form.useForm();
-  const engineChoice = Form.useWatch('engine', form);
   const [testing, setTesting] = useState(false);
   const [testPassed, setTestPassed] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -82,12 +80,7 @@ export default function FeishuWizard({
         description: values.description || undefined,
         feishuAppId: values.appId,
         feishuAppSecret: values.appSecret,
-        defaultWorkingDirectory: values.workDir,
         installSkills: true,
-        ...(values.engine ? { engine: values.engine } : {}),
-        ...(values.engine === 'deepseek' && values.deepseek
-          ? { deepseek: Object.fromEntries(Object.entries(values.deepseek).filter(([, v]) => v)) }
-          : {}),
       });
       message.success('机器人已保存到 bots.json，重启桥接后生效');
       onCreated();
@@ -216,40 +209,10 @@ export default function FeishuWizard({
           <Form.Item name="description" label="描述（可选）">
             <Input />
           </Form.Item>
-          <Form.Item name="engine" label="引擎" initialValue="claude">
-            <Select
-              options={[
-                { value: 'claude', label: 'Claude Code（默认；需 Claude 订阅登录或 ANTHROPIC_API_KEY）' },
-                { value: 'deepseek', label: 'DeepSeek（零安装；只要 DeepSeek API key）' },
-              ]}
-            />
-          </Form.Item>
-          {engineChoice === 'deepseek' && (
-            <>
-              <Form.Item
-                name={['deepseek', 'apiKey']}
-                label="DeepSeek API Key（留空 = 用 .env 里的全局 DEEPSEEK_API_KEY）"
-              >
-                <Input.Password placeholder="sk-..." />
-              </Form.Item>
-              <Form.Item name={['deepseek', 'model']} label="模型">
-                <Select
-                  allowClear
-                  placeholder="默认 deepseek-v4-flash"
-                  options={[
-                    { value: 'deepseek-v4-flash', label: 'deepseek-v4-flash（快 · 便宜 · 默认）' },
-                    { value: 'deepseek-v4-pro', label: 'deepseek-v4-pro（更强推理）' },
-                  ]}
-                />
-              </Form.Item>
-            </>
-          )}
-          <Form.Item
-            name="workDir"
-            label="工作目录（绝对路径，不存在会自动创建）"
-            rules={[{ required: true, message: '必填' }]}
-          >
-            <Input placeholder="/Users/you/projects/my-bot" />
+          <Form.Item label="工作目录">
+            <Typography.Text type="secondary">
+              自动创建 ~/projects/机器人名称（含 inputs/ 附件目录、技能与说明模板）；引擎用安装时选定的全局默认
+            </Typography.Text>
           </Form.Item>
           <Alert
             type="info"

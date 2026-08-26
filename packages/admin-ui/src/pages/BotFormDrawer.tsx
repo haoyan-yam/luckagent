@@ -141,6 +141,7 @@ export default function BotFormDrawer({
   };
 
   const engine = Form.useWatch('engine', form) || 'claude';
+  const botName = Form.useWatch('name', form);
 
   return (
     <Drawer
@@ -159,7 +160,7 @@ export default function BotFormDrawer({
         </Space>
       }
     >
-      <Form form={form} layout="vertical" initialValues={editing ? {} : { engine: 'claude' }}>
+      <Form form={form} layout="vertical" initialValues={{}}>
         <Form.Item
           name="name"
           label="名称"
@@ -189,23 +190,34 @@ export default function BotFormDrawer({
         >
           <Input.Password placeholder={editing ? '不修改请留空' : 'App Secret'} />
         </Form.Item>
-        <Form.Item
-          name="defaultWorkingDirectory"
-          label="工作目录（绝对路径）"
-          rules={[{ required: true, message: '必填' }]}
-        >
-          <Input placeholder="/Users/you/projects/my-bot" />
-        </Form.Item>
-        <Form.Item name="engine" label="引擎">
-          <Select
-            options={[
-              { value: 'claude', label: 'Claude Code' },
-              { value: 'deepseek', label: 'DeepSeek' },
-            ]}
-          />
-        </Form.Item>
+        {editing ? (
+          <Form.Item name="defaultWorkingDirectory" label="工作目录">
+            <Input disabled />
+          </Form.Item>
+        ) : (
+          <Form.Item label="工作目录">
+            <Typography.Text type="secondary">
+              自动创建：~/projects/{botName || '<名称>'}（含 inputs/ 附件目录、技能与说明模板）
+            </Typography.Text>
+          </Form.Item>
+        )}
+        {editing ? (
+          <Form.Item name="engine" label="引擎（留空 = 用全局默认）">
+            <Select
+              allowClear
+              options={[
+                { value: 'claude', label: 'Claude Code' },
+                { value: 'deepseek', label: 'DeepSeek' },
+              ]}
+            />
+          </Form.Item>
+        ) : (
+          <Form.Item label="引擎">
+            <Typography.Text type="secondary">使用安装时选定的全局默认引擎（建好后可在「编辑」里按 bot 调整）</Typography.Text>
+          </Form.Item>
+        )}
 
-        {engine === 'deepseek' && (
+        {editing && engine === 'deepseek' && (
           <Collapse
             size="small"
             defaultActiveKey={['deepseek']}
@@ -240,6 +252,7 @@ export default function BotFormDrawer({
           size="small"
           style={{ marginTop: 16 }}
           items={[
+            ...(editing ? [
             {
               key: 'limits',
               forceRender: true,
@@ -263,7 +276,7 @@ export default function BotFormDrawer({
                   </Form.Item>
                 </>
               ),
-            },
+            }] : []),
             {
               key: 'group',
               forceRender: true,
@@ -282,6 +295,7 @@ export default function BotFormDrawer({
                 </>
               ),
             },
+            ...(editing ? [
             {
               key: 'paths',
               forceRender: true,
@@ -296,7 +310,7 @@ export default function BotFormDrawer({
                   </Form.Item>
                 </>
               ),
-            },
+            }] : []),
           ]}
         />
       </Form>

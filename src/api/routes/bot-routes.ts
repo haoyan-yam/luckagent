@@ -146,9 +146,11 @@ export async function handleBotRoutes(
 
     const appId = body.feishuAppId as string;
     const appSecret = body.feishuAppSecret as string;
-    const workDirInput = body.defaultWorkingDirectory as string;
-    if (!appId || !appSecret || !workDirInput) {
-      jsonResponse(res, 400, { error: 'Feishu bot requires: feishuAppId, feishuAppSecret, defaultWorkingDirectory' });
+    // Working directory defaults to ~/projects/<name> — the create form no
+    // longer asks for it (edit mode can still relocate explicitly).
+    const workDirInput = (body.defaultWorkingDirectory as string) || `~/projects/${name}`;
+    if (!appId || !appSecret) {
+      jsonResponse(res, 400, { error: 'Feishu bot requires: feishuAppId, feishuAppSecret' });
       return true;
     }
     // Chat attachments should land inside the workdir by convention

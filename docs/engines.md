@@ -27,7 +27,7 @@ Claude 引擎的运行时上——**不用装任何 CLI**：
 
 1. 申请 key：https://platform.deepseek.com → `.env` 填 `DEEPSEEK_API_KEY`（或在 bot 的 DeepSeek 子表单里按 bot 填）。
    **没有 Claude 账号的机器**再加一行 `LUCKAGENT_ENGINE=deepseek`（全局默认引擎），之后建的 bot 默认即用 DeepSeek——安装脚本检测到「只填了 DeepSeek key 且未装 Claude CLI」时会自动写入这行。
-2. 管理台建/编辑 bot：引擎下拉选 DeepSeek，模型二选一：
+2. 新建 bot 默认继承安装时选定的全局引擎；需要按 bot 调整时在「机器人管理 → 编辑」的引擎下拉选 DeepSeek，模型二选一：
    `deepseek-v4-flash`（快、便宜、默认）/ `deepseek-v4-pro`（更强推理）。
    两个模型都**原生支持看图**（群里发图片给 bot，agent 用 Read 工具读取即可理解——已实测）；
    实验版 `deepseek-v4-flash-vision-exp` 仍可手填使用，但日常无需。
