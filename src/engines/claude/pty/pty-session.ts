@@ -106,10 +106,19 @@ class PtyClaudeSessionImpl implements IPtyClaudeSession {
       const entry = (cfg.projects[cwd] && typeof cfg.projects[cwd] === 'object')
         ? cfg.projects[cwd]
         : (cfg.projects[cwd] = {});
-      if (entry.hasTrustDialogAccepted === true) return; // already trusted
+      // Two one-time dialogs would otherwise wedge a headless PTY on a fresh
+      // machine: the per-folder trust prompt AND the --dangerously-skip-
+      // permissions acceptance screen ("WARNING: Bypass Permissions mode",
+      // default = "No, exit" — a fresh Mac mini died there in the field).
+      // Both are plain flags in ~/.claude.json; pre-seed them exactly as an
+      // interactive acceptance would.
+      const trustDone = entry.hasTrustDialogAccepted === true;
+      const bypassDone = cfg.bypassPermissionsModeAccepted === true;
+      if (trustDone && bypassDone) return; // nothing to seed
       entry.hasTrustDialogAccepted = true;
+      cfg.bypassPermissionsModeAccepted = true;
       fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2));
-      this.log.info({ cwd }, 'pty-session: pre-accepted folder trust in ~/.claude.json');
+      this.log.info({ cwd, seededTrust: !trustDone, seededBypass: !bypassDone }, 'pty-session: pre-accepted trust/bypass flags in ~/.claude.json');
     } catch (err) {
       this.log.warn({ err, cwd }, 'pty-session: failed to pre-accept folder trust (may hit trust dialog)');
     }
@@ -258,8 +267,12 @@ class PtyClaudeSessionImpl implements IPtyClaudeSession {
     }
 
     await sleep(800);
+    if (!this.term || this.disposed) {
+      throw new Error('pty-session: claude exited before the prompt could be submitted');
+    }
     this.term.write('\r');
     await sleep(1500);
+    if (!this.term || this.disposed) return; // submitted; claude may have exited already
     // Double-Enter safeguard: the TUI sometimes needs a second Enter to submit.
     this.term.write('\r');
   }
