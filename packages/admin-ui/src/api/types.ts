@@ -77,4 +77,15 @@ export interface EffectiveConfig {
   paths: Record<string, string | null>;
   engineDefaults: Record<string, string | null>;
   credentials: Record<string, { set: boolean; tail?: string }>;
+  claudeAuth?: {
+    cliInstalled: boolean;
+    loggedIn: boolean;
+    email?: string;
+    billingType?: string;
+    seatTier?: string;
+    rateLimitTier?: string;
+    hasAvailableSubscription?: boolean;
+    trialEndsAt?: string;
+    profileFetchedAt?: string;
+  };
 }

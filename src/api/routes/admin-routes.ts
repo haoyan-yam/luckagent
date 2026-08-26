@@ -114,6 +114,36 @@ function pm2Jlist(): Promise<{ available: boolean; apps?: Array<Record<string, u
 
 /** Effective-config view: whitelisted, secrets reduced to set/tail hints. */
 function effectiveConfig(ctx: RouteContext): Record<string, unknown> {
+  const claudeCliInstalled = (): boolean => {
+    for (const dir of (process.env.PATH || '').split(path.delimiter)) {
+      if (!dir) continue;
+      try { fs.accessSync(path.join(dir, 'claude'), fs.constants.X_OK); return true; } catch { /* next */ }
+    }
+    return false;
+  };
+  // Subscription-login state as cached by the Claude CLI in ~/.claude.json
+  // (refreshed whenever claude runs — profileFetchedAt tells how fresh).
+  const claudeAuthStatus = () => {
+    const cliInstalled = claudeCliInstalled();
+    try {
+      const raw = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.claude.json'), 'utf-8'));
+      const oa = raw?.oauthAccount;
+      if (!oa || typeof oa !== 'object') return { cliInstalled, loggedIn: false };
+      return {
+        cliInstalled,
+        loggedIn: true,
+        email: typeof oa.emailAddress === 'string' ? oa.emailAddress : undefined,
+        billingType: typeof oa.billingType === 'string' ? oa.billingType : undefined,
+        seatTier: typeof oa.seatTier === 'string' ? oa.seatTier : undefined,
+        rateLimitTier: typeof oa.userRateLimitTier === 'string' ? oa.userRateLimitTier : undefined,
+        hasAvailableSubscription: typeof raw.hasAvailableSubscription === 'boolean' ? raw.hasAvailableSubscription : undefined,
+        trialEndsAt: typeof oa.claudeCodeTrialEndsAt === 'string' ? oa.claudeCodeTrialEndsAt : undefined,
+        profileFetchedAt: typeof oa.profileFetchedAt === 'string' ? oa.profileFetchedAt : undefined,
+      };
+    } catch {
+      return { cliInstalled, loggedIn: false };
+    }
+  };
   const readCoreTokenFile = (): string | undefined => {
     try {
       const v = fs.readFileSync(path.join(os.homedir(), '.luckagent-core', 'token'), 'utf-8').trim();
@@ -159,6 +189,7 @@ function effectiveConfig(ctx: RouteContext): Record<string, unknown> {
       volcengineTts: secretHint(process.env.VOLCENGINE_TTS_ACCESS_KEY),
       elevenlabs: secretHint(process.env.ELEVENLABS_API_KEY),
     },
+    claudeAuth: claudeAuthStatus(),
   };
 }
 

@@ -8,6 +8,29 @@ function SecretHint({ v }: { v?: { set: boolean; tail?: string } }) {
   return <Tag color="green">已配置（••••{v.tail}）</Tag>;
 }
 
+function ClaudeAuthHint({ a }: { a?: EffectiveConfig['claudeAuth'] }) {
+  if (!a) return <Tag>—</Tag>;
+  if (!a.cliInstalled && !a.loggedIn) return <Tag>未装 CLI（API key 或 DeepSeek 路线则无需）</Tag>;
+  if (!a.loggedIn) return <Tag color="orange">已装 CLI 未登录——终端跑一次 claude</Tag>;
+  const tier = a.seatTier || a.billingType || a.rateLimitTier;
+  const fetched = a.profileFetchedAt ? new Date(a.profileFetchedAt).toLocaleDateString() : null;
+  return (
+    <span>
+      <Tag color="green">已登录</Tag>
+      {a.email && <Typography.Text type="secondary">{a.email}</Typography.Text>}
+      {tier && <Tag style={{ marginLeft: 6 }}>{tier}</Tag>}
+      {a.hasAvailableSubscription === true && <Tag color="green">订阅可用</Tag>}
+      {a.hasAvailableSubscription === false && <Tag color="red">订阅不可用</Tag>}
+      {a.trialEndsAt && <Tag color="orange">试用至 {new Date(a.trialEndsAt).toLocaleDateString()}</Tag>}
+      {fetched && (
+        <Typography.Text type="secondary" style={{ fontSize: 12, marginLeft: 6 }}>
+          （CLI 缓存 · {fetched} 刷新）
+        </Typography.Text>
+      )}
+    </span>
+  );
+}
+
 function fmtUptime(ms: number | null): string {
   if (!ms) return '—';
   const sec = Math.floor(ms / 1000);
@@ -74,6 +97,9 @@ export default function ConfigPage({ onRestart }: { onRestart: () => void }) {
           </Descriptions.Item>
           <Descriptions.Item label="ANTHROPIC_API_KEY">
             <SecretHint v={cfg?.credentials.anthropicApiKey} />
+          </Descriptions.Item>
+          <Descriptions.Item label="Claude 订阅登录">
+            <ClaudeAuthHint a={cfg?.claudeAuth} />
           </Descriptions.Item>
           <Descriptions.Item label="OPENAI_API_KEY">
             <SecretHint v={cfg?.credentials.openaiApiKey} />
