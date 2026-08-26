@@ -31,23 +31,23 @@ main() {
 
   # 已经装过：不重复取码，给升级路径。
   if [[ -f "$target/package.json" && -x "$target/bin/luckagent" ]]; then
-    success "$target 已经是一份 Luckagent 安装。"
+    success "${target} 已经是一份 Luckagent 安装。"
     if [[ -d "$target/.git" ]]; then
       echo "  升级: luckagent update"
     else
-      echo "  升级: curl -fsSL https://codeload.github.com/haoyan-yam/luckagent/tar.gz/refs/heads/main | tar -xz --strip-components=1 -C $target"
-      echo "        cd $target && bash install.sh"
+      echo "  升级: curl -fsSL https://codeload.github.com/haoyan-yam/luckagent/tar.gz/refs/heads/main | tar -xz --strip-components=1 -C ${target}"
+      echo "        cd ${target} && bash install.sh"
     fi
-    echo "  重跑安装(幂等): cd $target && bash install.sh"
+    echo "  重跑安装(幂等): cd ${target} && bash install.sh"
     return 0
   fi
   if [[ -d "$target" && -n "$(ls -A "$target" 2>/dev/null)" ]]; then
-    fail "目录 $target 已存在且非空，但不是 Luckagent 安装。换个目录: LUCKAGENT_DIR=<path> 重跑本命令。"
+    fail "目录 ${target} 已存在且非空，但不是 Luckagent 安装。换个目录: LUCKAGENT_DIR=<path> 重跑本命令。"
   fi
 
   # 取代码。全新 Mac 的 /usr/bin/git 是触发 Xcode CLT 弹窗的桩——
   # 只有 xcode-select -p 成功（CLT 真装了）才走 git clone，否则 curl 拉 tarball。
-  info "获取 Luckagent（$ref）到 $target ..."
+  info "获取 Luckagent（${ref}）到 ${target} ..."
   mkdir -p "$(dirname "$target")"
   if xcode-select -p &>/dev/null && command -v git &>/dev/null; then
     git clone --depth 1 --branch "$ref" "$repo" "$target" \
@@ -61,12 +61,12 @@ main() {
     esac
     mkdir -p "$target"
     curl -fsSL "$tarball" | tar -xz --strip-components=1 -C "$target" \
-      || fail "下载失败（$tarball）。检查网络后重试。"
+      || fail "下载失败（${tarball}）。检查网络后重试。"
   fi
-  success "代码就绪: $target"
+  success "代码就绪: ${target}"
 
   if [[ "${LUCKAGENT_NO_INSTALL:-}" == "1" ]]; then
-    info "跳过安装（LUCKAGENT_NO_INSTALL=1）。之后执行: cd $target && bash install.sh"
+    info "跳过安装（LUCKAGENT_NO_INSTALL=1）。之后执行: cd ${target} && bash install.sh"
     return 0
   fi
 
@@ -83,7 +83,7 @@ main() {
   fi
 
   echo ""
-  success "安装完成。管理台: http://localhost:9100/admin （密钥在 $target/.env 的 API_SECRET）"
+  success "安装完成。管理台: http://localhost:9100/admin （密钥在 ${target}/.env 的 API_SECRET）"
 }
 
 main "$@"
