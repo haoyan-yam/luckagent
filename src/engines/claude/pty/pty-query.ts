@@ -531,7 +531,7 @@ export const ptyQuery = (args: {
     // when it died (onboarding/login screens, error text, update prompts …).
     let screenTail = '';
     try {
-      screenTail = session.screen().split('\n').map((l) => l.trimEnd()).filter(Boolean).slice(-14).join('\n').slice(-1200);
+      screenTail = session?.screen() ?? ''.split('\n').map((l) => l.trimEnd()).filter(Boolean).slice(-14).join('\n').slice(-1200);
     } catch { /* best-effort */ }
     logger.warn({ ...info, turnInFlight, screenTail }, 'ptyQuery: claude exited unexpectedly');
     if (turnInFlight) {
