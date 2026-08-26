@@ -198,7 +198,9 @@ luckagent update | restart | logs | status | health
 
 ### 🔒 保密：机密信息只写本地，不进共享库
 
-`luckagent memory` 是**全实例可读的共享知识库**。项目专属信息、客户/业务机密、任何不适合被其他 bot 读到的内容，**一律只写本地**：本工作区的文件（`work/` 笔记、项目 `CLAUDE.md`）或本 bot 的自动记忆。共享库只放**通用、非机密**的方法论与 SOP。写之前自问一句：这条被机器上任何一个 bot 读到都没问题吗？
+`luckagent memory` 是**跨 bot 的中央知识库**。项目专属信息、客户/业务机密、任何不适合被其他 bot 读到的内容，**一律只写本地**：本工作区的文件（`work/` 笔记、项目 `CLAUDE.md`）或本 bot 的自动记忆。中央库里对其他 bot 可见的只放**通用、非机密**的方法论与 SOP。写之前自问一句：这条被机器上任何一个 bot 读到都没问题吗？
+
+工具面：`create` 支持 `--share / --no-share` 控制单篇可见性（不带时取本 bot 的默认，`luckagent memory visibility` 可查/设，建议设 private）；拿不准就 `--no-share`，事后 `luckagent memory share <doc_id> on` 可再放开；写库时带 `--tags <项目>` 便于检索。
 
 ### 生图
 
