@@ -83,7 +83,7 @@ export default function FeishuWizard({
     }
     setCreating(true);
     try {
-      await api.post('/api/bots', {
+      const r = await api.post<{ skillsWarning?: string }>('/api/bots', {
         platform: 'feishu',
         name: values.name,
         description: values.description || undefined,
@@ -91,6 +91,7 @@ export default function FeishuWizard({
         feishuAppSecret: values.appSecret,
         installSkills: true,
       });
+      if (r.skillsWarning) message.warning(r.skillsWarning, 8);
       message.success('机器人已保存到 bots.json，重启桥接后生效');
       onCreated();
       reset();

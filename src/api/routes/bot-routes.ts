@@ -185,19 +185,29 @@ export async function handleBotRoutes(
       addBot(botsConfigPath, 'feishu', entry as any);
       logger.info({ name, platform }, 'Bot added to config');
 
+      let skillsWarning: string | undefined;
       if (body.installSkills) {
+        try {
         await installSkillsToWorkDir(workDir, logger, {
           platform: 'feishu',
           feishuAppId: appId,
           feishuAppSecret: appSecret,
           botName: name,
         });
+        } catch (err: any) {
+          // Best-effort: the bot entry is already valid — a skill-copy hiccup
+          // must not fail creation and strand a half-created bots.json entry
+          // (retrying would then 409). Surface it as a warning instead.
+          logger.warn({ err: err?.message, name }, 'Bot created but skill install failed');
+          skillsWarning = `技能安装未完成（${err?.message || err}）——bot 已创建可用；修复后可重跑 luckagent update 补装`;
+        }
       }
 
       jsonResponse(res, 201, {
         name, platform, workingDirectory: workDir,
         requiresRestart: true,
         message: 'Bot added. Restart the bridge to activate it.',
+        ...(skillsWarning ? { skillsWarning } : {}),
       });
     } catch (err: any) {
       if (err.message?.includes('already exists')) {

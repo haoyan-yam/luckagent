@@ -70,10 +70,14 @@ export async function installSkillsToWorkDir(workDir: string, logger: Logger, op
     for (const destSkillsDir of destSkillDirs) {
       const dest = path.join(destSkillsDir, skill);
       await fs.promises.mkdir(dest, { recursive: true });
-      // Skip VCS metadata — git-cloned skills (e.g. frontend-slides) must not
-      // drag their .git history into every bot workdir.
+      // dereference: lark-* skills live in ~/.claude/skills as SYMLINKS
+      // (installed via `npx skills add -g`) — copy the real content, or cp
+      // would try to replace the pre-created dest dir with a link (ENOTDIR).
+      // filter: git-cloned skills (e.g. frontend-slides) must not drag their
+      // .git history into every bot workdir.
       await fs.promises.cp(src, dest, {
         recursive: true,
+        dereference: true,
         filter: (entry) => path.basename(entry) !== '.git',
       });
       logger.info({ skill, src, dest }, 'Skill installed to working directory');

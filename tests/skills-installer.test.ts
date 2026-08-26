@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -76,6 +76,34 @@ describe('third-party frontend-slides skill', () => {
         expect(readFileSync(join(workDir, root, 'frontend-slides/SKILL.md'), 'utf-8')).toContain('frontend-slides');
         expect(existsSync(join(workDir, root, 'frontend-slides/.git'))).toBe(false);
       }
+    } finally {
+      if (priorHome === undefined) delete process.env.HOME;
+      else process.env.HOME = priorHome;
+    }
+  });
+});
+
+describe('symlinked skill sources (npx skills add installs lark-* as symlinks)', () => {
+  it('dereferences the link and merges into a pre-existing dest dir', async () => {
+    const priorHome = process.env.HOME;
+    const home = tempDir('luckagent-home-');
+    const workDir = tempDir('luckagent-work-');
+    try {
+      process.env.HOME = home;
+      // Real store dir + symlink at the skills path (like `npx skills add -g`).
+      const store = join(home, 'store', 'frontend-slides');
+      mkdirSync(store, { recursive: true });
+      writeFileSync(join(store, 'SKILL.md'), '# via-symlink');
+      mkdirSync(join(home, '.claude/skills'), { recursive: true });
+      symlinkSync(store, join(home, '.claude/skills/frontend-slides'));
+      // Simulate a previous partial run: dest already exists as a REAL dir.
+      mkdirSync(join(workDir, '.claude/skills/frontend-slides'), { recursive: true });
+
+      await installSkillsToWorkDir(workDir, logger);
+
+      const copied = join(workDir, '.claude/skills/frontend-slides/SKILL.md');
+      expect(readFileSync(copied, 'utf-8')).toContain('via-symlink');
+      expect(lstatSync(join(workDir, '.claude/skills/frontend-slides')).isSymbolicLink()).toBe(false);
     } finally {
       if (priorHome === undefined) delete process.env.HOME;
       else process.env.HOME = priorHome;

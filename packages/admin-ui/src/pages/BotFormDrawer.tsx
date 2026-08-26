@@ -106,7 +106,8 @@ export default function BotFormDrawer({
         await api.put(`/api/bots/${encodeURIComponent(editing)}`, payload);
         message.success('已保存，重启桥接后生效');
       } else {
-        await api.post('/api/bots', { ...payload, platform: 'feishu', installSkills: true });
+        const r = await api.post<{ skillsWarning?: string }>('/api/bots', { ...payload, platform: 'feishu', installSkills: true });
+        if (r.skillsWarning) message.warning(r.skillsWarning, 8);
         message.success('机器人已创建（含工作目录/技能/模板），重启桥接后生效');
       }
       onSaved();
