@@ -181,6 +181,10 @@ export async function handleBotRoutes(
       const workDir = workDirExpanded;
       fs.mkdirSync(workDir, { recursive: true });
       fs.mkdirSync(downloadsDir, { recursive: true });
+      // outputs/ = the documented archive convention (kept copies of final
+      // deliverables; NOT auto-sent). Pre-create it so the workspace layout
+      // matches what PROJECTS-CLAUDE.md tells the agent from day one.
+      fs.mkdirSync(path.join(workDir, 'outputs'), { recursive: true });
 
       addBot(botsConfigPath, 'feishu', entry as any);
       logger.info({ name, platform }, 'Bot added to config');
