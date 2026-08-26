@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import { execFile } from 'node:child_process';
 import type * as http from 'node:http';
 import { readBotsConfig } from '../bots-config-writer.js';
+import { expandUserPath } from '../../config.js';
 import { resolveEngineName } from '../../engines/index.js';
 import { jsonResponse, parseJsonBody } from './helpers.js';
 import type { RouteContext } from './types.js';
@@ -193,6 +194,104 @@ function effectiveConfig(ctx: RouteContext): Record<string, unknown> {
   };
 }
 
+
+// ---------------------------------------------------------------------------
+// Skills & auto-memory read-only viewers (admin console 「技能」「记忆」 pages)
+// ---------------------------------------------------------------------------
+
+export interface SkillInfo {
+  name: string;
+  description: string;
+  kind: 'dir' | 'symlink' | 'git';
+  updatedAt: string | null;
+}
+
+/** First `description:` from SKILL.md frontmatter; falls back to the first
+ *  non-frontmatter, non-heading paragraph line. Exported for tests. */
+export function readSkillDescription(skillDir: string): string {
+  try {
+    const md = fs.readFileSync(path.join(skillDir, 'SKILL.md'), 'utf-8');
+    const fm = md.match(/^---\n([\s\S]*?)\n---/);
+    if (fm) {
+      const d = fm[1].match(/^description:\s*["']?([\s\S]*?)["']?\s*$/m);
+      if (d) return d[1].split('\n')[0].trim().slice(0, 300);
+    }
+    const body = fm ? md.slice(fm[0].length) : md;
+    for (const line of body.split('\n')) {
+      const t = line.trim();
+      if (t && !t.startsWith('#') && !t.startsWith('>')) return t.slice(0, 300);
+    }
+  } catch { /* no SKILL.md */ }
+  return '';
+}
+
+/** Scan a skills root (~/.claude/skills or <workdir>/.claude/skills). */
+export function scanSkillsDir(dir: string): SkillInfo[] {
+  const out: SkillInfo[] = [];
+  let names: string[];
+  try {
+    names = fs.readdirSync(dir);
+  } catch {
+    return out;
+  }
+  for (const name of names.sort()) {
+    if (name.startsWith('.')) continue;
+    const p = path.join(dir, name);
+    let lst: fs.Stats;
+    try { lst = fs.lstatSync(p); } catch { continue; }
+    const isLink = lst.isSymbolicLink();
+    let st: fs.Stats;
+    try { st = fs.statSync(p); } catch { continue; }
+    if (!st.isDirectory()) continue;
+    const kind: SkillInfo['kind'] = isLink ? 'symlink' : fs.existsSync(path.join(p, '.git')) ? 'git' : 'dir';
+    let updatedAt: string | null;
+    try { updatedAt = fs.statSync(path.join(p, 'SKILL.md')).mtime.toISOString(); }
+    catch { updatedAt = st.mtime.toISOString(); }
+    out.push({ name, description: readSkillDescription(p), kind, updatedAt });
+  }
+  return out;
+}
+
+/** Claude Code keys per-project data dirs by the workdir path with separators
+ *  munged to '-'. Two candidates cover the known variants. Exported for tests. */
+export function memoryDirCandidates(workDir: string): string[] {
+  const root = path.join(os.homedir(), '.claude', 'projects');
+  const c1 = workDir.replaceAll('/', '-');
+  const c2 = workDir.replace(/[/.]/g, '-');
+  const cands = [...new Set([c1, c2])];
+  return cands.map((c) => path.join(root, c, 'memory'));
+}
+
+export interface MemoryIndexEntry { title: string; file: string; hook: string; }
+
+/** Parse MEMORY.md lines of the form `- [Title](file.md) — hook`. */
+export function parseMemoryIndex(indexRaw: string): MemoryIndexEntry[] {
+  const out: MemoryIndexEntry[] = [];
+  for (const line of indexRaw.split('\n')) {
+    const m = line.match(/^\s*-\s*\[([^\]]+)\]\(([^)]+)\)\s*(?:[—–-]{1,2}\s*(.*))?$/);
+    if (m) out.push({ title: m[1].trim(), file: m[2].trim(), hook: (m[3] || '').trim() });
+  }
+  return out;
+}
+
+function safeLeafName(v: unknown): string | null {
+  if (typeof v !== 'string' || !v) return null;
+  if (v.includes('/') || v.includes('\\') || v.includes('..')) return null;
+  return v;
+}
+
+function resolveBotWorkdir(botsConfigPath: string | undefined, botName: string): string | null {
+  if (!botsConfigPath) return null;
+  try {
+    const cfg = readBotsConfig(botsConfigPath);
+    const entry = (cfg.feishuBots || []).find((b) => b.name === botName);
+    if (!entry?.defaultWorkingDirectory) return null;
+    return expandUserPath(entry.defaultWorkingDirectory);
+  } catch {
+    return null;
+  }
+}
+
 export async function handleAdminRoutes(
   ctx: RouteContext,
   req: http.IncomingMessage,
@@ -201,6 +300,110 @@ export async function handleAdminRoutes(
   url: string,
 ): Promise<boolean> {
   const { registry, scheduler, logger, botsConfigPath, activityStore } = ctx;
+
+
+  // GET /admin/api/skills — global + per-bot project-level skills (read-only)
+  if (method === 'GET' && url === '/admin/api/skills') {
+    const globalDir = path.join(os.homedir(), '.claude', 'skills');
+    const bots: Array<{ name: string; workdir: string; skills: SkillInfo[] }> = [];
+    try {
+      const cfg = botsConfigPath ? readBotsConfig(botsConfigPath) : { feishuBots: [] };
+      for (const b of cfg.feishuBots || []) {
+        if (!b.defaultWorkingDirectory) continue;
+        const wd = expandUserPath(b.defaultWorkingDirectory);
+        bots.push({ name: b.name, workdir: wd, skills: scanSkillsDir(path.join(wd, '.claude', 'skills')) });
+      }
+    } catch { /* bots.json unreadable — still return globals */ }
+    jsonResponse(res, 200, { globalDir, global: scanSkillsDir(globalDir), bots });
+    return true;
+  }
+
+  // GET /admin/api/skills/detail?scope=global|bot&bot=<name>&skill=<name>
+  if (method === 'GET' && url.startsWith('/admin/api/skills/detail?')) {
+    const q = new URL(url, 'http://x').searchParams;
+    const skill = safeLeafName(q.get('skill'));
+    if (!skill) { jsonResponse(res, 400, { error: 'bad skill name' }); return true; }
+    let root: string | null;
+    if (q.get('scope') === 'bot') {
+      const wd = resolveBotWorkdir(botsConfigPath, q.get('bot') || '');
+      root = wd ? path.join(wd, '.claude', 'skills') : null;
+    } else {
+      root = path.join(os.homedir(), '.claude', 'skills');
+    }
+    if (!root) { jsonResponse(res, 404, { error: 'bot not found' }); return true; }
+    const dir = path.join(root, skill);
+    let real: string;
+    try { real = fs.realpathSync(dir); } catch { jsonResponse(res, 404, { error: 'skill not found' }); return true; }
+    let skillMd = '';
+    try { skillMd = fs.readFileSync(path.join(real, 'SKILL.md'), 'utf-8').slice(0, 200_000); } catch { /* none */ }
+    const files: string[] = [];
+    const walk = (d: string, rel: string) => {
+      if (files.length >= 200) return;
+      let entries: fs.Dirent[];
+      try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+      for (const e of entries) {
+        if (e.name === '.git') continue;
+        const r = rel ? `${rel}/${e.name}` : e.name;
+        if (e.isDirectory()) walk(path.join(d, e.name), r);
+        else files.push(r);
+        if (files.length >= 200) return;
+      }
+    };
+    walk(real, '');
+    jsonResponse(res, 200, { name: skill, skillMd, files, truncated: files.length >= 200 });
+    return true;
+  }
+
+  // GET /admin/api/memory?bot=<name> — the bot's auto-memory, indexed view
+  if (method === 'GET' && url.startsWith('/admin/api/memory?')) {
+    const q = new URL(url, 'http://x').searchParams;
+    const botName = q.get('bot') || '';
+    const wd = resolveBotWorkdir(botsConfigPath, botName);
+    if (!wd) { jsonResponse(res, 404, { error: 'bot not found' }); return true; }
+    const memDir = memoryDirCandidates(wd).find((d) => fs.existsSync(d));
+    if (!memDir) {
+      jsonResponse(res, 200, { exists: false, workdir: wd, entries: [], orphans: [] });
+      return true;
+    }
+    let indexRaw = '';
+    try { indexRaw = fs.readFileSync(path.join(memDir, 'MEMORY.md'), 'utf-8'); } catch { /* no index */ }
+    const indexed = parseMemoryIndex(indexRaw);
+    const onDisk = new Map<string, fs.Stats>();
+    try {
+      for (const f of fs.readdirSync(memDir)) {
+        if (f.endsWith('.md') && f !== 'MEMORY.md') onDisk.set(f, fs.statSync(path.join(memDir, f)));
+      }
+    } catch { /* ignore */ }
+    const entries = indexed.map((e) => {
+      const st = onDisk.get(e.file);
+      return { ...e, exists: !!st, sizeBytes: st?.size ?? null, mtime: st?.mtime.toISOString() ?? null };
+    });
+    const referenced = new Set(indexed.map((e) => e.file));
+    const orphans = [...onDisk.entries()]
+      .filter(([f]) => !referenced.has(f))
+      .map(([f, st]) => ({ file: f, sizeBytes: st.size, mtime: st.mtime.toISOString() }));
+    jsonResponse(res, 200, { exists: true, memoryDir: memDir, workdir: wd, hasIndex: !!indexRaw, entries, orphans });
+    return true;
+  }
+
+  // GET /admin/api/memory/file?bot=<name>&file=<name.md>
+  if (method === 'GET' && url.startsWith('/admin/api/memory/file?')) {
+    const q = new URL(url, 'http://x').searchParams;
+    const file = safeLeafName(q.get('file'));
+    if (!file || !file.endsWith('.md')) { jsonResponse(res, 400, { error: 'bad file name' }); return true; }
+    const wd = resolveBotWorkdir(botsConfigPath, q.get('bot') || '');
+    if (!wd) { jsonResponse(res, 404, { error: 'bot not found' }); return true; }
+    const memDir = memoryDirCandidates(wd).find((d) => fs.existsSync(d));
+    if (!memDir) { jsonResponse(res, 404, { error: 'no memory dir' }); return true; }
+    try {
+      const p = path.join(memDir, file);
+      const st = fs.statSync(p);
+      jsonResponse(res, 200, { file, content: fs.readFileSync(p, 'utf-8').slice(0, 300_000), sizeBytes: st.size, mtime: st.mtime.toISOString() });
+    } catch {
+      jsonResponse(res, 404, { error: 'file not found' });
+    }
+    return true;
+  }
 
   // GET /admin/api/overview — aggregate dashboard payload
   if (method === 'GET' && (url === '/admin/api/overview' || url.startsWith('/admin/api/overview?'))) {

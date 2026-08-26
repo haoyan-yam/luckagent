@@ -200,6 +200,7 @@ class PtyClaudeSessionImpl implements IPtyClaudeSession {
       throw new Error(
         `pty spawn failed for "${claudePath}" (cwd ${spawnCwd}): ${err?.message || err}. ` +
         'Check the path exists and is executable; override with CLAUDE_EXECUTABLE_PATH in .env if needed.',
+        { cause: err },
       );
     }
 

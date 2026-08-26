@@ -12,6 +12,7 @@ const SHELL_SCRIPTS = ['install.sh', 'bin/luckagent', 'scripts/get.sh', 'scripts
  * 规则：非 ASCII 字符紧邻的变量展开必须写成 ${FOO}。
  */
 describe('shell scripts: no bare $VAR adjacent to non-ASCII text', () => {
+  // eslint-disable-next-line no-control-regex -- ASCII boundary check is the point
   const bare = /\$[A-Za-z_][A-Za-z0-9_]*(?=[^\x00-\x7F])/;
 
   for (const rel of SHELL_SCRIPTS) {
