@@ -232,6 +232,15 @@ if [[ ! -d "$LUCKAGENT_HOME/.git" ]]; then
 
   # 工作区不再镜像共享技能：bot 会话同时加载全局 ~/.claude/skills（上面刚刷新）
   # 与工作目录 .claude/skills（保留给各 bot 的定制技能），无需逐目录同步。
+
+  # 父目录共用规范：仅缺失时部署（存在即用户已有/已定制，绝不覆盖——
+  # 想换新版：删掉 ~/projects/CLAUDE.md 再跑本命令）。
+  local bots_root="$HOME/projects"
+  if [[ ! -f "$bots_root/CLAUDE.md" && -f "$LUCKAGENT_HOME/src/workspace/PROJECTS-CLAUDE.md" ]]; then
+    mkdir -p "$bots_root"
+    cp "$LUCKAGENT_HOME/src/workspace/PROJECTS-CLAUDE.md" "$bots_root/CLAUDE.md"
+    success "工作区共用规范已部署: $bots_root/CLAUDE.md"
+  fi
   info "Restarting Luckagent..."
   _write_restart_breadcrumb
   pm2 restart luckagent-bridge luckagent-core 2>/dev/null || pm2 start ecosystem.config.cjs
