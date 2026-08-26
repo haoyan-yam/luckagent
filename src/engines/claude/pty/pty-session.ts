@@ -308,9 +308,25 @@ class PtyClaudeSessionImpl implements IPtyClaudeSession {
     const STABLE_MS = 700;
     const start = Date.now();
     let idleSince = 0;
+    let bypassAnswered = false;
     while (Date.now() - start < TIMEOUT) {
       const tail = this.snapshot().slice(-700);
       const sq = tail.toLowerCase().replace(/\s+/g, '');
+      // One-time acceptance screens can still appear if the pre-seeded
+      // ~/.claude.json flag got clobbered (e.g. a concurrently-open
+      // interactive claude rewriting its config — seen in the field).
+      // Recognize the bypass-permissions disclaimer and accept it ourselves:
+      // option "2. Yes, I accept" + Enter.
+      if (!bypassAnswered && sq.includes('bypasspermissionsmode') && sq.includes('yes,iaccept')) {
+        this.log.warn('pty-session: bypass-permissions dialog detected despite seeding — accepting (option 2)');
+        this.term?.write('2');
+        await sleep(150);
+        this.term?.write('\r');
+        bypassAnswered = true;
+        idleSince = 0;
+        await sleep(600);
+        continue;
+      }
       const running = sq.includes('esctointerrupt');
       const menuUp =
         sq.includes('entertoselect') ||
