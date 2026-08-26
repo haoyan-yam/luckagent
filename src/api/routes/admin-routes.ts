@@ -114,6 +114,14 @@ function pm2Jlist(): Promise<{ available: boolean; apps?: Array<Record<string, u
 
 /** Effective-config view: whitelisted, secrets reduced to set/tail hints. */
 function effectiveConfig(ctx: RouteContext): Record<string, unknown> {
+  const readCoreTokenFile = (): string | undefined => {
+    try {
+      const v = fs.readFileSync(path.join(os.homedir(), '.luckagent-core', 'token'), 'utf-8').trim();
+      return v || undefined;
+    } catch {
+      return undefined;
+    }
+  };
   const secretHint = (v: string | undefined) =>
     v ? { set: true, tail: v.slice(-4) } : { set: false };
   const stateDir = process.env.SESSION_STORE_DIR || path.join(os.homedir(), '.luckagent');
@@ -142,7 +150,10 @@ function effectiveConfig(ctx: RouteContext): Record<string, unknown> {
       // image-gen resolves OPENAI_IMAGE_API_KEY first, then OPENAI_API_KEY —
       // show the dedicated var so the installer-written key is visible.
       openaiImageApiKey: secretHint(process.env.OPENAI_IMAGE_API_KEY),
-      coreToken: secretHint(process.env.LUCKAGENT_CORE_TOKEN),
+      // Token resolution is file-first (~/.luckagent-core/token, written by
+      // the installer) with the env var as fallback — mirror that so a
+      // normally-installed machine doesn't read as 未配置.
+      coreToken: secretHint(process.env.LUCKAGENT_CORE_TOKEN || readCoreTokenFile()),
       deepseekApiKey: secretHint(process.env.DEEPSEEK_API_KEY),
       arkApiKey: secretHint(process.env.ARK_API_KEY),
       volcengineTts: secretHint(process.env.VOLCENGINE_TTS_ACCESS_KEY),
