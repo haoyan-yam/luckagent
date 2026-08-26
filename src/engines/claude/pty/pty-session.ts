@@ -247,8 +247,13 @@ class PtyClaudeSessionImpl implements IPtyClaudeSession {
 
     this.log.info({ len: text.length }, 'pty-session: typing prompt');
 
-    // Type char-by-char into the PTY (interactive input).
+    // Type char-by-char into the PTY (interactive input). claude can exit
+    // mid-loop (e.g. died on an onboarding screen) — fail with context, not
+    // a null-deref TypeError.
     for (const ch of text) {
+      if (!this.term || this.disposed) {
+        throw new Error('pty-session: claude exited while the prompt was being typed');
+      }
       this.term.write(ch);
     }
 
