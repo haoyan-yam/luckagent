@@ -181,9 +181,12 @@ export async function handleBotRoutes(
       const workDir = workDirExpanded;
       fs.mkdirSync(workDir, { recursive: true });
       fs.mkdirSync(downloadsDir, { recursive: true });
-      // outputs/ = the documented archive convention (kept copies of final
-      // deliverables; NOT auto-sent). Pre-create it so the workspace layout
-      // matches what PROJECTS-CLAUDE.md tells the agent from day one.
+      // Scaffold the FULL documented layout from PROJECTS-CLAUDE.md so the
+      // workspace is self-explanatory from day one:
+      //   inputs/  — incoming chat attachments (created above as downloadsDir)
+      //   work/    — scripts, drafts, intermediates (safe to clean)
+      //   outputs/ — kept copies of final deliverables (NOT auto-sent)
+      fs.mkdirSync(path.join(workDir, 'work'), { recursive: true });
       fs.mkdirSync(path.join(workDir, 'outputs'), { recursive: true });
 
       addBot(botsConfigPath, 'feishu', entry as any);
