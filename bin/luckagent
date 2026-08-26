@@ -230,63 +230,8 @@ if [[ ! -d "$LUCKAGENT_HOME/.git" ]]; then
   fi
   success "Skills updated"
 
-  # Update workspace skills if bots.json exists
-  if [[ -f "$LUCKAGENT_HOME/bots.json" ]] && command -v node &>/dev/null; then
-    local work_dirs work_dir
-    work_dirs=$(node -e '
-      const c=JSON.parse(require("fs").readFileSync(process.argv[1],"utf-8"));
-      const seen=new Set();
-      for(const b of (c.feishuBots||[])){
-        const d=b.defaultWorkingDirectory;
-        if(d&&!seen.has(d)){seen.add(d);console.log(d);}
-      }' "$LUCKAGENT_HOME/bots.json" 2>/dev/null || true)
-    while IFS= read -r work_dir; do
-      [[ -z "$work_dir" ]] && continue
-      local ws_skills_dir="$work_dir/.claude/skills"
-      mkdir -p "$ws_skills_dir"
-
-      # Copy common skills — same set the global sync refreshed above, plus
-      # the third-party frontend-slides (sourced from ~/.claude/skills).
-      for skill in $update_skills frontend-slides; do
-        if [[ -d "$SKILLS_DIR/$skill" ]]; then
-          for dst_root in "$ws_skills_dir"; do
-            mkdir -p "$dst_root/$skill"
-            cp -r "$SKILLS_DIR/$skill/." "$dst_root/$skill/"
-            rm -rf "$dst_root/$skill/.git"
-          done
-        fi
-      done
-      # Copy lark-cli skills if previously installed
-      if [[ "$has_lark_skills" == "true" ]]; then
-        local lark_skill
-        for lark_skill in "${lark_skill_names[@]}"; do
-          local lark_src=""
-          for skill_root in "$AGENTS_SKILLS_DIR" "$SKILLS_DIR"; do
-            if [[ -d "$skill_root/$lark_skill" ]]; then
-              lark_src="$skill_root/$lark_skill"
-              break
-            fi
-          done
-          if [[ -n "$lark_src" ]]; then
-            for dst_root in "$ws_skills_dir"; do
-              mkdir -p "$dst_root/$lark_skill"
-              [[ "$lark_src" -ef "$dst_root/$lark_skill" ]] && continue
-              cp -r "$lark_src/." "$dst_root/$lark_skill/"
-            done
-          fi
-        done
-      fi
-      # Update CLAUDE.md
-      if [[ -f "$LUCKAGENT_HOME/src/workspace/CLAUDE.md" ]]; then
-        cp "$LUCKAGENT_HOME/src/workspace/CLAUDE.md" "$work_dir/CLAUDE.md"
-        if [[ ! -e "$work_dir/AGENTS.md" ]]; then
-          ln -s CLAUDE.md "$work_dir/AGENTS.md" 2>/dev/null || cp "$work_dir/CLAUDE.md" "$work_dir/AGENTS.md"
-        fi
-      fi
-      success "Workspace skills updated: $work_dir"
-    done <<< "$work_dirs"
-  fi
-
+  # 工作区不再镜像共享技能：bot 会话同时加载全局 ~/.claude/skills（上面刚刷新）
+  # 与工作目录 .claude/skills（保留给各 bot 的定制技能），无需逐目录同步。
   info "Restarting Luckagent..."
   _write_restart_breadcrumb
   pm2 restart luckagent-bridge luckagent-core 2>/dev/null || pm2 start ecosystem.config.cjs

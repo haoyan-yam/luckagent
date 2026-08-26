@@ -24,7 +24,7 @@ function tempDir(prefix: string): string {
 }
 
 describe('skills installer', () => {
-  it('mirrors bundled skills into the Claude project directory and deploys AGENTS.md', async () => {
+  it('scaffolds the workspace (empty skills dir + AGENTS.md) without copying shared skills', async () => {
     const priorHome = process.env.HOME;
     const home = tempDir('luckagent-home-');
     const workDir = tempDir('luckagent-work-');
@@ -34,10 +34,11 @@ describe('skills installer', () => {
 
       await installSkillsToWorkDir(workDir, logger);
 
-      // `luckagent` is in the default COMMON_SKILLS list, so its bundled SKILL.md
-      // must land in the Claude project directory.
-      expect(readFileSync(join(workDir, '.claude/skills/luckagent/SKILL.md'), 'utf-8')).toContain('luckagent');
-      // .codex mirroring is gone with the codex engine.
+      // Shared skills are NOT copied per bot any more — sessions load them
+      // from the user-level ~/.claude/skills. The project-level dir exists,
+      // empty, reserved for bot-specific custom skills.
+      expect(existsSync(join(workDir, '.claude/skills'))).toBe(true);
+      expect(existsSync(join(workDir, '.claude/skills/luckagent'))).toBe(false);
       expect(existsSync(join(workDir, '.codex'))).toBe(false);
       // [design-note M] 工作区模板换成了本地初始模板，断言改为对模板标题不敏感的关键词
       expect(readFileSync(join(workDir, 'AGENTS.md'), 'utf-8')).toContain('Luckagent');
@@ -51,59 +52,6 @@ describe('skills installer', () => {
       // frontend-slides is in COMMON_SKILLS but absent from this fake HOME —
       // it must be skipped silently, not fail the install.
       expect(() => readFileSync(join(workDir, '.claude/skills/frontend-slides/SKILL.md'), 'utf-8')).toThrow();
-    } finally {
-      if (priorHome === undefined) delete process.env.HOME;
-      else process.env.HOME = priorHome;
-    }
-  });
-});
-
-describe('third-party frontend-slides skill', () => {
-  it('mirrors the global copy into bot workdirs without its .git history', async () => {
-    const priorHome = process.env.HOME;
-    const home = tempDir('luckagent-home-');
-    const workDir = tempDir('luckagent-work-');
-    try {
-      process.env.HOME = home;
-      const fsSkill = join(home, '.claude/skills/frontend-slides');
-      mkdirSync(join(fsSkill, '.git'), { recursive: true });
-      writeFileSync(join(fsSkill, 'SKILL.md'), '# frontend-slides\nHTML presentations');
-      writeFileSync(join(fsSkill, '.git', 'HEAD'), 'ref: refs/heads/main');
-
-      await installSkillsToWorkDir(workDir, logger);
-
-      for (const root of ['.claude/skills']) {
-        expect(readFileSync(join(workDir, root, 'frontend-slides/SKILL.md'), 'utf-8')).toContain('frontend-slides');
-        expect(existsSync(join(workDir, root, 'frontend-slides/.git'))).toBe(false);
-      }
-    } finally {
-      if (priorHome === undefined) delete process.env.HOME;
-      else process.env.HOME = priorHome;
-    }
-  });
-});
-
-describe('symlinked skill sources (npx skills add installs lark-* as symlinks)', () => {
-  it('dereferences the link and merges into a pre-existing dest dir', async () => {
-    const priorHome = process.env.HOME;
-    const home = tempDir('luckagent-home-');
-    const workDir = tempDir('luckagent-work-');
-    try {
-      process.env.HOME = home;
-      // Real store dir + symlink at the skills path (like `npx skills add -g`).
-      const store = join(home, 'store', 'frontend-slides');
-      mkdirSync(store, { recursive: true });
-      writeFileSync(join(store, 'SKILL.md'), '# via-symlink');
-      mkdirSync(join(home, '.claude/skills'), { recursive: true });
-      symlinkSync(store, join(home, '.claude/skills/frontend-slides'));
-      // Simulate a previous partial run: dest already exists as a REAL dir.
-      mkdirSync(join(workDir, '.claude/skills/frontend-slides'), { recursive: true });
-
-      await installSkillsToWorkDir(workDir, logger);
-
-      const copied = join(workDir, '.claude/skills/frontend-slides/SKILL.md');
-      expect(readFileSync(copied, 'utf-8')).toContain('via-symlink');
-      expect(lstatSync(join(workDir, '.claude/skills/frontend-slides')).isSymbolicLink()).toBe(false);
     } finally {
       if (priorHome === undefined) delete process.env.HOME;
       else process.env.HOME = priorHome;

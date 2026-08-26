@@ -221,13 +221,13 @@ export default function FeishuWizard({
           </Form.Item>
           <Form.Item label="工作目录">
             <Typography.Text type="secondary">
-              自动创建 ~/projects/机器人名称（含 inputs/ 附件目录、技能与说明模板）；引擎用安装时选定的全局默认
+              自动创建 ~/projects/机器人名称（含 inputs/ 附件目录与说明模板；技能走全局层）；引擎用安装时选定的全局默认
             </Typography.Text>
           </Form.Item>
           <Alert
             type="info"
             showIcon
-            message="保存时会自动：创建工作目录与 inputs/ 附件目录、安装工作区技能与说明模板、为 lark-cli 追加该应用的 profile（以机器人名命名）。之后重启桥接生效，把机器人拉进群 @它说话即可测试。"
+            message="保存时会自动：创建工作目录与 inputs/ 附件目录、部署说明模板、为 lark-cli 追加该应用的 profile（以机器人名命名）；共享技能走全局层无需复制。之后重启桥接生效，把机器人拉进群 @它说话即可测试。"
           />
         </>
       ),

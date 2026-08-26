@@ -8,9 +8,10 @@
 
 | 目录 | 谁来读 |
 | --- | --- |
-| `<工作目录>/.claude/skills/` | Claude / DeepSeek 引擎（同一运行时） |
+| `~/.claude/skills/` | **共享技能层**——lark-\*、luckagent、image-gen、frontend-slides 等随装技能都在这里，一份全局副本对所有 bot 生效（bot 会话以 `settingSources: ['user','project']` 同时加载两级） |
+| `<工作目录>/.claude/skills/` | **定制技能层**——建 bot 时创建为空目录，放该 bot 专属的自定义技能；与全局同名时项目层优先，可用于按 bot 覆盖 |
 
-全局层面是 `~/.claude/skills`；安装器（`src/api/skills-installer.ts`）建 bot 时把随装技能镜像进工作目录。
+建 bot 不再往工作目录复制共享技能（历史上的镜像机制已移除——零重复、零漂移）。
 
 ## 随装技能
 
@@ -35,7 +36,7 @@ npx skills add larksuite/cli --all -y -g   # 拉取 19 个官方技能到全局
 
 ## 可选技能（手动启用）
 
-不默认安装，需要时从源码目录拷贝到 `~/.claude/skills/`（或某个 bot 的 `.claude/skills/`）即可；管理台创建 bot 时会自动把随装技能装进该 bot 工作目录的 `.claude/skills`；`luckagent update` 检测到已启用会跟着同步进工作区：
+不默认安装，需要时从源码目录拷贝到 `~/.claude/skills/`（或某个 bot 的 `.claude/skills/`）即可；`luckagent update` 检测到已启用会跟着同步进工作区：
 
 | 技能 | 作用 | 源 |
 | --- | --- | --- |

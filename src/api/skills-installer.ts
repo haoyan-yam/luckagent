@@ -5,22 +5,6 @@ import * as url from 'node:url';
 import { spawn } from 'node:child_process';
 import type { Logger } from '../utils/logger.js';
 
-/** Skills installed for all bots. frontend-slides is a third-party MIT skill
- *  (zarazhangrui/frontend-slides) fetched into ~/.claude/skills by install.sh —
- *  absent copies are skipped silently. */
-const COMMON_SKILLS = ['luckagent', 'frontend-slides'];
-
-/** Lark CLI AI Agent skills — installed via `npx skills add larksuite/cli` and
- *  symlinked into ~/.claude/skills/ automatically. We copy them to the bot
- *  working directory so they are available in the Claude Code session. */
-const LARK_CLI_SKILLS = [
-  'lark-base', 'lark-calendar', 'lark-contact', 'lark-doc', 'lark-drive',
-  'lark-event', 'lark-im', 'lark-mail', 'lark-minutes', 'lark-openapi-explorer',
-  'lark-shared', 'lark-sheets', 'lark-skill-maker', 'lark-task', 'lark-vc',
-  'lark-whiteboard', 'lark-wiki', 'lark-workflow-meeting-summary',
-  'lark-workflow-standup-report',
-];
-
 export interface InstallSkillsOptions {
   /** Bot platform — feishu-only skills are skipped for other platforms. */
   platform?: 'feishu';
@@ -31,58 +15,17 @@ export interface InstallSkillsOptions {
   botName?: string;
 }
 
-/** opencli is an optional third-party binary; its skill is only installed
- *  when the binary is actually present (a skill for a missing tool would
- *  just mislead the agent). PATH-based so tests can control it. */
-export function opencliAvailable(): boolean {
-  const pathEnv = process.env.PATH || '';
-  for (const dir of pathEnv.split(path.delimiter)) {
-    if (!dir) continue;
-    try {
-      fs.accessSync(path.join(dir, 'opencli'), fs.constants.X_OK);
-      return true;
-    } catch {
-      /* keep scanning */
-    }
-  }
-  return false;
-}
-
+/**
+ * Per-bot workspace scaffolding. Shared skills are NOT copied here: every
+ * bot session loads the user-level ~/.claude/skills (settingSources includes
+ * 'user'), where install.sh puts the lark skills, luckagent, image-gen and frontend-slides —
+ * one global copy serves all bots, zero drift. The workdir's .claude/skills
+ * stays reserved for bot-specific custom skills (project level wins on name
+ * clashes, so per-bot overrides remain possible by copying deliberately).
+ */
 export async function installSkillsToWorkDir(workDir: string, logger: Logger, options?: InstallSkillsOptions): Promise<void> {
-  const userSkillsDir = path.join(os.homedir(), '.claude', 'skills');
-  const destSkillDirs = [path.join(workDir, '.claude', 'skills')];
-
-  const skillNames = options?.platform === 'feishu'
-    ? [...COMMON_SKILLS, ...LARK_CLI_SKILLS]
-    : [...COMMON_SKILLS];
-  if (opencliAvailable()) skillNames.push('opencli');
-
-  for (const skill of skillNames) {
-    const src = fs.existsSync(path.join(userSkillsDir, skill))
-      ? path.join(userSkillsDir, skill)
-      : bundledSkillSource(skill);
-
-    if (!src || !fs.existsSync(src)) {
-      logger.debug({ skill }, 'Skill source not found, skipping');
-      continue;
-    }
-
-    for (const destSkillsDir of destSkillDirs) {
-      const dest = path.join(destSkillsDir, skill);
-      await fs.promises.mkdir(dest, { recursive: true });
-      // dereference: lark-* skills live in ~/.claude/skills as SYMLINKS
-      // (installed via `npx skills add -g`) — copy the real content, or cp
-      // would try to replace the pre-created dest dir with a link (ENOTDIR).
-      // filter: git-cloned skills (e.g. frontend-slides) must not drag their
-      // .git history into every bot workdir.
-      await fs.promises.cp(src, dest, {
-        recursive: true,
-        dereference: true,
-        filter: (entry) => path.basename(entry) !== '.git',
-      });
-      logger.info({ skill, src, dest }, 'Skill installed to working directory');
-    }
-  }
+  // Reserve the project-level skills dir for the bot's own custom skills.
+  await fs.promises.mkdir(path.join(workDir, '.claude', 'skills'), { recursive: true });
 
   // For Feishu bots, ensure lark-cli has a profile for this app
   if (options?.platform === 'feishu' && options.feishuAppId && options.feishuAppSecret) {
@@ -210,26 +153,6 @@ function deployWorkspaceInstructions(workDir: string, logger: Logger): void {
   }
 }
 
-function bundledSkillSource(skill: string): string | undefined {
-  const thisFile = url.fileURLToPath(import.meta.url);
-  const thisDir = path.dirname(thisFile);
-  const candidatesBySkill: Record<string, string[]> = {
-    opencli: [
-      path.join(thisDir, '..', 'skills', 'opencli'),
-      path.join(thisDir, '..', '..', 'src', 'skills', 'opencli'),
-    ],
-    luckagent: [
-      path.join(thisDir, '..', 'skills', 'luckagent'),
-      path.join(thisDir, '..', '..', 'packages', 'skills', 'luckagent'),
-      path.join(thisDir, '..', '..', 'src', 'skills', 'luckagent'),
-    ],
-    voice: [
-      path.join(thisDir, '..', 'skills', 'voice'),
-      path.join(thisDir, '..', '..', 'src', 'skills', 'voice'),
-    ],
-  };
-  return candidatesBySkill[skill]?.find((candidate) => fs.existsSync(candidate));
-}
 
 function copyInstructionFile(src: string, dest: string, fileName: string, logger: Logger): void {
   if (fs.existsSync(dest)) return;

@@ -198,7 +198,7 @@ export default function BotFormDrawer({
         ) : (
           <Form.Item label="工作目录">
             <Typography.Text type="secondary">
-              自动创建：~/projects/{botName || '<名称>'}（含 inputs/ 附件目录、技能与说明模板）
+              自动创建：~/projects/{botName || '<名称>'}（含 inputs/ 附件目录与说明模板；技能走全局层）
             </Typography.Text>
           </Form.Item>
         )}
