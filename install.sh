@@ -176,6 +176,29 @@ open(p, 'w').write(s)
 PYEOF
       success "ANTHROPIC_API_KEY 已写入"
     fi
+    read -r -p "填入 DEEPSEEK_API_KEY 吗？DeepSeek 引擎零安装只要 key（回车跳过） " dkey || dkey=""
+    if [[ -n "$dkey" ]]; then
+      DEEPSEEK_KEY_VALUE="$dkey" python3 - <<'PYEOF'
+import os
+p = '.env'
+s = open(p).read()
+s = s.replace('# DEEPSEEK_API_KEY=sk-...', 'DEEPSEEK_API_KEY=' + os.environ['DEEPSEEK_KEY_VALUE'], 1)
+open(p, 'w').write(s)
+PYEOF
+      success "DEEPSEEK_API_KEY 已写入"
+      # 只有 DeepSeek、没有 Claude 认证 → 顺手把全局默认引擎设为 deepseek，
+      # 之后（含向导）建的 bot 默认就能干活，不会撞上 claude 无认证。
+      if [[ -z "$akey" ]] && ! command -v claude &>/dev/null; then
+        DS_DEFAULT=1 python3 - <<'PYEOF'
+import os
+p = '.env'
+s = open(p).read()
+s = s.replace('# LUCKAGENT_ENGINE=deepseek', 'LUCKAGENT_ENGINE=deepseek', 1)
+open(p, 'w').write(s)
+PYEOF
+        success "检测到只配了 DeepSeek 认证——全局默认引擎已设为 deepseek（.env 的 LUCKAGENT_ENGINE，可随时改回）"
+      fi
+    fi
     read -r -p "填入生图 key 吗？OpenAI(sk-…) 或火山(ark-…) 均可，按前缀自动识别（回车跳过） " ikey || ikey=""
     if [[ -n "$ikey" ]]; then
       if [[ "$ikey" == ark-* ]]; then
