@@ -82,7 +82,10 @@ if [[ ! -d "$LUCKAGENT_HOME/.git" ]]; then
     exec "$LUCKAGENT_HOME/bin/luckagent" update
   fi
 
-  info "Pulling latest code..."
+  # 部署检出：本进程跑的 npm install 会因 npm 版本/平台差异改写 lockfile，
+  # 留着会挡住下一次 pull——lockfile 反正由 npm install 重新生成，先丢弃漂移。
+  git -C "$LUCKAGENT_HOME" checkout -- package-lock.json 2>/dev/null || true
+    info "Pulling latest code..."
   cd "$LUCKAGENT_HOME"
   local old_head
   old_head="$(git rev-parse HEAD)"
