@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const ROOT = join(__dirname, '..');
-const SHELL_SCRIPTS = ['install.sh', 'bin/luckagent', 'scripts/get.sh', 'scripts/make-installer.sh'];
+const SHELL_SCRIPTS = ['install.sh', 'bin/luckagent', 'scripts/get.sh', 'scripts/make-installer.sh', 'scripts/uninstall.sh'];
 
 /**
  * macOS bash（3.2 与 Homebrew 5.x 均中招）在 en_US.UTF-8 —— 系统默认 locale ——

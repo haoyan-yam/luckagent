@@ -178,7 +178,16 @@ luckagent doctor --json   # 本机体检（runtime/PM2/core/bots/voice 等检查
 
 ---
 
-## 8. 常见问题（更多见 docs/troubleshooting.md）
+## 8. 卸载
+
+```bash
+bash ~/luckagent/scripts/uninstall.sh
+```
+
+移除 PM2 进程、安装目录（含 `.env`/`bots.json`）、状态目录、CLI 与随装技能；
+**保留** `~/projects/` 工作区与项目记忆、brew/node/lark-cli/claude 等共享工具（脚本结尾会列出保留项与可选清理命令）。
+
+## 9. 常见问题（更多见 docs/troubleshooting.md）
 
 **装 Homebrew 卡在 Xcode 命令行工具**
 下载慢是常态（Apple 服务器）；也可先手动 `xcode-select --install` 装完再重跑 `install.sh`。
