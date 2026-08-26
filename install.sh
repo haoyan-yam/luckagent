@@ -128,8 +128,19 @@ echo "                   火山方舟 https://console.volcengine.com/ark → ARK
 echo "    DeepSeek 引擎（可选）: https://platform.deepseek.com → DEEPSEEK_API_KEY"
 echo "    语音 TTS（可选）: 火山 VOLCENGINE_TTS_*（不配则用免费 Edge TTS）"
 echo ""
-if [[ "$NO_SYSTEM" != "true" ]] && ! command -v claude &>/dev/null; then
-  if ask_yn "现在安装 Claude Code CLI（默认引擎的订阅登录路线）？" y; then
+# ---- 选择默认引擎（每个 bot 之后仍可在管理台单独选） ----
+ENGINE_CHOICE="claude"
+if [[ "$YES" != "true" ]]; then
+  echo -e "${BOLD}—— 选择默认引擎 ——${NC}"
+  echo "  1) Claude Code —— 能力最强（需 Claude 订阅登录，或 ANTHROPIC_API_KEY）"
+  echo "  2) DeepSeek    —— 零安装、成本低（只要一个 DeepSeek API key）"
+  read -r -p "默认引擎 [1/2]（回车 = 1 Claude） " eng_choice || eng_choice=""
+  [[ "$eng_choice" == "2" ]] && ENGINE_CHOICE="deepseek"
+  echo ""
+fi
+
+if [[ "$ENGINE_CHOICE" == "claude" ]] && [[ "$NO_SYSTEM" != "true" ]] && ! command -v claude &>/dev/null; then
+  if ask_yn "现在安装 Claude Code CLI（订阅登录路线需要它；纯 API key 路线可跳过）？" y; then
     curl -fsSL https://claude.ai/install.sh | bash \
       && success "Claude Code CLI 已安装——稍后在终端跑一次 claude 完成登录（走 API key 路线则无需登录）" \
       || warn "Claude Code CLI 安装失败，可稍后手动: curl -fsSL https://claude.ai/install.sh | bash"
@@ -165,42 +176,46 @@ PYEOF
   success ".env 已生成（API_SECRET 已随机生成）"
 
   if [[ "$YES" != "true" ]]; then
-    echo "  Claude 引擎认证二选一："
-    echo "    ① API key 路线 —— 在下面粘贴 ANTHROPIC_API_KEY"
-    echo "    ② 订阅登录路线 —— 直接回车跳过，安装结束后在终端跑一次 claude 完成浏览器登录即可"
-    read -r -p "现在填入 ANTHROPIC_API_KEY 吗？（订阅用户直接回车跳过） " akey || akey=""
-    if [[ -n "$akey" ]]; then
-      ANTHROPIC_KEY_VALUE="$akey" python3 - <<'PYEOF'
-import os
+    if [[ "$ENGINE_CHOICE" == "deepseek" ]]; then
+      # ---- DeepSeek 路线：写默认引擎 + 要 key ----
+      python3 - <<'PYEOF'
 p = '.env'
 s = open(p).read()
-s = s.replace('# ANTHROPIC_API_KEY=sk-ant-...', 'ANTHROPIC_API_KEY=' + os.environ['ANTHROPIC_KEY_VALUE'], 1)
+s = s.replace('# LUCKAGENT_ENGINE=deepseek', 'LUCKAGENT_ENGINE=deepseek', 1)
 open(p, 'w').write(s)
 PYEOF
-      success "ANTHROPIC_API_KEY 已写入"
-    fi
-    read -r -p "填入 DEEPSEEK_API_KEY 吗？DeepSeek 引擎零安装只要 key（回车跳过） " dkey || dkey=""
-    if [[ -n "$dkey" ]]; then
-      DEEPSEEK_KEY_VALUE="$dkey" python3 - <<'PYEOF'
+      success "默认引擎已设为 DeepSeek（.env 的 LUCKAGENT_ENGINE，可随时改）"
+      read -r -p "填入 DEEPSEEK_API_KEY（申请: https://platform.deepseek.com；回车跳过则之后补填 .env） " dkey || dkey=""
+      if [[ -n "$dkey" ]]; then
+        DEEPSEEK_KEY_VALUE="$dkey" python3 - <<'PYEOF'
 import os
 p = '.env'
 s = open(p).read()
 s = s.replace('# DEEPSEEK_API_KEY=sk-...', 'DEEPSEEK_API_KEY=' + os.environ['DEEPSEEK_KEY_VALUE'], 1)
 open(p, 'w').write(s)
 PYEOF
-      success "DEEPSEEK_API_KEY 已写入"
-      # 只有 DeepSeek、没有 Claude 认证 → 顺手把全局默认引擎设为 deepseek，
-      # 之后（含向导）建的 bot 默认就能干活，不会撞上 claude 无认证。
-      if [[ -z "$akey" ]] && ! command -v claude &>/dev/null; then
-        DS_DEFAULT=1 python3 - <<'PYEOF'
+        success "DEEPSEEK_API_KEY 已写入"
+      else
+        warn "还没填 key——bot 干活前记得编辑 .env 补上 DEEPSEEK_API_KEY"
+      fi
+      echo "  （想同时用 Claude 引擎：之后编辑 .env 填 ANTHROPIC_API_KEY，或装 Claude CLI 登录）"
+    else
+      # ---- Claude 路线：认证二选一 ----
+      echo "  Claude 引擎认证二选一："
+      echo "    ① API key 路线 —— 在下面粘贴 ANTHROPIC_API_KEY"
+      echo "    ② 订阅登录路线 —— 直接回车跳过，安装结束后在终端跑一次 claude 完成浏览器登录即可"
+      read -r -p "现在填入 ANTHROPIC_API_KEY 吗？（订阅用户直接回车跳过） " akey || akey=""
+      if [[ -n "$akey" ]]; then
+        ANTHROPIC_KEY_VALUE="$akey" python3 - <<'PYEOF'
 import os
 p = '.env'
 s = open(p).read()
-s = s.replace('# LUCKAGENT_ENGINE=deepseek', 'LUCKAGENT_ENGINE=deepseek', 1)
+s = s.replace('# ANTHROPIC_API_KEY=sk-ant-...', 'ANTHROPIC_API_KEY=' + os.environ['ANTHROPIC_KEY_VALUE'], 1)
 open(p, 'w').write(s)
 PYEOF
-        success "检测到只配了 DeepSeek 认证——全局默认引擎已设为 deepseek（.env 的 LUCKAGENT_ENGINE，可随时改回）"
+        success "ANTHROPIC_API_KEY 已写入"
       fi
+      echo "  （想同时用 DeepSeek 引擎：之后编辑 .env 填 DEEPSEEK_API_KEY 即可）"
     fi
     read -r -p "填入生图 key 吗？OpenAI(sk-…) 或火山(ark-…) 均可，按前缀自动识别（回车跳过） " ikey || ikey=""
     if [[ -n "$ikey" ]]; then
@@ -347,7 +362,13 @@ echo ""
 echo "  1. 打开管理台:  http://localhost:${api_port:-9100}/admin"
 echo "     登录密钥（API_SECRET）: ${api_secret:-<见 .env>}"
 echo "  2. 在管理台点「飞书接入向导」，创建并保存第一个机器人，然后点「重启桥接」"
-if command -v claude &>/dev/null && ! grep -q "^ANTHROPIC_API_KEY=" .env 2>/dev/null; then
+if [[ "${ENGINE_CHOICE:-claude}" == "deepseek" ]]; then
+  if grep -q "^DEEPSEEK_API_KEY=" .env 2>/dev/null; then
+    echo "  3. 默认引擎 DeepSeek 已就绪（key 已配置），建 bot 即可干活"
+  else
+    echo "  3. 默认引擎已设为 DeepSeek——干活前编辑 .env 补上 DEEPSEEK_API_KEY，然后 luckagent restart"
+  fi
+elif command -v claude &>/dev/null && ! grep -q "^ANTHROPIC_API_KEY=" .env 2>/dev/null; then
   echo "  3. Claude 引擎认证（订阅路线）：终端跑一次  claude  完成浏览器登录即可"
   echo "     （安装器无法代做 OAuth；已登录过则忽略。走 API 路线则编辑 .env 填 ANTHROPIC_API_KEY）"
 else
