@@ -165,7 +165,10 @@ PYEOF
   success ".env 已生成（API_SECRET 已随机生成）"
 
   if [[ "$YES" != "true" ]]; then
-    read -r -p "现在填入 ANTHROPIC_API_KEY 吗？（回车跳过，之后可编辑 .env） " akey || akey=""
+    echo "  Claude 引擎认证二选一："
+    echo "    ① API key 路线 —— 在下面粘贴 ANTHROPIC_API_KEY"
+    echo "    ② 订阅登录路线 —— 直接回车跳过，安装结束后在终端跑一次 claude 完成浏览器登录即可"
+    read -r -p "现在填入 ANTHROPIC_API_KEY 吗？（订阅用户直接回车跳过） " akey || akey=""
     if [[ -n "$akey" ]]; then
       ANTHROPIC_KEY_VALUE="$akey" python3 - <<'PYEOF'
 import os
