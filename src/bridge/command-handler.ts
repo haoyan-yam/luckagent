@@ -394,7 +394,6 @@ export class CommandHandler {
       const deepseekModels = [
         { id: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash', note: 'Fast + cheap default' },
         { id: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro', note: 'Stronger reasoning' },
-        { id: 'deepseek-v4-flash-vision-exp', label: 'DeepSeek V4 Flash Vision', note: 'Image understanding (experimental)' },
       ];
       const models = activeEngine === 'deepseek' ? deepseekModels : claudeModels;
       const header = activeEngine === 'deepseek'

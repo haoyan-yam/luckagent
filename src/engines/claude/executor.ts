@@ -664,11 +664,18 @@ export class ClaudeExecutor {
   }
 
   async *execute(options: ExecutorOptions): AsyncGenerator<SDKMessage> {
-    const { prompt, cwd, sessionId, abortController, outputsDir } = options;
+    const { prompt, cwd, sessionId, abortController, outputsDir, apiContext } = options;
 
     this.logger.info({ cwd, hasSession: !!sessionId }, 'Starting Claude execution');
 
-    const queryOptions = this.buildQueryOptions(cwd, sessionId, abortController, outputsDir);
+    const queryOptions = this.buildQueryOptions(cwd, sessionId, abortController, outputsDir, apiContext);
+    // Apply per-call overrides — keep in lockstep with startExecution(); this
+    // legacy single-shot path silently dropped them before (model overrides
+    // never reached the API).
+    if (options.maxTurns !== undefined) queryOptions.maxTurns = options.maxTurns;
+    if (options.model) queryOptions.model = options.model;
+    if (options.allowedTools !== undefined) queryOptions.allowedTools = options.allowedTools;
+    apply1MContextSettings(queryOptions);
 
     const stream = query({
       prompt,

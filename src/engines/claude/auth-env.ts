@@ -8,6 +8,9 @@ import type { BotConfigBase } from '../../config.js';
  */
 export const DEEPSEEK_DEFAULT_BASE_URL = 'https://api.deepseek.com/anthropic';
 export const DEEPSEEK_DEFAULT_MODEL = 'deepseek-v4-flash';
+// vision-exp is a valid endpoint id but intentionally absent from UI pickers:
+// flash/pro are natively multimodal (verified through the Read-tool chain),
+// so the experimental vision variant has no daily-use role.
 export const DEEPSEEK_KNOWN_MODELS = ['deepseek-v4-flash', 'deepseek-v4-pro', 'deepseek-v4-flash-vision-exp'];
 
 /**

@@ -239,7 +239,6 @@ export default function FeishuWizard({
                   options={[
                     { value: 'deepseek-v4-flash', label: 'deepseek-v4-flash（快 · 便宜 · 默认）' },
                     { value: 'deepseek-v4-pro', label: 'deepseek-v4-pro（更强推理）' },
-                    { value: 'deepseek-v4-flash-vision-exp', label: 'deepseek-v4-flash-vision-exp（视觉理解 · 实验）' },
                   ]}
                 />
               </Form.Item>
