@@ -19,7 +19,7 @@ for arg in "$@"; do
     --no-system)   NO_SYSTEM=true ;;
     --help|-h)
       sed -n '2,11p' "$0"; exit 0 ;;
-    *) echo "未知参数: $arg（--help 查看用法）"; exit 1 ;;
+    *) echo "未知参数: ${arg}（--help 查看用法）"; exit 1 ;;
   esac
 done
 
@@ -266,12 +266,12 @@ for skill in $SYNC_SKILLS; do
     done
   fi
 done
-success "技能已同步（$SYNC_SKILLS）"
+success "技能已同步（${SYNC_SKILLS}）"
 # 清理旧名技能目录（仅限本项目早期版本装出的副本，以脱敏标记识别；个人同名技能不受影响）
 for dst_root in "$HOME/.claude/skills"; do
   old="$dst_root/openai-image-gen"
   if [[ -f "$old/SKILL.md" ]] && grep -q "当用户说" "$old/SKILL.md" 2>/dev/null; then
-    rm -rf "$old" && info "已移除旧名技能目录: $old（更名为 image-gen）"
+    rm -rf "$old" && info "已移除旧名技能目录: ${old}（更名为 image-gen）"
   fi
 done
 
@@ -344,8 +344,13 @@ echo ""
 echo "  1. 打开管理台:  http://localhost:${api_port:-9100}/admin"
 echo "     登录密钥（API_SECRET）: ${api_secret:-<见 .env>}"
 echo "  2. 在管理台点「飞书接入向导」，创建并保存第一个机器人，然后点「重启桥接」"
-echo "  3. Claude 引擎认证：编辑 .env 填 ANTHROPIC_API_KEY（或配 CLAUDE_EXECUTABLE_PATH），"
-echo "     然后 luckagent restart"
+if command -v claude &>/dev/null && ! grep -q "^ANTHROPIC_API_KEY=" .env 2>/dev/null; then
+  echo "  3. Claude 引擎认证（订阅路线）：终端跑一次  claude  完成浏览器登录即可"
+  echo "     （安装器无法代做 OAuth；已登录过则忽略。走 API 路线则编辑 .env 填 ANTHROPIC_API_KEY）"
+else
+  echo "  3. Claude 引擎认证：编辑 .env 填 ANTHROPIC_API_KEY（或装 Claude CLI 跑一次 claude 登录），"
+  echo "     然后 luckagent restart"
+fi
 if [[ "$NO_SYSTEM" != "true" ]]; then
   echo "  4. 开机自启（推荐）：执行  pm2 startup  并按提示运行输出的 sudo 命令，再 pm2 save"
 fi
