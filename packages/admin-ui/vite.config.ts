@@ -18,5 +18,9 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    // The console is a localhost-only single-user panel — the ~1.2MB antd+react
+    // bundle loads over loopback in milliseconds, so code-splitting buys
+    // nothing here. Raise the advisory threshold to keep install output clean.
+    chunkSizeWarningLimit: 2000,
   },
 });
