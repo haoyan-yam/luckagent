@@ -265,7 +265,8 @@ case ":$PATH:" in
   *)
     export PATH="$HOME/.local/bin:$PATH"
     _persist_zprofile 'export PATH="$HOME/.local/bin:$PATH"'
-    success "~/.local/bin 已加入 PATH（本次会话 + ~/.zprofile 持久化，新终端自动生效）"
+    success "~/.local/bin 已写入 ~/.zprofile —— 新终端自动生效"
+    PATH_JUST_ADDED=1
     ;;
 esac
 
@@ -392,6 +393,9 @@ echo "  可选能力（编辑 .env 填 key 后 luckagent restart 生效）:"
 echo "     生图: OPENAI_IMAGE_API_KEY 或 火山 ARK_API_KEY（Seedream）   语音TTS: VOLCENGINE_TTS_*（不填则用免费 Edge TTS）"
 echo "  可选增强: 安装 opencli（网站自动化）后重跑一次 bash install.sh，其技能自动启用；"
 echo ""
+if [[ "${PATH_JUST_ADDED:-}" == "1" ]]; then
+  echo "  ⚠️  当前终端还找不到 luckagent 命令的话，先执行:  source ~/.zprofile  （或新开终端）"
+fi
 echo "  常用命令:  luckagent status | logs | restart | doctor --json | help"
 echo "  详细文档:  INSTALL.md 与 docs/ 目录"
 echo ""
