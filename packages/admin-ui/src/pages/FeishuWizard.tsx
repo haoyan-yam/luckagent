@@ -71,7 +71,16 @@ export default function FeishuWizard({
   };
 
   const doCreate = async () => {
-    const values = await form.validateFields();
+    // Steps render one at a time, so validateFields() only covers the fields
+    // mounted on THIS step — earlier steps' values (appId/appSecret) must be
+    // read from the form store with getFieldsValue(true) or they're dropped.
+    await form.validateFields();
+    const values = form.getFieldsValue(true) as Record<string, string | undefined>;
+    if (!values.appId || !values.appSecret) {
+      message.error('缺少飞书凭证——回到「填写凭证」步骤补齐 App ID / App Secret');
+      setStep(1);
+      return;
+    }
     setCreating(true);
     try {
       await api.post('/api/bots', {
