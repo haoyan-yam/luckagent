@@ -46,6 +46,13 @@ echo "  🍀 Luckagent 安装程序"
 echo -e "${NC}"
 info "安装目录: $LUCKAGENT_HOME"
 
+# 把一行 PATH 设置持久化进 ~/.zprofile（幂等：已有同行则跳过）
+_persist_zprofile() {
+  local line="$1" f="$HOME/.zprofile"
+  touch "$f"
+  grep -qxF "$line" "$f" 2>/dev/null || { echo "$line" >> "$f"; info "已写入 ~/.zprofile: $line"; }
+}
+
 # ============================================================
 # 第一段：系统前置（Homebrew / node 22 / git / pm2）
 # ============================================================
@@ -56,13 +63,6 @@ if [[ "$NO_SYSTEM" != "true" ]]; then
 
   # Homebrew（安装过程会自动带出 Xcode Command Line Tools，需要输入密码，
   # CLT 下载可能要 5–15 分钟）
-  # 把一行 PATH 设置持久化进 ~/.zprofile（幂等：已有同行则跳过）
-  _persist_zprofile() {
-    local line="$1" f="$HOME/.zprofile"
-    touch "$f"
-    grep -qxF "$line" "$f" 2>/dev/null || { echo "$line" >> "$f"; info "已写入 ~/.zprofile: $line"; }
-  }
-
   if ! command -v brew &>/dev/null && [[ "$(uname -s)" == "Darwin" ]]; then
     info "未检测到 Homebrew，开始安装（会提示输入开机密码）..."
     if [[ "$YES" == "true" ]]; then
@@ -262,7 +262,11 @@ chmod +x "$HOME/.local/bin/luckagent"
 success "CLI 已安装: ~/.local/bin/luckagent"
 case ":$PATH:" in
   *":$HOME/.local/bin:"*) ;;
-  *) warn '~/.local/bin 不在 PATH 里。把这行加进 ~/.zshrc:  export PATH="$HOME/.local/bin:$PATH"' ;;
+  *)
+    export PATH="$HOME/.local/bin:$PATH"
+    _persist_zprofile 'export PATH="$HOME/.local/bin:$PATH"'
+    success "~/.local/bin 已加入 PATH（本次会话 + ~/.zprofile 持久化，新终端自动生效）"
+    ;;
 esac
 
 # ---- 技能同步 ----
