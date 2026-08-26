@@ -139,6 +139,9 @@ function effectiveConfig(ctx: RouteContext): Record<string, unknown> {
       apiSecret: secretHint(process.env.API_SECRET),
       anthropicApiKey: secretHint(process.env.ANTHROPIC_API_KEY),
       openaiApiKey: secretHint(process.env.OPENAI_API_KEY),
+      // image-gen resolves OPENAI_IMAGE_API_KEY first, then OPENAI_API_KEY —
+      // show the dedicated var so the installer-written key is visible.
+      openaiImageApiKey: secretHint(process.env.OPENAI_IMAGE_API_KEY),
       coreToken: secretHint(process.env.LUCKAGENT_CORE_TOKEN),
       deepseekApiKey: secretHint(process.env.DEEPSEEK_API_KEY),
       arkApiKey: secretHint(process.env.ARK_API_KEY),

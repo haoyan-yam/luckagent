@@ -78,6 +78,9 @@ export default function ConfigPage({ onRestart }: { onRestart: () => void }) {
           <Descriptions.Item label="OPENAI_API_KEY">
             <SecretHint v={cfg?.credentials.openaiApiKey} />
           </Descriptions.Item>
+          <Descriptions.Item label="生图 OPENAI_IMAGE_API_KEY">
+            <SecretHint v={cfg?.credentials.openaiImageApiKey} />
+          </Descriptions.Item>
           <Descriptions.Item label="core Token">
             <SecretHint v={cfg?.credentials.coreToken} />
           </Descriptions.Item>
