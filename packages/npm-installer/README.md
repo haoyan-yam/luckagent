@@ -20,4 +20,4 @@ npx luckagent init
 - 仅支持 macOS（目标机型 Mac mini / MacBook，Apple Silicon）
 - 完整文档、架构说明与飞书接入指南：**https://github.com/haoyan-yam/luckagent**
 
-MIT License
+基于 [MetaBot](https://xvirobotics.com/metabot/) 构建 · MIT License

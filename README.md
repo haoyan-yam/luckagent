@@ -2,6 +2,8 @@
 
 把飞书群聊接到 AI agent 引擎的自托管机器人平台。每个飞书机器人背后是一个完整的 agent 引擎——Claude Code（`@anthropic-ai/claude-agent-sdk` / Claude Code CLI），或指向 DeepSeek 官方 Anthropic 兼容端点的同一运行时——在各自独立的工作目录里拥有完整的工具权限：读写文件、跑命令、调 API、收发聊天附件。你在群里 @机器人说一句话，它就在你自己的 Mac 上替你干活，并把过程与产物以卡片形式实时回贴到群里。
 
+> 本项目基于 [MetaBot](https://xvirobotics.com/metabot/) 构建（见文末[致谢与来源](#致谢与来源)）。
+
 ## 项目目标
 
 - **把 agent 从终端搬进团队日常沟通的地方。** Claude Code 这类 agent 很强，但入口是本机终端、一人一会话。Luckagent 让它以飞书机器人的身份 7×24 常驻：团队任何人在群里 @它 就能派活，产物（文档、图片、表格、代码）直接回到群里。
@@ -152,6 +154,12 @@ luckagent inbox poll            # CLI agent 收件箱
 - bridge 与 core 默认只监听 `127.0.0.1`；把 `LUCKAGENT_API_HOST` 设为 `0.0.0.0` 之前请务必读[管理台使用手册的安全一节](docs/admin-console.md#安全说明)。
 - `.env` 与 `bots.json` 含密钥，安装脚本会将其权限设为 600，请勿提交进版本库。
 
+## 致谢与来源
+
+Luckagent 基于 **[MetaBot](https://xvirobotics.com/metabot/)** 构建——在其飞书桥接与多引擎
+架构之上，融入数月真实 bot 集群运行沉淀的行为增强与可靠性修复，脱敏重构而来。
+感谢原项目作者的工作。
+
 ## License
 
-MIT，见 [LICENSE](LICENSE)。
+MIT（含 MetaBot 的双版权声明），见 [LICENSE](LICENSE)。
