@@ -512,6 +512,15 @@ export class PersistentClaudeExecutor extends EventEmitter {
           if (!CLAUDE_EXECUTABLE) {
             throw new Error('PTY backend requires the claude CLI binary (install Claude Code, or set CLAUDE_EXECUTABLE_PATH, or use backend "sdk").');
           }
+          try {
+            fs.accessSync(CLAUDE_EXECUTABLE, fs.constants.X_OK);
+          } catch {
+            throw new Error(
+              `PTY backend: claude CLI resolved to "${CLAUDE_EXECUTABLE}" but it is missing or not executable ` +
+              '(the PM2 daemon PATH differs from your terminal). Fix: set CLAUDE_EXECUTABLE_PATH in .env to the real binary ' +
+              '(run `which claude` + `ls -la $(which claude)` in a terminal), then luckagent restart.',
+            );
+          }
           return CLAUDE_EXECUTABLE;
         })(),
         // Carry the 1M-context guard vars computed into queryOptions.env, then

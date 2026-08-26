@@ -165,15 +165,24 @@ class PtyClaudeSessionImpl implements IPtyClaudeSession {
     // Spawn with the SAME absolute cwd used to derive jsonlPath, so claude's
     // own jsonl-dir derivation matches ours regardless of luckagent's process cwd.
     const spawnCwd = path.resolve(opts.cwd);
-    this.log.info({ sessionId: this.sessionId, args, cwd: spawnCwd }, 'pty-session: spawning claude');
+    this.log.info({ sessionId: this.sessionId, claudePath, args, cwd: spawnCwd }, 'pty-session: spawning claude');
 
-    this.term = pty.spawn(claudePath, args, {
-      name: 'xterm-256color',
-      cols,
-      rows,
-      cwd: spawnCwd,
-      env,
-    });
+    try {
+      this.term = pty.spawn(claudePath, args, {
+        name: 'xterm-256color',
+        cols,
+        rows,
+        cwd: spawnCwd,
+        env,
+      });
+    } catch (err: any) {
+      // posix_spawnp gives no context — attach the exact file we tried so a
+      // bad resolution (broken symlink, PM2-PATH-only hit) is one log away.
+      throw new Error(
+        `pty spawn failed for "${claudePath}" (cwd ${spawnCwd}): ${err?.message || err}. ` +
+        'Check the path exists and is executable; override with CLAUDE_EXECUTABLE_PATH in .env if needed.',
+      );
+    }
 
     this.term.onData((data: string) => {
       this.ring += data;
