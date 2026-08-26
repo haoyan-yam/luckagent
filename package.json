@@ -39,7 +39,8 @@
     "format": "prettier --write 'src/**/*.ts' 'tests/**/*.ts'",
     "format:check": "prettier --check 'src/**/*.ts' 'tests/**/*.ts'",
     "update-cli": "cp bin/luckagent ~/.local/bin/luckagent && chmod +x ~/.local/bin/luckagent && echo \"Updated: luckagent\" && rm -f ~/.local/bin/mb ~/.local/bin/mm ~/.local/bin/mh",
-    "build:admin": "npm run build -w @luckagent/admin-ui && rm -rf dist/admin && mkdir -p dist && cp -r packages/admin-ui/dist dist/admin"
+    "build:admin": "npm run build -w @luckagent/admin-ui && rm -rf dist/admin && mkdir -p dist && cp -r packages/admin-ui/dist dist/admin",
+    "postinstall": "node scripts/fix-node-pty.mjs"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.154",
