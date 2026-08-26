@@ -96,11 +96,14 @@ class PtyClaudeSessionImpl implements IPtyClaudeSession {
     const cfgPath = path.join(os.homedir(), '.claude.json');
     try {
       let cfg: Record<string, any> = {};
+      const fileExists = fs.existsSync(cfgPath);
       try {
-        cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
-      } catch {
-        // missing/empty/corrupt — start from an empty object
-        cfg = {};
+        if (fileExists) cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+      } catch (err) {
+        // An EXISTING but unparseable ~/.claude.json must never be rewritten
+        // from {} — that would clobber login/onboarding state. Skip seeding.
+        this.log.warn({ err, cfgPath }, 'pty-session: ~/.claude.json exists but is unreadable — NOT seeding (would clobber it)');
+        return;
       }
       if (!cfg.projects || typeof cfg.projects !== 'object') cfg.projects = {};
       const entry = (cfg.projects[cwd] && typeof cfg.projects[cwd] === 'object')
@@ -118,7 +121,14 @@ class PtyClaudeSessionImpl implements IPtyClaudeSession {
       entry.hasTrustDialogAccepted = true;
       cfg.bypassPermissionsModeAccepted = true;
       fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2));
-      this.log.info({ cwd, seededTrust: !trustDone, seededBypass: !bypassDone }, 'pty-session: pre-accepted trust/bypass flags in ~/.claude.json');
+      let verified = false;
+      try {
+        verified = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')).bypassPermissionsModeAccepted === true;
+      } catch { /* verified stays false */ }
+      this.log.info(
+        { cwd, cfgPath, seededTrust: !trustDone, seededBypass: !bypassDone, readBackOk: verified, bytes: fs.statSync(cfgPath).size },
+        'pty-session: pre-accepted trust/bypass flags in ~/.claude.json',
+      );
     } catch (err) {
       this.log.warn({ err, cwd }, 'pty-session: failed to pre-accept folder trust (may hit trust dialog)');
     }
