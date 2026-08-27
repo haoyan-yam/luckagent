@@ -185,7 +185,8 @@ export function effectiveTurnBackend(
   configBackend: 'pty' | 'sdk',
 ): 'pty' | 'sdk' {
   if (!usePersistent) return 'sdk';
-  return engineName === 'deepseek' ? 'sdk' : configBackend;
+  // Every compat-endpoint engine (deepseek/minimax/…) is forced to SDK.
+  return engineName === 'claude' ? configBackend : 'sdk';
 }
 
 export class MessageBridge {
@@ -602,8 +603,8 @@ export class MessageBridge {
       // machine-wide LUCKAGENT_ENGINE=deepseek default gets the same auth/
       // model/backend treatment as an explicit per-bot engine field.
       const cfgEngine = resolveEngineName(this.config);
-      const effectiveCfg = cfgEngine === 'deepseek' && this.config.engine !== 'deepseek'
-        ? { ...this.config, engine: 'deepseek' as const }
+      const effectiveCfg = cfgEngine !== 'claude' && this.config.engine !== cfgEngine
+        ? { ...this.config, engine: cfgEngine }
         : this.config;
       this.persistentRegistry = new ExecutorRegistry({
         logger: this.logger,
@@ -612,9 +613,11 @@ export class MessageBridge {
         defaultAuthEnv: resolveClaudeAuthEnv(effectiveCfg),
         defaultModel: cfgEngine === 'deepseek'
           ? (this.config.deepseek?.model || DEEPSEEK_DEFAULT_MODEL)
-          : this.config.claude.model,
-        // DeepSeek bots run the SDK backend (PTY needs the claude CLI binary).
-        backend: cfgEngine === 'deepseek' ? 'sdk' : this.config.claude.backend,
+          : cfgEngine === 'minimax'
+            ? (this.config.minimax?.model || 'MiniMax-M3')
+            : this.config.claude.model,
+        // Compat-endpoint engines run the SDK backend (PTY needs the claude CLI binary).
+        backend: cfgEngine === 'claude' ? this.config.claude.backend : 'sdk',
       });
       // Stage 3 — every newly added executor gets a spontaneous-activity
       // subscription so teammate / goal / background pings between turns
@@ -1415,7 +1418,7 @@ export class MessageBridge {
   ): { usePersistent: boolean; backend: 'pty' | 'sdk' } {
     const usePersistent =
       this.isPersistentExecutorEnabled() &&
-      (engineName === 'claude' || engineName === 'deepseek') &&
+      (engineName === 'claude' || engineName === 'deepseek' || engineName === 'minimax') &&
       engineName === resolveEngineName(this.config) &&
       opts.maxTurns === undefined &&
       opts.allowedTools === undefined;

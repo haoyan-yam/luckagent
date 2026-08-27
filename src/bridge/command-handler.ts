@@ -72,7 +72,7 @@ export class CommandHandler {
           '`/stop` - Abort current running task',
           '`/status` - Show current session info',
           '`/model` - Show current engine/model; `/model list` - Available options',
-          '`/model claude` or `/model deepseek` - Switch engine (resets session)',
+          '`/model claude`, `/model deepseek`, or `/model minimax` - Switch engine (resets session)',
           '`/model <name>` - Set model for current engine',
           '`/resume` - List & switch to a previous Claude session (Claude only)',
           '`/resume <id>` - Resume a session directly by id prefix',
@@ -340,7 +340,7 @@ export class CommandHandler {
         '',
         'Usage:',
         '- `/model list` — Show available engines + models',
-        '- `/model claude` or `/model deepseek` — Switch engine (resets session)',
+        '- `/model claude`, `/model deepseek`, or `/model minimax` — Switch engine (resets session)',
         `- \`/model <name>\` — Set session model (e.g. ${exampleModels})`,
         '- `/model reset` — Clear overrides, use bot defaults',
       ];
@@ -393,18 +393,24 @@ export class CommandHandler {
         { id: 'claude-sonnet-4-6[1m]', label: 'Sonnet 4.6 (1M)', note: '1M context window' },
         { id: 'claude-haiku-4-5', label: 'Haiku 4.5', note: 'Fastest · 200k context' },
       ];
+      const minimaxModels = [
+        { id: 'MiniMax-M3', label: 'MiniMax M3', note: 'Flagship · native vision' },
+        { id: 'MiniMax-M2.5', label: 'MiniMax M2.5', note: 'Previous gen · cheaper' },
+      ];
       const deepseekModels = [
         { id: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash', note: 'Fast + cheap default' },
         { id: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro', note: 'Stronger reasoning' },
       ];
-      const models = activeEngine === 'deepseek' ? deepseekModels : claudeModels;
+      const models = activeEngine === 'deepseek' ? deepseekModels : activeEngine === 'minimax' ? minimaxModels : claudeModels;
       const header = activeEngine === 'deepseek'
         ? '**Available DeepSeek models:**'
-        : '**Available Claude models:**';
+        : activeEngine === 'minimax'
+          ? '**Available MiniMax models:**'
+          : '**Available Claude models:**';
       const lines = [
         `**Current engine:** \`${activeEngine}\`${session.engine ? ' (session override)' : ''}`,
         '',
-        '**Engines:** `/model claude` or `/model deepseek` to switch.',
+        '**Engines:** `/model claude`, `/model deepseek`, or `/model minimax` to switch.',
         '',
         header,
         '',
@@ -540,6 +546,8 @@ export class CommandHandler {
         return this.config.claude.model;
       case 'deepseek':
         return this.config.deepseek?.model || 'deepseek-v4-flash';
+      case 'minimax':
+        return this.config.minimax?.model || 'MiniMax-M3';
     }
   }
 
@@ -549,6 +557,8 @@ export class CommandHandler {
         return '`claude-fable-5`, `claude-opus-5`, `claude-sonnet-5`, `claude-haiku-4-5`';
       case 'deepseek':
         return '`deepseek-v4-flash`, `deepseek-v4-pro`, `deepseek-v4-flash-vision-exp`';
+      case 'minimax':
+        return '`MiniMax-M3`, `MiniMax-M2.5`';
     }
   }
 
@@ -558,10 +568,12 @@ export class CommandHandler {
         return '_Make sure Claude Code is authenticated (`claude login`)._';
       case 'deepseek':
         return '_Make sure a DeepSeek API key is configured (bots.json `deepseek.apiKey` or env `DEEPSEEK_API_KEY`)._';
+      case 'minimax':
+        return '_Make sure a MiniMax API key is configured (bots.json `minimax.apiKey` or env `MINIMAX_API_KEY`)._';
     }
   }
 }
 
 function isEngineName(value: string): value is EngineName {
-  return value === 'claude' || value === 'deepseek';
+  return value === 'claude' || value === 'deepseek' || value === 'minimax';
 }

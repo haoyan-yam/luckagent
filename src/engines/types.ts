@@ -10,7 +10,7 @@ import type {
 } from './claude/executor.js';
 import type { StreamProcessor } from './claude/stream-processor.js';
 
-export type EngineName = 'claude' | 'deepseek';
+export type EngineName = 'claude' | 'deepseek' | 'minimax';
 
 /**
  * An Engine is a programmable agent backend (Claude Code, or Claude Code

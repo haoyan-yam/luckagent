@@ -164,6 +164,7 @@ export async function handleBotRoutes(
       name, ...(body.description ? { description: body.description } : {}),
       ...(body.engine ? { engine: body.engine } : {}),
       ...(body.deepseek ? { deepseek: body.deepseek } : {}),
+      ...(body.minimax ? { minimax: body.minimax } : {}),
       feishuAppId: appId, feishuAppSecret: appSecret, defaultWorkingDirectory: workDirInput,
       downloadsDir,
       ...(body.maxTurns ? { maxTurns: body.maxTurns } : {}),
@@ -356,5 +357,7 @@ function defaultModelForConfig(config: import('../../config.js').BotConfigBase):
       return config.claude.model;
     case 'deepseek':
       return config.deepseek?.model || 'deepseek-v4-flash';
+    case 'minimax':
+      return config.minimax?.model || 'MiniMax-M3';
   }
 }

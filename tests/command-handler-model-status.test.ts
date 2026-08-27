@@ -208,6 +208,19 @@ describe('CommandHandler /model', () => {
     expect(notices[0].content).toContain('deepseek');
   });
 
+  it('lists MiniMax models and switches engine on /model minimax', async () => {
+    const { handler, notices, getSessionEngine } = buildHandler({ engine: 'minimax' });
+    await handler.handle(msg('/model list'));
+    expect(notices[0].content).toContain('MiniMax-M3');
+    expect(notices[0].content).toContain('MiniMax-M2.5');
+
+    const sw = buildHandler({});
+    await sw.handler.handle(msg('/model minimax'));
+    expect(sw.getSessionEngine()).toBe('minimax');
+    expect(sw.notices[0].color).toBe('green');
+    void getSessionEngine;
+  });
+
   it('rejects unknown engines as model names, not engine switches', async () => {
     const { handler, getSessionEngine, getSessionModel } = buildHandler({ engine: 'claude' });
     await handler.handle(msg('/model codex'));

@@ -28,7 +28,7 @@ export interface Overview {
 export interface BotEntry {
   name: string;
   description?: string;
-  engine?: 'claude' | 'deepseek';
+  engine?: 'claude' | 'deepseek' | 'minimax';
   feishuAppId?: string;
   feishuAppSecret?: string;
   defaultWorkingDirectory?: string;
@@ -44,6 +44,7 @@ export interface BotEntry {
   groupNoMention?: boolean;
   ttsVoice?: string;
   deepseek?: { apiKey?: string; model?: string; baseUrl?: string };
+  minimax?: { apiKey?: string; model?: string; baseUrl?: string };
   [key: string]: unknown;
 }
 

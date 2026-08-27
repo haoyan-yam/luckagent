@@ -209,6 +209,7 @@ export default function BotFormDrawer({
               options={[
                 { value: 'claude', label: 'Claude Code' },
                 { value: 'deepseek', label: 'DeepSeek' },
+                { value: 'minimax', label: 'MiniMax' },
               ]}
             />
           </Form.Item>
@@ -240,6 +241,37 @@ export default function BotFormDrawer({
                           { value: 'deepseek-v4-flash', label: 'deepseek-v4-flash（快 · 便宜 · 默认）' },
                           { value: 'deepseek-v4-pro', label: 'deepseek-v4-pro（更强推理）' },
                               ]}
+                      />
+                    </Form.Item>
+                  </>
+                ),
+              },
+            ]}
+          />
+        )}
+
+        {editing && engine === 'minimax' && (
+          <Collapse
+            size="small"
+            defaultActiveKey={['minimax']}
+            items={[
+              {
+                key: 'minimax',
+                forceRender: true,
+                label: 'MiniMax 引擎设置（Anthropic 兼容端点，无需装 CLI）',
+                children: (
+                  <>
+                    <Form.Item name={['minimax', 'apiKey']} label="API Key（留空 = 不修改/用全局 MINIMAX_API_KEY）">
+                      <Input.Password placeholder="sk-cp-..." />
+                    </Form.Item>
+                    <Form.Item name={['minimax', 'model']} label="模型">
+                      <Select
+                        allowClear
+                        placeholder="默认 MiniMax-M3"
+                        options={[
+                          { value: 'MiniMax-M3', label: 'MiniMax-M3（旗舰 · 原生看图 · 默认）' },
+                          { value: 'MiniMax-M2.5', label: 'MiniMax-M2.5（上一代 · 更省）' },
+                        ]}
                       />
                     </Form.Item>
                   </>

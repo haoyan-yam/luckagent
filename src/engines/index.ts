@@ -2,7 +2,7 @@ import type { BotConfigBase } from '../config.js';
 import type { Logger } from '../utils/logger.js';
 import type { Engine, EngineName } from './types.js';
 import { ClaudeEngine } from './claude/index.js';
-import { DEEPSEEK_DEFAULT_MODEL } from './claude/auth-env.js';
+import { COMPAT_PROVIDERS, compatProviderFor } from './claude/auth-env.js';
 
 /**
  * Create an Engine for the given bot config.
@@ -25,7 +25,8 @@ export function createEngine(
       // engine field, or auth-env resolution would inject the wrong backend.
       return new ClaudeEngine({ ...config, engine: 'claude' }, logger);
     case 'deepseek':
-      return new ClaudeEngine(deriveDeepseekConfig(config), logger);
+    case 'minimax':
+      return new ClaudeEngine(deriveCompatConfig(config, name), logger);
     default: {
       const _exhaustive: never = name;
       throw new Error(`Unknown engine: ${_exhaustive}`);
@@ -44,17 +45,24 @@ export function createEngine(
  *    subscription-billing rationale doesn't apply to DeepSeek);
  *  - credentials/baseUrl are injected per-spawn via resolveClaudeAuthEnv.
  */
-export function deriveDeepseekConfig(config: BotConfigBase): BotConfigBase {
+export function deriveCompatConfig(config: BotConfigBase, engine: 'deepseek' | 'minimax'): BotConfigBase {
+  const provider = COMPAT_PROVIDERS[engine];
+  const block = engine === 'minimax' ? config.minimax : config.deepseek;
   return {
     ...config,
-    engine: 'deepseek',
+    engine,
     claude: {
       ...config.claude,
-      model: config.deepseek?.model || DEEPSEEK_DEFAULT_MODEL,
+      model: block?.model || provider.defaultModel,
       apiKey: undefined,
       backend: 'sdk',
     },
   };
+}
+
+/** Back-compat alias (tests & older callers). */
+export function deriveDeepseekConfig(config: BotConfigBase): BotConfigBase {
+  return deriveCompatConfig(config, 'deepseek');
 }
 
 /** Resolve the default engine for a bot config (no session override). */
@@ -62,11 +70,12 @@ export function resolveEngineName(config: BotConfigBase): EngineName {
   const explicit = config.engine;
   if (explicit) return explicit;
   const envDefault = process.env.LUCKAGENT_ENGINE as EngineName | undefined;
-  if (envDefault === 'claude' || envDefault === 'deepseek') return envDefault;
+  if (envDefault === 'claude' || envDefault === 'deepseek' || envDefault === 'minimax') return envDefault;
   return 'claude';
 }
 
 export type { Engine, EngineName, Executor } from './types.js';
+export { COMPAT_PROVIDERS, compatProviderFor } from './claude/auth-env.js';
 export { ClaudeEngine } from './claude/index.js';
 
 // Re-export shared types and classes currently used by the bridge and web/api layers.

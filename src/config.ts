@@ -35,7 +35,7 @@ function loadEnvFiles(): void {
 loadEnvFiles();
 
 /** Agent engine backing a bot. */
-export type EngineName = 'claude' | 'deepseek';
+export type EngineName = 'claude' | 'deepseek' | 'minimax';
 
 /** Shared config fields used by MessageBridge and Executors (platform-agnostic). */
 export interface BotConfigBase {
@@ -109,6 +109,12 @@ export interface BotConfigBase {
     /** Model id (default deepseek-v4-flash; vision: deepseek-v4-flash-vision-exp). */
     model?: string;
     /** Anthropic-compatible endpoint (default https://api.deepseek.com/anthropic). */
+    baseUrl?: string;
+  };
+  /** MiniMax（Anthropic 兼容端点，与 deepseek 同构）。 */
+  minimax?: {
+    apiKey?: string;
+    model?: string;
     baseUrl?: string;
   };
   /**
@@ -219,6 +225,8 @@ export interface DeepseekJsonConfig {
 interface EngineJsonFields {
   engine?: EngineName;
   deepseek?: DeepseekJsonConfig;
+  /** MiniMax（Anthropic 兼容端点）overrides in bots.json. Same shape as deepseek. */
+  minimax?: DeepseekJsonConfig;
   /** Claude turn backend: 'pty' (default) or 'sdk' (legacy opt-out). Overrides env CLAUDE_BACKEND. */
   backend?: 'sdk' | 'pty';
 }
@@ -270,6 +278,7 @@ function feishuBotFromJson(entry: FeishuBotJsonEntry): BotConfig {
     ...(entry.groupOnlyAllowUsers?.length ? { groupOnlyAllowUsers: entry.groupOnlyAllowUsers } : {}),
     ...(entry.engine ? { engine: entry.engine } : {}),
     ...(buildDeepseekConfig(entry.deepseek) ? { deepseek: buildDeepseekConfig(entry.deepseek) } : {}),
+    ...(buildMinimaxConfig(entry.minimax) ? { minimax: buildMinimaxConfig(entry.minimax) } : {}),
     feishu: {
       appId: entry.feishuAppId,
       appSecret: entry.feishuAppSecret,
@@ -307,6 +316,16 @@ function buildClaudeConfig(entry: {
     // matching the workspace rules in src/workspace/PROJECTS-CLAUDE.md.
     downloadsDir: expandUserPath(entry.downloadsDir || process.env.DOWNLOADS_DIR || path.join(expandUserPath(entry.defaultWorkingDirectory), 'inputs')),
   };
+}
+
+function buildMinimaxConfig(entry?: DeepseekJsonConfig): BotConfigBase['minimax'] | undefined {
+  const cfg: BotConfigBase['minimax'] = {
+    ...(process.env.MINIMAX_API_KEY ? { apiKey: process.env.MINIMAX_API_KEY } : {}),
+    ...(process.env.MINIMAX_MODEL ? { model: process.env.MINIMAX_MODEL } : {}),
+    ...(process.env.MINIMAX_BASE_URL ? { baseUrl: process.env.MINIMAX_BASE_URL } : {}),
+    ...(entry ?? {}),
+  };
+  return Object.keys(cfg).length > 0 ? cfg : undefined;
 }
 
 function buildDeepseekConfig(entry?: DeepseekJsonConfig): BotConfigBase['deepseek'] | undefined {

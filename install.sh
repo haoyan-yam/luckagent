@@ -126,6 +126,7 @@ echo "    Claude API:  https://console.anthropic.com  → ANTHROPIC_API_KEY"
 echo "    生图（二选一）: OpenAI https://platform.openai.com → OPENAI_IMAGE_API_KEY"
 echo "                   火山方舟 https://console.volcengine.com/ark → ARK_API_KEY（需开通 Doubao-Seedream 模型）"
 echo "    DeepSeek 引擎（可选）: https://platform.deepseek.com → DEEPSEEK_API_KEY"
+echo "    MiniMax 引擎（可选）: https://platform.minimaxi.com → MINIMAX_API_KEY"
 echo "    语音 TTS（可选）: 火山 VOLCENGINE_TTS_*（不配则用免费 Edge TTS）"
 echo ""
 # ---- 选择默认引擎（每个 bot 之后仍可在管理台单独选） ----
@@ -134,8 +135,10 @@ if [[ "$YES" != "true" ]]; then
   echo -e "${BOLD}—— 选择默认引擎 ——${NC}"
   echo "  1) Claude Code —— 能力最强（需 Claude 订阅登录，或 ANTHROPIC_API_KEY）"
   echo "  2) DeepSeek    —— 零安装、成本低（只要一个 DeepSeek API key）"
-  read -r -p "默认引擎 [1/2]（回车 = 1 Claude） " eng_choice || eng_choice=""
+  echo "  3) MiniMax     —— 零安装、原生看图（只要一个 MiniMax API key）"
+  read -r -p "默认引擎 [1/2/3]（回车 = 1 Claude） " eng_choice || eng_choice=""
   [[ "$eng_choice" == "2" ]] && ENGINE_CHOICE="deepseek"
+  [[ "$eng_choice" == "3" ]] && ENGINE_CHOICE="minimax"
   echo ""
 fi
 
@@ -176,7 +179,29 @@ PYEOF
   success ".env 已生成（API_SECRET 已随机生成）"
 
   if [[ "$YES" != "true" ]]; then
-    if [[ "$ENGINE_CHOICE" == "deepseek" ]]; then
+    if [[ "$ENGINE_CHOICE" == "minimax" ]]; then
+      python3 - <<'PYEOF'
+p = '.env'
+s = open(p).read()
+s = s.replace('# LUCKAGENT_ENGINE=deepseek', 'LUCKAGENT_ENGINE=minimax', 1)
+open(p, 'w').write(s)
+PYEOF
+      success "默认引擎已设为 MiniMax（.env 的 LUCKAGENT_ENGINE，可随时改）"
+      read -r -p "填入 MINIMAX_API_KEY（申请: https://platform.minimaxi.com；回车跳过则之后补填 .env） " mkey || mkey=""
+      if [[ -n "$mkey" ]]; then
+        MINIMAX_KEY_VALUE="$mkey" python3 - <<'PYEOF'
+import os
+p = '.env'
+s = open(p).read()
+s = s.replace('# MINIMAX_API_KEY=sk-cp-...', 'MINIMAX_API_KEY=' + os.environ['MINIMAX_KEY_VALUE'], 1)
+open(p, 'w').write(s)
+PYEOF
+        success "MINIMAX_API_KEY 已写入（默认模型 MiniMax-M3）"
+      else
+        warn "还没填 key——bot 干活前记得编辑 .env 补上 MINIMAX_API_KEY"
+      fi
+      echo "  （想同时用其他引擎：之后编辑 .env 填对应 key 即可）"
+    elif [[ "$ENGINE_CHOICE" == "deepseek" ]]; then
       # ---- DeepSeek 路线：写默认引擎 + 要 key ----
       python3 - <<'PYEOF'
 p = '.env'
@@ -393,7 +418,13 @@ echo ""
 echo "  1. 打开管理台:  http://localhost:${api_port:-9100}/admin"
 echo "     登录密钥（API_SECRET）: ${api_secret:-<见 .env>}"
 echo "  2. 在管理台点「飞书接入向导」，创建并保存第一个机器人，然后点「重启桥接」"
-if [[ "${ENGINE_CHOICE:-claude}" == "deepseek" ]]; then
+if [[ "${ENGINE_CHOICE:-claude}" == "minimax" ]]; then
+  if grep -q "^MINIMAX_API_KEY=" .env 2>/dev/null; then
+    echo "  3. 默认引擎 MiniMax 已就绪（key 已配置），建 bot 即可干活"
+  else
+    echo "  3. 默认引擎已设为 MiniMax——干活前编辑 .env 补上 MINIMAX_API_KEY，然后 luckagent restart"
+  fi
+elif [[ "${ENGINE_CHOICE:-claude}" == "deepseek" ]]; then
   if grep -q "^DEEPSEEK_API_KEY=" .env 2>/dev/null; then
     echo "  3. 默认引擎 DeepSeek 已就绪（key 已配置），建 bot 即可干活"
   else

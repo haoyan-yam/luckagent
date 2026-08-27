@@ -1,16 +1,63 @@
 import type { BotConfigBase } from '../../config.js';
 
 /**
- * DeepSeek runs through the Claude engine pointed at DeepSeek's official
- * Anthropic-compatible endpoint (no extra CLI — key only). Verified live:
- * messages / thinking+tool_use / vision blocks all speak the Anthropic
- * protocol, and a full Claude Code agent turn completes end-to-end.
+ * Anthropic-compatible endpoint providers. Each runs through the SAME Claude
+ * Code runtime — engine choice only decides which endpoint/key/models get
+ * injected. All entries were verified live through the four-gate battery:
+ * basic messages / thinking+tool_use loop / vision / a full agent turn with
+ * tools writing to disk through our engine path.
  */
-export const DEEPSEEK_DEFAULT_BASE_URL = 'https://api.deepseek.com/anthropic';
-export const DEEPSEEK_DEFAULT_MODEL = 'deepseek-v4-flash';
-// vision-exp is a valid endpoint id but intentionally absent from UI pickers:
-// flash/pro are natively multimodal (verified through the Read-tool chain),
-// so the experimental vision variant has no daily-use role.
+export interface CompatProvider {
+  /** engine value in bots.json */
+  engine: 'deepseek' | 'minimax';
+  displayName: string;
+  defaultBaseUrl: string;
+  defaultModel: string;
+  /** UI picker entries (id + short zh note). */
+  models: Array<{ id: string; note: string }>;
+  /** Global env var carrying the API key. */
+  keyEnv: string;
+  applyUrl: string;
+  /** Whether the DEFAULT model natively understands images. */
+  visionNative: boolean;
+}
+
+export const COMPAT_PROVIDERS: Record<'deepseek' | 'minimax', CompatProvider> = {
+  deepseek: {
+    engine: 'deepseek',
+    displayName: 'DeepSeek',
+    defaultBaseUrl: 'https://api.deepseek.com/anthropic',
+    defaultModel: 'deepseek-v4-flash',
+    models: [
+      { id: 'deepseek-v4-flash', note: '快 · 便宜 · 默认' },
+      { id: 'deepseek-v4-pro', note: '更强推理' },
+    ],
+    keyEnv: 'DEEPSEEK_API_KEY',
+    applyUrl: 'https://platform.deepseek.com',
+    visionNative: true,
+  },
+  minimax: {
+    engine: 'minimax',
+    displayName: 'MiniMax',
+    defaultBaseUrl: 'https://api.minimaxi.com/anthropic',
+    defaultModel: 'MiniMax-M3',
+    models: [
+      { id: 'MiniMax-M3', note: '旗舰 · 原生看图 · 默认' },
+      { id: 'MiniMax-M2.5', note: '上一代 · 更省' },
+    ],
+    keyEnv: 'MINIMAX_API_KEY',
+    applyUrl: 'https://platform.minimaxi.com',
+    visionNative: true,
+  },
+};
+
+export function compatProviderFor(engine: string | undefined): CompatProvider | undefined {
+  return engine === 'deepseek' || engine === 'minimax' ? COMPAT_PROVIDERS[engine] : undefined;
+}
+
+export const DEEPSEEK_DEFAULT_BASE_URL = COMPAT_PROVIDERS.deepseek.defaultBaseUrl;
+export const DEEPSEEK_DEFAULT_MODEL = COMPAT_PROVIDERS.deepseek.defaultModel;
+// vision-exp is a valid endpoint id but intentionally absent from UI pickers.
 export const DEEPSEEK_KNOWN_MODELS = ['deepseek-v4-flash', 'deepseek-v4-pro', 'deepseek-v4-flash-vision-exp'];
 
 /**
@@ -27,15 +74,17 @@ export const DEEPSEEK_KNOWN_MODELS = ['deepseek-v4-flash', 'deepseek-v4-pro', 'd
  *   env passthrough, apiKeyHelper …).
  */
 export function resolveClaudeAuthEnv(config: BotConfigBase): Record<string, string> | undefined {
-  if (config.engine === 'deepseek') {
-    const key = config.deepseek?.apiKey || process.env.DEEPSEEK_API_KEY;
+  const provider = compatProviderFor(config.engine);
+  if (provider) {
+    const block = provider.engine === 'minimax' ? config.minimax : config.deepseek;
+    const key = block?.apiKey || process.env[provider.keyEnv];
     if (!key) {
       throw new Error(
-        `Bot "${config.name}": engine is 'deepseek' but no API key configured — set bots.json deepseek.apiKey or env DEEPSEEK_API_KEY (get one at https://platform.deepseek.com)`,
+        `Bot "${config.name}": engine is '${provider.engine}' but no API key configured — set bots.json ${provider.engine}.apiKey or env ${provider.keyEnv} (get one at ${provider.applyUrl})`,
       );
     }
     return {
-      ANTHROPIC_BASE_URL: config.deepseek?.baseUrl || DEEPSEEK_DEFAULT_BASE_URL,
+      ANTHROPIC_BASE_URL: block?.baseUrl || provider.defaultBaseUrl,
       ANTHROPIC_AUTH_TOKEN: key,
       ANTHROPIC_API_KEY: key,
     };

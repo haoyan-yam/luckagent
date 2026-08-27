@@ -1,6 +1,6 @@
 # Luckagent
 
-把飞书群聊接到 AI agent 引擎的自托管机器人平台。每个飞书机器人背后是一个完整的 agent 引擎——Claude Code（`@anthropic-ai/claude-agent-sdk` / Claude Code CLI），或指向 DeepSeek 官方 Anthropic 兼容端点的同一运行时——在各自独立的工作目录里拥有完整的工具权限：读写文件、跑命令、调 API、收发聊天附件。你在群里 @机器人说一句话，它就在你自己的 Mac 上替你干活，并把过程与产物以卡片形式实时回贴到群里。
+把飞书群聊接到 AI agent 引擎的自托管机器人平台。每个飞书机器人背后是一个完整的 agent 引擎——Claude Code（`@anthropic-ai/claude-agent-sdk` / Claude Code CLI），或指向 DeepSeek / MiniMax 官方 Anthropic 兼容端点的同一运行时——在各自独立的工作目录里拥有完整的工具权限：读写文件、跑命令、调 API、收发聊天附件。你在群里 @机器人说一句话，它就在你自己的 Mac 上替你干活，并把过程与产物以卡片形式实时回贴到群里。
 
 > 本项目基于 [MetaBot](https://xvirobotics.com/metabot/) 构建（见文末[致谢与来源](#致谢与来源)）。
 
@@ -8,7 +8,7 @@
 
 - **把 agent 从终端搬进团队日常沟通的地方。** Claude Code 这类 agent 很强，但入口是本机终端、一人一会话。Luckagent 让它以飞书机器人的身份 7×24 常驻：团队任何人在群里 @它 就能派活，产物（文档、图片、表格、代码）直接回到群里。
 - **完全自托管、数据不出自己机器。** 跑在你的 Mac mini / MacBook 上：飞书凭证、聊天记录、工作文件、API key 都留在本机；对外只有到飞书开放平台的 websocket 长连接和你选择的模型 API。两个服务端口默认只绑 `127.0.0.1`。
-- **多 bot、双引擎、一份配置。** 一台机器跑任意多个机器人，每个 bot 独立的飞书应用、工作目录、引擎（Claude / DeepSeek）与预算限额，适合「一个项目一个 bot 同事」的用法。
+- **多 bot、多引擎、一份配置。** 一台机器跑任意多个机器人，每个 bot 独立的飞书应用、工作目录、引擎（Claude / DeepSeek / MiniMax）与预算限额，适合「一个项目一个 bot 同事」的用法。
 - **生产可靠优先。** 本项目源自一套在真实团队里连续运行数月的飞书 bot 集群，消息合并、附件收发、发送目录清理、引用上下文注入等 15 项行为增强都是实际踩坑后的沉淀（见[设计笔记](docs/design-notes.md)），并配有 750+ 自动化测试。
 
 ## 架构
@@ -20,7 +20,7 @@
   飞书开放平台          │  luckagent-bridge          (127.0.0.1:9100)  │
   ┌──────────┐  长连接  │  ┌────────────┐   ┌───────────────────────┐  │
   │ 飞书应用 A │◄───────►│  │ Bot A 桥接  │──►│ 引擎: Claude Code     │  │
-  │ 飞书应用 B │◄───────►│  │ Bot B 桥接  │──►│       / DeepSeek      │  │
+  │ 飞书应用 B │◄───────►│  │ Bot B 桥接  │──►│  / DeepSeek / MiniMax │  │
   │   ...    │ websocket│  │   ...      │   │ (每 bot 独立工作目录)   │  │
   └──────────┘          │  └────────────┘   └───────────────────────┘  │
                         │  HTTP API (Bearer)  +  Web 管理台 /admin      │
@@ -45,7 +45,7 @@
 ### 一条消息的生命周期
 
 1. **接收**：飞书事件经 websocket 长连接推到 bridge（无需公网回调地址）；快速连发的多条消息会自动合并成一轮。
-2. **会话**：每个聊天（群/私聊）对应一个持续的 agent 会话——Claude/DeepSeek 默认走**持久执行器池**（长驻进程，支持 Agent Teams、`/goal` 多轮自动推进、后台任务），其余引擎逐回合拉起。
+2. **会话**：每个聊天（群/私聊）对应一个持续的 agent 会话——各引擎默认走**持久执行器池**（长驻进程，支持 Agent Teams、`/goal` 多轮自动推进、后台任务），其余引擎逐回合拉起。
 3. **执行**：引擎在该 bot 的独立工作目录里全工具运行；聊天里发的文件自动下载到 `inputs/` 供 agent 直接使用。
 4. **回贴**：过程流式更新到飞书卡片；agent 放进发送暂存目录的产物**发过即删**，回合结束再补扫一次防漏发（归档另存 `outputs/`）。
 5. **管控**：预算限额、并发上限、群聊白名单、`/model` 会话内切引擎等都按 bot 配置；全程记账可在管理台与 `luckagent stats` 查看。
@@ -53,7 +53,7 @@
 ## 特性
 
 - **多 bot 单进程**：一份 `bots.json` 配任意多个飞书机器人，各自独立的应用凭证、工作目录、引擎与预算限额。
-- **双引擎可选**：每个 bot 用 `engine: "claude" | "deepseek"` 选择后端；Claude 支持 API key 或订阅登录，DeepSeek 走官方 Anthropic 兼容端点、只要 key 零安装（含视觉模型）。两者共享同一 Claude Code 运行时——持久会话、Agent Teams、记忆体系对两个引擎完全一致。
+- **多引擎可选**：每个 bot 用 `engine: "claude" | "deepseek" | "minimax"` 选择后端；Claude 支持 API key 或订阅登录，DeepSeek / MiniMax 走各家官方 Anthropic 兼容端点、只要 key 零安装（均支持看图）。所有引擎共享同一 Claude Code 运行时——持久会话、Agent Teams、记忆体系完全一致。
 - **Web 管理台**：系统总览、机器人管理（含手把手的飞书接入向导）、定时任务、运行日志、系统配置，浏览器里完成从建应用到跑通的全流程。
 - **定时任务**：一次性延迟与 cron 周期任务，CLI / 管理台 / HTTP API 三种入口，持久化、重启自动恢复。
 - **生产磨出来的稳定性**（详见 [设计笔记](docs/design-notes.md)）：文件上传超时重试、快速连发消息合并、群聊引用回复精确通知、被引消息上下文注入、出站内容脱敏、发送目录「发过即删 + 漏发补扫」、超大附件分片下载、发送失败明确告知等，全部内建。
@@ -64,7 +64,7 @@
 
 - **macOS**（目标机型 Mac mini / MacBook，Apple Silicon）；安装脚本会自动补齐 Homebrew、node 22、PM2、lark-cli 等依赖
 - 一个**飞书企业自建应用**（安装后管理台的「接入向导」会手把手带你创建，或先看[配置指南](docs/feishu-app-setup.md)）
-- 至少一种**引擎认证**：Claude 订阅登录或 `ANTHROPIC_API_KEY`；或 DeepSeek 的 `DEEPSEEK_API_KEY`（零 CLI 安装）。详见[引擎配置](docs/engines.md)
+- 至少一种**引擎认证**：Claude 订阅登录或 `ANTHROPIC_API_KEY`；或 DeepSeek / MiniMax 的 API key（`DEEPSEEK_API_KEY` / `MINIMAX_API_KEY`，零 CLI 安装）。详见[引擎配置](docs/engines.md)
 
 ## 安装
 
@@ -140,7 +140,7 @@ luckagent inbox poll            # CLI agent 收件箱
 | 文档 | 内容 |
 | --- | --- |
 | [飞书应用配置指南](docs/feishu-app-setup.md) | 在飞书开放平台建应用、配权限、订阅事件、发布上线的逐步引导 |
-| [引擎配置](docs/engines.md) | Claude / DeepSeek 两种引擎的认证路线与切换方式 |
+| [引擎配置](docs/engines.md) | Claude / DeepSeek / MiniMax 各引擎的认证路线与切换方式 |
 | [目录结构](docs/directory-layout.md) | 安装目录、每 bot 工作目录约定、⚠️ 归档目录与发送暂存目录的关键区别、状态目录与日志位置 |
 | [定时任务](docs/scheduling.md) | CLI / 管理台 / HTTP API 三种入口，cron 与时区，暂停恢复 |
 | [技能体系](docs/claude-code-skills.md) | 随装与可选技能、技能发现机制、工作区两级指令模板 |

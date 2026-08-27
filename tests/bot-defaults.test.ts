@@ -163,6 +163,27 @@ describe('resolveClaudeAuthEnv (deepseek runs on the claude runtime)', () => {
     cfg.claude.apiKey = undefined;
     expect(resolveClaudeAuthEnv(cfg)).toBeUndefined();
   });
+
+  it('minimax engine injects its endpoint via the provider table (per-bot key)', async () => {
+    const { resolveClaudeAuthEnv } = await import('../src/engines/claude/auth-env.js');
+    const env = resolveClaudeAuthEnv(base({ engine: 'minimax', minimax: { apiKey: 'sk-cp-1' } }));
+    expect(env).toEqual({
+      ANTHROPIC_BASE_URL: 'https://api.minimaxi.com/anthropic',
+      ANTHROPIC_AUTH_TOKEN: 'sk-cp-1',
+      ANTHROPIC_API_KEY: 'sk-cp-1',
+    });
+  });
+
+  it('minimax without any key throws naming MINIMAX_API_KEY', async () => {
+    const { resolveClaudeAuthEnv } = await import('../src/engines/claude/auth-env.js');
+    const OLD_MM = process.env.MINIMAX_API_KEY;
+    delete process.env.MINIMAX_API_KEY;
+    try {
+      expect(() => resolveClaudeAuthEnv(base({ engine: 'minimax' }))).toThrow(/MINIMAX_API_KEY/);
+    } finally {
+      if (OLD_MM !== undefined) process.env.MINIMAX_API_KEY = OLD_MM;
+    }
+  });
 });
 
 describe('deriveDeepseekConfig / engine pinning (session-override regression)', () => {
@@ -187,6 +208,19 @@ describe('deriveDeepseekConfig / engine pinning (session-override regression)', 
     const env = resolveClaudeAuthEnv(derived);
     expect(env?.ANTHROPIC_BASE_URL).toBe('https://api.deepseek.com/anthropic');
     expect(env?.ANTHROPIC_AUTH_TOKEN).toBe('sk-ds');
+  });
+
+  it('deriveCompatConfig(minimax) pins engine, defaults MiniMax-M3, forces sdk', async () => {
+    const { deriveCompatConfig } = await import('../src/engines/index.js');
+    const { resolveClaudeAuthEnv } = await import('../src/engines/claude/auth-env.js');
+    const derived = deriveCompatConfig(base({ engine: 'claude', minimax: { apiKey: 'sk-cp-9' } }), 'minimax');
+    expect(derived.engine).toBe('minimax');
+    expect(derived.claude.model).toBe('MiniMax-M3');
+    expect(derived.claude.apiKey).toBeUndefined();
+    expect(derived.claude.backend).toBe('sdk');
+    const env = resolveClaudeAuthEnv(derived);
+    expect(env?.ANTHROPIC_BASE_URL).toBe('https://api.minimaxi.com/anthropic');
+    expect(env?.ANTHROPIC_AUTH_TOKEN).toBe('sk-cp-9');
   });
 
   it("createEngine pins engine='claude' so a claude-override on a deepseek bot uses Anthropic auth", async () => {

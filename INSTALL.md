@@ -15,7 +15,7 @@
 | 飞书账号 | 有权限在 [飞书开放平台](https://open.feishu.cn/app) 创建企业自建应用 |
 | Claude 认证 | 二选一：[Anthropic API Key](https://console.anthropic.com)，或 Claude Code 订阅账号（安装脚本可代装 CLI，登录需自己跑一次 `claude`） |
 | 生图 key（可选） | 二选一：[OpenAI](https://platform.openai.com) 的 key，或 [火山方舟](https://console.volcengine.com/ark) 的 ARK key（需在控制台开通 Doubao-Seedream 模型） |
-| DeepSeek 引擎（可选） | **无需装任何东西，只要一个 [API key](https://platform.deepseek.com)**。详见 [docs/engines.md](docs/engines.md) |
+| DeepSeek / MiniMax 引擎（可选） | **无需装任何东西，只要一个 API key**（[DeepSeek](https://platform.deepseek.com) / [MiniMax](https://platform.minimaxi.com)）。详见 [docs/engines.md](docs/engines.md) |
 | 时间 | 全程约 20–40 分钟（首次装 Xcode 命令行工具占大头） |
 
 ---
@@ -52,10 +52,10 @@ bash install.sh
 | --- | --- | --- |
 | Homebrew | 全新机器会先装 Homebrew，并自动带出 **Xcode 命令行工具**下载 | 弹窗点「安装」、终端里**输入开机密码**；CLT 下载约 5–15 分钟，耐心等 |
 | node@22 / git / pm2 | 自动安装 | 无 |
-| 选择默认引擎 | 询问用 Claude Code 还是 DeepSeek | 回车 = Claude；输 2 = DeepSeek（之后每个 bot 仍可单独选） |
+| 选择默认引擎 | 询问用 Claude Code、DeepSeek 还是 MiniMax | 回车 = Claude；输 2 = DeepSeek；输 3 = MiniMax（之后每个 bot 仍可单独选） |
 | Claude Code CLI | 仅选 Claude 且未装 CLI 时询问是否代装 | 回答 y/n（订阅登录路线就装；纯 API key 路线可跳过） |
 | npm install + 构建 | 下载依赖并本地编译原生模块，几分钟 | 无 |
-| 生成 `.env` | 自动生成随机 `API_SECRET`（管理台登录密钥） | 按所选引擎询问认证——Claude：`ANTHROPIC_API_KEY` 或订阅登录提示；DeepSeek：`DEEPSEEK_API_KEY` 并自动设为默认引擎——随后询问生图 key（OpenAI `sk-` 或火山 `ark-` 前缀自动识别），均可回车跳过、之后编辑 `.env` 补填 |
+| 生成 `.env` | 自动生成随机 `API_SECRET`（管理台登录密钥） | 按所选引擎询问认证——Claude：`ANTHROPIC_API_KEY` 或订阅登录提示；DeepSeek / MiniMax：对应 API key 并自动设为默认引擎——随后询问生图 key（OpenAI `sk-` 或火山 `ark-` 前缀自动识别），均可回车跳过、之后编辑 `.env` 补填 |
 | 生成 `bots.json` | 空列表——机器人稍后用管理台向导创建 | 无 |
 | 技能同步 | 内置技能装进全局目录；并从 GitHub 拉取 frontend-slides（HTML 演示文稿生成，第三方 MIT） | 无；拉取失败仅警告不影响安装 |
 | lark-cli（必装） | 自动安装飞书官方 CLI + 19 个 AI 技能（文档/表格/日历操作、群日报拉消息都依赖它） | 无；万一安装失败，结尾会打印待办命令 |

@@ -119,6 +119,9 @@ export default function ConfigPage({ onRestart }: { onRestart: () => void }) {
           <Descriptions.Item label="DEEPSEEK_API_KEY">
             <SecretHint v={cfg?.credentials.deepseekApiKey} />
           </Descriptions.Item>
+          <Descriptions.Item label="MINIMAX_API_KEY">
+            <SecretHint v={cfg?.credentials.minimaxApiKey} />
+          </Descriptions.Item>
           <Descriptions.Item label="火山 ARK_API_KEY">
             <SecretHint v={cfg?.credentials.arkApiKey} />
           </Descriptions.Item>

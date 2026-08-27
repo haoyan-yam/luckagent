@@ -1,12 +1,12 @@
-# 引擎配置（Claude Code / DeepSeek）
+# 引擎配置（Claude Code / DeepSeek / MiniMax）
 
-每个 bot 独立选引擎：`bots.json` 里的 `engine: "claude" | "deepseek"`（默认 `claude`），
-管理台「机器人管理 → 编辑」的引擎下拉即可切换，选中 DeepSeek 会展开参数子表单。
-同一台机器上两种引擎的 bot 可以并存混用。
+每个 bot 独立选引擎：`bots.json` 里的 `engine: "claude" | "deepseek" | "minimax"`（默认 `claude`），
+管理台「机器人管理 → 编辑」的引擎下拉即可切换，选中 DeepSeek / MiniMax 会展开参数子表单。
+同一台机器上多种引擎的 bot 可以并存混用。
 
-两个引擎共享**同一个 Claude Code 运行时**（`@anthropic-ai/claude-agent-sdk`）——持久会话池、
+所有引擎共享**同一个 Claude Code 运行时**（`@anthropic-ai/claude-agent-sdk`）——持久会话池、
 Agent Teams、`/goal`、后台任务、记忆体系（CLAUDE.md / auto-memory / session 续接）对两者完全一致，
-差别只在指向哪家的 API 和用谁的 key。
+差别只在指向哪家的 API 和用谁的 key。DeepSeek 与 MiniMax 都走各家官方的 **Anthropic 兼容端点**，零 CLI 安装。
 
 ## Claude Code（默认，开箱即用）
 
@@ -41,7 +41,17 @@ Claude 引擎的运行时上——**不用装任何 CLI**：
 
 适合：高频轻任务（群日报、摘要、问答）、中文场景、成本敏感的 bot；复杂多步任务的可靠性与 Claude 有差距，重活建议留 Claude。
 
-> 计费提示：管理台/统计里显示的费用是按 Claude 价目估算的（运行时不识别 DeepSeek 价目），DeepSeek 实际账单远低于显示值，以 DeepSeek 平台为准。
+> 计费提示：管理台/统计里显示的费用是按 Claude 价目估算的（运行时不识别第三方价目），DeepSeek / MiniMax 实际账单以各自平台为准（通常远低于显示值）。
+
+## MiniMax（零安装，原生看图）
+
+MiniMax 同样提供 **Anthropic 兼容端点**（`https://api.minimaxi.com/anthropic`），接法与 DeepSeek 完全一致：
+
+1. 申请 key：https://platform.minimaxi.com （支持订阅制 Coding Plan，key 以 `sk-cp-` 开头）→ `.env` 填 `MINIMAX_API_KEY`（或在 bot 的 MiniMax 子表单里按 bot 填）。全机默认用它则再加 `LUCKAGENT_ENGINE=minimax`（安装脚本选 MiniMax 时自动写入）。
+2. 模型二选一：`MiniMax-M3`（旗舰、**原生看图**、默认）/ `MiniMax-M2.5`（上一代、更省）。
+3. 保存重启即生效；会话内 `/model minimax` 临时切换的说明同上（走逐回合路径）。
+
+凭证同样 bot 级隔离，与 Claude / DeepSeek bot 并存互不干扰。
 
 ## 指令文件（CLAUDE.md）如何生效
 
@@ -59,5 +69,6 @@ Claude 引擎的运行时上——**不用装任何 CLI**：
 | --- | --- | --- |
 | Claude | 无（API key 路线）或装 CLI + 登录（订阅路线） | `.env` / 管理台 |
 | DeepSeek | **无**——只要申请个 key | `.env` 或管理台子表单 |
+| MiniMax | **无**——只要申请个 key | `.env` 或管理台子表单 |
 
 `luckagent doctor --json` 可核对运行时、PM2、bots、语音等检查项。

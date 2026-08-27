@@ -186,6 +186,7 @@ function effectiveConfig(ctx: RouteContext): Record<string, unknown> {
       // normally-installed machine doesn't read as 未配置.
       coreToken: secretHint(process.env.LUCKAGENT_CORE_TOKEN || readCoreTokenFile()),
       deepseekApiKey: secretHint(process.env.DEEPSEEK_API_KEY),
+      minimaxApiKey: secretHint(process.env.MINIMAX_API_KEY),
       arkApiKey: secretHint(process.env.ARK_API_KEY),
       volcengineTts: secretHint(process.env.VOLCENGINE_TTS_ACCESS_KEY),
       elevenlabs: secretHint(process.env.ELEVENLABS_API_KEY),
