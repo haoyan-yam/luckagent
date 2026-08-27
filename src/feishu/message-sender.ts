@@ -101,19 +101,25 @@ async function withUploadTimeout<T>(p: Promise<T>, label: string): Promise<T> {
 const LARGE_FILE_ERR_CODE = 234037;           // 飞书：单次 GET 资源超 100MB
 const CHUNK_PROBE_BYTES = 128 * 1024;         // 探测段 128KB（与 lark-cli 一致）
 const CHUNK_BYTES = 8 * 1024 * 1024;          // 后续分段 8MB（与 lark-cli 一致）
-const CHUNK_MAX_ATTEMPTS = 3;                 // 每段 1 次 + 重试 2 次
-const CHUNK_RETRY_BASE_DELAY_MS = 1000;       // 退避基数 1s → 2s
+const CHUNK_MAX_ATTEMPTS = 5;                 // 每段 1 次 + 重试 4 次（退避 1+2+4+8≈15s，覆盖十秒级网络抖动）
+const CHUNK_RETRY_BASE_DELAY_MS = 1000;       // 退避基数 1s → 2s → 4s → 8s
 const CHUNK_ATTEMPT_TIMEOUT_MS = 90_000;      // 单段超时（8MB 实测约 5s，留 ~17x 余量）
 const CHUNK_TOTAL_DEADLINE_MS = 30 * 60_000;  // 整体兜底（225MB 实测约 2.5 分钟）
 const ERROR_BODY_READ_LIMIT = 64 * 1024;      // 错误体最多读 64KB，防异常大响应
 const ERROR_BODY_READ_TIMEOUT_MS = 5000;
 
-function isTransientDownloadError(err: unknown): boolean {
-  const e = err as { code?: string; status?: number; message?: string; response?: { status?: number } };
+export function isTransientDownloadError(err: unknown): boolean {
+  const e = err as { name?: string; code?: string; status?: number; message?: string; response?: { status?: number } };
+  // Deliberate cancellation is never transient — retrying a cancel would fight
+  // an intentional abort (e.g. task stop) for up to the whole backoff budget.
+  if (e?.name === 'AbortError' || e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED') return false;
   const status = e?.response?.status ?? e?.status;
   if (typeof status === 'number' && status >= 500 && status < 600) return true;
-  if (['ETIMEDOUT', 'ECONNRESET', 'ECONNABORTED', 'EPIPE', 'ENETUNREACH', 'EAI_AGAIN'].includes(String(e?.code || ''))) return true;
-  return /\b(50[0-9]|timeout|timed out|socket hang up|network)\b/i.test(String(e?.message || ''));
+  // ERR_BAD_RESPONSE / ERR_STREAM_PREMATURE_CLOSE: axios surfaces a mid-stream
+  // TLS/socket death this way ("stream has been aborted") — the textbook
+  // transient blip. 真实事故：一次 11.6s 断网把 187MB 下载整体判死不重试。
+  if (['ETIMEDOUT', 'ECONNRESET', 'ECONNABORTED', 'EPIPE', 'ENETUNREACH', 'EAI_AGAIN', 'ERR_BAD_RESPONSE', 'ERR_STREAM_PREMATURE_CLOSE'].includes(String(e?.code || ''))) return true;
+  return /\b(50[0-9]|timeout|timed out|socket hang up|network|aborted|premature close)\b/i.test(String(e?.message || ''));
 }
 
 /** 把 responseType:'stream' 的错误响应体读成字符串（可能已是 Buffer/string/object）。 */

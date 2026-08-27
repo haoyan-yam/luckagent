@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 import { Readable } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { MessageSender } from '../src/feishu/message-sender.js';
+import { MessageSender, isTransientDownloadError } from '../src/feishu/message-sender.js';
 
 /**
  * [design-note N] 超 100MB 附件的分片下载回退 — MessageSender 层。
@@ -169,5 +169,23 @@ describe('MessageSender chunked download fallback (patch N)', () => {
 
     expect(res).toBe(true);
     expect(writeFile).toHaveBeenCalledOnce();
+  });
+});
+
+describe('isTransientDownloadError', () => {
+  it('treats mid-stream axios aborts as transient (the 11.6s-blip incident)', () => {
+    expect(isTransientDownloadError({ code: 'ERR_BAD_RESPONSE', message: 'stream has been aborted' })).toBe(true);
+    expect(isTransientDownloadError({ code: 'ERR_STREAM_PREMATURE_CLOSE', message: 'Premature close' })).toBe(true);
+    expect(isTransientDownloadError({ message: 'Premature close' })).toBe(true);
+  });
+  it('keeps the original transient set', () => {
+    expect(isTransientDownloadError({ response: { status: 503 } })).toBe(true);
+    expect(isTransientDownloadError({ code: 'ECONNRESET' })).toBe(true);
+    expect(isTransientDownloadError({ message: 'socket hang up' })).toBe(true);
+  });
+  it('never retries deliberate cancellation or plain client errors', () => {
+    expect(isTransientDownloadError({ name: 'AbortError', message: 'The operation was aborted' })).toBe(false);
+    expect(isTransientDownloadError({ name: 'CanceledError', code: 'ERR_CANCELED', message: 'canceled' })).toBe(false);
+    expect(isTransientDownloadError({ response: { status: 404 }, message: 'not found' })).toBe(false);
   });
 });
