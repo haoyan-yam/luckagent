@@ -198,6 +198,16 @@ PYEOF
       else
         warn "还没填 key——bot 干活前记得编辑 .env 补上 DEEPSEEK_API_KEY"
       fi
+      read -r -p "默认模型 [1/2]（回车 = 1 deepseek-v4-flash 快而省；输 2 = deepseek-v4-pro 更强推理、更贵） " dmodel || dmodel=""
+      if [[ "$dmodel" == "2" ]]; then
+        python3 - <<'PYEOF'
+p = '.env'
+s = open(p).read()
+s = s.replace('# DEEPSEEK_MODEL=deepseek-v4-flash', 'DEEPSEEK_MODEL=deepseek-v4-pro', 1)
+open(p, 'w').write(s)
+PYEOF
+        success "DeepSeek 默认模型已设为 deepseek-v4-pro（.env 的 DEEPSEEK_MODEL，可随时改回）"
+      fi
       echo "  （想同时用 Claude 引擎：之后编辑 .env 填 ANTHROPIC_API_KEY，或装 Claude CLI 登录）"
     else
       # ---- Claude 路线：认证二选一 ----
