@@ -1,6 +1,6 @@
 {
   "name": "luckagent",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Luckagent — 把 Claude Code / DeepSeek / MiniMax 变成飞书里的常驻 AI 同事（自托管）。此包为安装引导器：luckagent init 一键完成安装，装好后透传全部 CLI 子命令。",
   "type": "commonjs",
   "bin": {

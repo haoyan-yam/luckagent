@@ -3,9 +3,32 @@ import { api } from '../api/client';
 import { usePoll } from '../hooks/usePoll';
 import type { EffectiveConfig, Pm2Proc } from '../api/types';
 
-function SecretHint({ v }: { v?: { set: boolean; tail?: string } }) {
-  if (!v?.set) return <Tag>未配置</Tag>;
-  return <Tag color="green">已配置（••••{v.tail}）</Tag>;
+function SecretHint({ v }: { v?: { set: boolean; tail?: string; pending?: boolean; botLevel?: number } }) {
+  const botNote = v?.botLevel ? (
+    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+      另有 {v.botLevel} 个 bot 单独配置
+    </Typography.Text>
+  ) : null;
+  if (v?.pending)
+    return (
+      <Space size={4}>
+        <Tag color="orange">已写入 .env（••••{v.tail}）——重启桥接后生效</Tag>
+        {botNote}
+      </Space>
+    );
+  if (!v?.set)
+    return (
+      <Space size={4}>
+        <Tag>未配置</Tag>
+        {botNote}
+      </Space>
+    );
+  return (
+    <Space size={4}>
+      <Tag color="green">已配置（••••{v.tail}）</Tag>
+      {botNote}
+    </Space>
+  );
 }
 
 function ClaudeAuthHint({ a }: { a?: EffectiveConfig['claudeAuth'] }) {

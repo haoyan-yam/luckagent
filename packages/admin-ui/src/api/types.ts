@@ -78,7 +78,7 @@ export interface EffectiveConfig {
   ports: { apiPort: number; apiHost: string; coreUrl: string };
   paths: Record<string, string | null>;
   engineDefaults: Record<string, string | null>;
-  credentials: Record<string, { set: boolean; tail?: string }>;
+  credentials: Record<string, { set: boolean; tail?: string; pending?: boolean; botLevel?: number }>;
   claudeAuth?: {
     cliInstalled: boolean;
     loggedIn: boolean;

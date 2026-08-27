@@ -8,6 +8,7 @@ import {
   readSkillDescription,
   parseMemoryIndex,
   memoryDirCandidates,
+  envCredentialState,
 } from '../src/api/routes/admin-routes.js';
 
 let dirs: string[] = [];
@@ -91,6 +92,23 @@ describe('memoryDirCandidates', () => {
   it('a dotted path yields a second dot-munged candidate', () => {
     const cands = memoryDirCandidates('/srv/app.v2');
     expect(cands.some((c) => c.includes('-srv-app-v2'))).toBe(true);
+  });
+});
+
+describe('envCredentialState (密钥三态)', () => {
+  it('live: process env set and disk agrees (or absent from disk)', () => {
+    expect(envCredentialState('sk-live-abcd', 'sk-live-abcd')).toEqual({ set: true, tail: 'abcd' });
+    expect(envCredentialState('sk-live-abcd', undefined)).toEqual({ set: true, tail: 'abcd' });
+  });
+  it('pending: key added to .env but bridge not restarted', () => {
+    expect(envCredentialState(undefined, 'sk-cp-new-wxyz')).toEqual({ set: true, tail: 'wxyz', pending: true });
+  });
+  it('pending: key rotated on disk — tail shows the incoming value', () => {
+    expect(envCredentialState('sk-old-aaaa', 'sk-new-bbbb')).toEqual({ set: true, tail: 'bbbb', pending: true });
+  });
+  it('unset: neither source has a value (blank strings count as unset)', () => {
+    expect(envCredentialState(undefined, undefined)).toEqual({ set: false });
+    expect(envCredentialState('  ', '')).toEqual({ set: false });
   });
 });
 

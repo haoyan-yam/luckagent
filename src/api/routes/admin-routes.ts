@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import * as dotenv from 'dotenv';
 import { execFile } from 'node:child_process';
 import type * as http from 'node:http';
 import { readBotsConfig } from '../bots-config-writer.js';
@@ -20,6 +21,22 @@ const LOG_TAIL_BYTES = 512 * 1024;
 const FEISHU_TOKEN_URL = 'https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal';
 
 let lastRestartRequestAt = 0;
+
+/**
+ * 密钥三态：进程环境（已生效）/仅磁盘 .env（待重启生效）/都没有（未配置）。
+ * 用户改完 .env 忘重启时，面板显示「未配置」曾造成困惑——现在直读磁盘，
+ * 值与进程不一致（新增或轮换）就标 pending，tail 取即将生效的磁盘值。
+ * Exported for tests.
+ */
+export function envCredentialState(
+  procVal: string | undefined,
+  diskVal: string | undefined,
+): { set: boolean; tail?: string; pending?: boolean } {
+  const proc = procVal?.trim() || undefined;
+  const disk = diskVal?.trim() || undefined;
+  if (disk && disk !== proc) return { set: true, tail: disk.slice(-4), pending: true };
+  return proc ? { set: true, tail: proc.slice(-4) } : { set: false };
+}
 
 function startTimeMs(): number {
   const t = (globalThis as any).__luckagent_start_time;
@@ -155,6 +172,29 @@ function effectiveConfig(ctx: RouteContext): Record<string, unknown> {
   };
   const secretHint = (v: string | undefined) =>
     v ? { set: true, tail: v.slice(-4) } : { set: false };
+  // 磁盘 .env（与 config.ts loadEnvFiles 同一路径解析）——用于「待重启生效」判定
+  const diskEnv: Record<string, string> = (() => {
+    try {
+      return dotenv.parse(fs.readFileSync(path.resolve('.env')));
+    } catch {
+      return {};
+    }
+  })();
+  const envHint = (name: string) => envCredentialState(process.env[name], diskEnv[name]);
+  // bot 级单独配置的引擎 key（存 bots.json，不上全局面板）——补充提示防「配了却不显示」
+  const botLevel = (() => {
+    const counts = { deepseek: 0, minimax: 0 };
+    try {
+      const cfg = ctx.botsConfigPath ? readBotsConfig(ctx.botsConfigPath) : { feishuBots: [] };
+      for (const b of (cfg.feishuBots ?? []) as Array<{ deepseek?: { apiKey?: string }; minimax?: { apiKey?: string } }>) {
+        if (b?.deepseek?.apiKey) counts.deepseek++;
+        if (b?.minimax?.apiKey) counts.minimax++;
+      }
+    } catch {
+      /* bots.json 读不了不影响面板其余部分 */
+    }
+    return counts;
+  })();
   const stateDir = process.env.SESSION_STORE_DIR || path.join(os.homedir(), '.luckagent');
   return {
     ports: {
@@ -175,21 +215,21 @@ function effectiveConfig(ctx: RouteContext): Record<string, unknown> {
       scheduleTimezone: process.env.SCHEDULE_TIMEZONE || null,
     },
     credentials: {
-      apiSecret: secretHint(process.env.API_SECRET),
-      anthropicApiKey: secretHint(process.env.ANTHROPIC_API_KEY),
-      openaiApiKey: secretHint(process.env.OPENAI_API_KEY),
+      apiSecret: envHint('API_SECRET'),
+      anthropicApiKey: envHint('ANTHROPIC_API_KEY'),
+      openaiApiKey: envHint('OPENAI_API_KEY'),
       // image-gen resolves OPENAI_IMAGE_API_KEY first, then OPENAI_API_KEY —
       // show the dedicated var so the installer-written key is visible.
-      openaiImageApiKey: secretHint(process.env.OPENAI_IMAGE_API_KEY),
+      openaiImageApiKey: envHint('OPENAI_IMAGE_API_KEY'),
       // Token resolution is file-first (~/.luckagent-core/token, written by
       // the installer) with the env var as fallback — mirror that so a
       // normally-installed machine doesn't read as 未配置.
       coreToken: secretHint(process.env.LUCKAGENT_CORE_TOKEN || readCoreTokenFile()),
-      deepseekApiKey: secretHint(process.env.DEEPSEEK_API_KEY),
-      minimaxApiKey: secretHint(process.env.MINIMAX_API_KEY),
-      arkApiKey: secretHint(process.env.ARK_API_KEY),
-      volcengineTts: secretHint(process.env.VOLCENGINE_TTS_ACCESS_KEY),
-      elevenlabs: secretHint(process.env.ELEVENLABS_API_KEY),
+      deepseekApiKey: { ...envHint('DEEPSEEK_API_KEY'), ...(botLevel.deepseek ? { botLevel: botLevel.deepseek } : {}) },
+      minimaxApiKey: { ...envHint('MINIMAX_API_KEY'), ...(botLevel.minimax ? { botLevel: botLevel.minimax } : {}) },
+      arkApiKey: envHint('ARK_API_KEY'),
+      volcengineTts: envHint('VOLCENGINE_TTS_ACCESS_KEY'),
+      elevenlabs: envHint('ELEVENLABS_API_KEY'),
     },
     claudeAuth: claudeAuthStatus(),
   };
