@@ -201,6 +201,10 @@ export class MessageBridge {
   private outputHandler: OutputHandler;
   readonly costTracker: CostTracker;
   private sessionRegistry?: SessionRegistry;
+  /** Chats admitted into executeQuery but not yet registered in runningTasks
+   *  (the chunked-download phase of >100MB files lives here — a second file
+   *  arriving then must QUEUE, not start a colliding turn). */
+  private admitting = new Set<string>();
   private runningTasks = new Map<string, RunningTask>(); // keyed by chatId
   // [design-note F] 每个 chat「最近开始的那个任务」的发起人（open_id + chatType）。
   // 在 executeQuery 任务开始时写入 = 任务归属人（与 patch H 注入同源），供「选择卡 @ 提问人」用。
@@ -479,7 +483,7 @@ export class MessageBridge {
   }
 
   isBusy(chatId: string): boolean {
-    return this.runningTasks.has(chatId);
+    return this.runningTasks.has(chatId) || this.admitting.has(chatId);
   }
 
   /** Return info about all currently running tasks (for team status display). */
@@ -1579,6 +1583,9 @@ export class MessageBridge {
     }
     this.executeQuery(next).catch((err) => {
       this.logger.error({ err, chatId }, 'Error processing queued message');
+      if (!/abort/i.test(String(err?.message))) {
+        this.sender.sendTextNotice(chatId, '❌ 排队消息处理失败', `${String(err?.message || err).slice(0, 300)}\n\n请把该消息重发一次。`, 'red').catch(() => {});
+      }
     });
   }
 
@@ -1693,8 +1700,9 @@ export class MessageBridge {
       return;
     }
 
-    // If a task is running, queue the message instead of rejecting
-    if (this.runningTasks.has(chatId)) {
+    // If a task is running (or a file is mid-download for this chat), queue
+    // the message instead of starting a colliding turn.
+    if (this.isBusy(chatId)) {
       // If there's a pending batch and this is a text message, merge batch into the queued text
       const batch = this.pendingBatches.get(chatId);
       if (batch && !isDefaultMediaText(msg)) {
@@ -1993,8 +2001,10 @@ export class MessageBridge {
     const merged = mergeBatchMessages(batch.messages);
     this.logger.info({ chatId, batchSize: batch.messages.length }, 'Flushing media batch (timeout)');
 
-    // If a task started running during the debounce window, queue instead
-    if (this.runningTasks.has(chatId)) {
+    // If a task started (or another file is mid-download) during the debounce
+    // window, queue instead — 真实事故：109MB 分片下载 60s 期间第二个文件直接
+    // 起跑，下载完成后 nextTurn 撞车被静默吃掉。
+    if (this.isBusy(chatId)) {
       const queue = this.messageQueues.get(chatId) || [];
       if (queue.length < MAX_QUEUE_SIZE) {
         queue.push(merged);
@@ -2007,10 +2017,25 @@ export class MessageBridge {
 
     this.executeQuery(merged).catch(err => {
       this.logger.error({ err, chatId }, 'Error executing batched messages');
+      if (!/abort/i.test(String(err?.message))) {
+        this.sender.sendTextNotice(chatId, '❌ 文件处理失败', `${String(err?.message || err).slice(0, 300)}\n\n请把文件重发一次。`, 'red').catch(() => {});
+      }
     });
   }
 
   private async executeQuery(msg: IncomingMessage): Promise<void> {
+    // Admission marker covers the WHOLE call — including the chunked-download
+    // phase that precedes runningTasks registration — so concurrent messages
+    // queue instead of racing (see isBusy()).
+    this.admitting.add(msg.chatId);
+    try {
+      await this.executeQueryInner(msg);
+    } finally {
+      this.admitting.delete(msg.chatId);
+    }
+  }
+
+  private async executeQueryInner(msg: IncomingMessage): Promise<void> {
     const { userId, chatId, text, imageKey, fileKey, fileName, messageId: msgId, chatType } = msg;
 
     // [design-note F] 任务开始即记下发起人 = 本任务归属人。选择卡 @ 提问人时读它；
@@ -2667,7 +2692,7 @@ export class MessageBridge {
   async executeApiTask(options: ApiTaskOptions): Promise<ApiTaskResult> {
     const { prompt, chatId, userId = 'api', sendCards = false } = options;
 
-    if (this.runningTasks.has(chatId)) {
+    if (this.isBusy(chatId)) {
       return { success: false, responseText: '', error: 'Chat is busy with another task' };
     }
 

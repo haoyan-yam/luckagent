@@ -3,7 +3,8 @@ import * as path from 'node:path';
 import * as lark from '@larksuiteoapi/node-sdk';
 import { loadAppConfig, type BotConfig } from './config.js';
 import { createLogger, type Logger } from './utils/logger.js';
-import { createEventDispatcher } from './feishu/event-handler.js';
+import { backfillMissedMessages } from './feishu/backfill.js';
+import { createEventDispatcher, createReceiveHandler } from './feishu/event-handler.js';
 import { MessageSender } from './feishu/message-sender.js';
 import { FeishuSenderAdapter } from './feishu/feishu-sender-adapter.js';
 import { MessageBridge } from './bridge/message-bridge.js';
@@ -113,12 +114,45 @@ async function startFeishuBot(botConfig: BotConfig, logger: Logger, localAgent?:
     },
   );
 
-  // Create WebSocket client
+  // Backfill uses the SAME receive pipeline as live events (dedupe cache is
+  // module-global, so双投安全); onMessage mirrors the dispatcher wiring above.
+  const receiveForBackfill = createReceiveHandler(
+    botConfig,
+    botLogger,
+    (msg) => {
+      bridge.handleMessage(msg).catch((err) => {
+        botLogger.error({ err, msg }, 'Unhandled error in backfilled message');
+      });
+    },
+    botOpenId,
+    rawSender,
+  );
+
+  // Create WebSocket client. pingTimeout(150s > server ping interval 120s)
+  // turns "wait for a socket error, maybe forever" into a bounded ≤2.5min
+  // blind window; reconnect callbacks give INFO-level visibility plus the
+  // blind-window backfill (真实事故：132MB pptx 落盲区静默丢失 5 分钟).
+  let wsDownSince: number | null = null;
   const wsClient = new lark.WSClient({
     appId: botConfig.feishu.appId,
     appSecret: botConfig.feishu.appSecret,
     loggerLevel: lark.LoggerLevel.info,
     agent: localAgent,
+    handshakeTimeoutMs: 15_000,
+    wsConfig: { pingTimeout: 150 },
+    onReconnecting: () => {
+      if (wsDownSince === null) wsDownSince = Date.now();
+      botLogger.warn({ downSince: new Date(wsDownSince).toISOString() }, '[ws] connection lost — reconnecting');
+    },
+    onReconnected: () => {
+      const since = wsDownSince;
+      wsDownSince = null;
+      botLogger.info({ outageMs: since ? Date.now() - since : null }, '[ws] reconnected');
+      if (since) {
+        void backfillMissedMessages({ client, receive: receiveForBackfill, logger: botLogger, sinceMs: since })
+          .catch((err) => botLogger.warn({ err: err?.message }, 'backfill failed'));
+      }
+    },
   });
 
   // Start WebSocket connection with event dispatcher

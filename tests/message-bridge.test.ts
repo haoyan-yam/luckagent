@@ -643,3 +643,14 @@ describe('effectiveTurnBackend', () => {
     expect(effectiveTurnBackend(true, 'deepseek', 'pty')).toBe('sdk');
   });
 });
+
+describe('admitting marker (download-phase busy)', () => {
+  it('isBusy is true while a chat is admitted but not yet running', () => {
+    const bridge = new MessageBridge(makeConfig(), mockLogger, makeSender() as any);
+    expect(bridge.isBusy('c1')).toBe(false);
+    (bridge as any).admitting.add('c1');
+    expect(bridge.isBusy('c1')).toBe(true);
+    (bridge as any).admitting.delete('c1');
+    expect(bridge.isBusy('c1')).toBe(false);
+  });
+});
