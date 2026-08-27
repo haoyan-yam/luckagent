@@ -89,9 +89,11 @@ Bot 应当是高信任度的思考伙伴和执行助手，不是只会附和的�
 
 所有 bot 共用同一个 `~/.lark-cli/config.json`，里面可能有多套应用凭证。**不带 `--profile` 时，lark-cli 一律回落到默认（第一个配置的）应用**——没有任何按目录自动选 profile 的机制。因此：
 
-- **每一条 `lark-cli` 命令都必须显式带上 `--profile <本bot的profile名> --as bot`。** 本 bot 的 profile 名写在**本项目自己的 `CLAUDE.md`「Feishu / Lark CLI」小节**里，照它填。
+- **每一条发起飞书 API 调用的 `lark-cli` 命令都必须显式带上 `--profile <profile名> --as bot`。**
+  ⚠️ **profile 名 ≠ bot 名**——lark-cli 的 profile 是独立命名空间，取值必须来自 `lark-cli profile list` 的 **name 字段**（真实事故：按 bot 名填 profile 直接 `not found`）。本 bot 的实际 profile 名建 bot 时已写进**本项目 `CLAUDE.md`「Feishu / Lark CLI」小节**，照它填；两边对不上或不确定时，先跑 `lark-cli profile list` 以实际为准（报错信息本身也会列出可用值）。
 - **⚠️ `--profile` 的位置：放在子命令前更稳，即 `lark-cli --profile <本bot> <domain> +<shortcut> ...`。** 部分子命令（已知 `base +record-list` 等）**不接受**放在命令尾部的 `--profile`（会报 `unknown flag "--profile"`）；`--profile` 是全局 flag，紧跟 `lark-cli` 的位置对所有命令都通用。
 - **严禁裸跑 `lark-cli ...`**（不带 `--profile`）：那会以默认应用的身份读/发消息、建文档、发权限，造成严重串号（发到别的群、以错误身份操作、机密泄漏风险）。
+- `--as bot` 只对发起 API 调用的命令有效（`auth status`、`profile list` 这类本地命令不接受它，报错属正常）。
 - 操作提示：读群消息务必加 `--as bot`；解析 lark-cli 返回的 JSON 时只取 stdout（stderr 可能混有 warning）。
 
 ## ⚠️ 对外说话不透露本机路径 / 配置 / 环境（硬规则）

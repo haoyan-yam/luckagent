@@ -10,7 +10,7 @@
 
 ## Feishu / Lark CLI
 
-本 bot 的 lark-cli profile 是 **`<profile>`**——每条命令必须带 `--profile <profile> --as bot`，严禁裸跑。硬规则与操作提示见父目录 `CLAUDE.md`。
+本 bot 的 lark-cli profile 是 **`<profile>`**（建 bot 时按 `lark-cli profile list` 实际值写入；若报 not found 以 `lark-cli profile list` 的 name 字段为准并更新本行）。每条发起 API 调用的命令必须带 `--profile <profile> --as bot`，严禁裸跑。硬规则与操作提示见父目录 `CLAUDE.md`。
 
 ## 记忆
 

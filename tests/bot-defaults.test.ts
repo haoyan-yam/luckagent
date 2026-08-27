@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { loadAppConfig } from '../src/config.js';
-import { larkCliHasApp, installSkillsToWorkDir} from '../src/api/skills-installer.js';
+import { larkCliHasApp, installSkillsToWorkDir, resolveLarkProfileName } from '../src/api/skills-installer.js';
 
 const noopLogger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} } as any;
 
@@ -198,5 +198,21 @@ describe('deriveDeepseekConfig / engine pinning (session-override regression)', 
     const pinned = { ...cfg, engine: 'claude' };
     expect(resolveClaudeAuthEnv(pinned)).toEqual({ ANTHROPIC_API_KEY: 'sk-ant-host' });
     void deriveDeepseekConfig; // silence unused in this scenario
+  });
+});
+
+describe('resolveLarkProfileName', () => {
+  it('returns the profile list name for the appId, appId when unnamed/missing', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'larkcfg-'));
+    const cfg = path.join(dir, 'config.json');
+    fs.writeFileSync(cfg, JSON.stringify({ apps: [
+      { appId: 'cli_named', name: 'larkmetabot' },
+      { appId: 'cli_unnamed' },
+    ] }));
+    expect(resolveLarkProfileName(cfg, 'cli_named')).toBe('larkmetabot');
+    expect(resolveLarkProfileName(cfg, 'cli_unnamed')).toBe('cli_unnamed');
+    expect(resolveLarkProfileName(cfg, 'cli_absent')).toBe('cli_absent');
+    expect(resolveLarkProfileName('/nonexistent.json', 'cli_x')).toBe('cli_x');
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 });

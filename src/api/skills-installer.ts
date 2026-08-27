@@ -24,6 +24,7 @@ export interface InstallSkillsOptions {
  * clashes, so per-bot overrides remain possible by copying deliberately).
  */
 export async function installSkillsToWorkDir(workDir: string, logger: Logger, options?: InstallSkillsOptions): Promise<void> {
+  const larkConfigPath = path.join(os.homedir(), '.lark-cli', 'config.json');
   // Reserve the project-level skills dir for the bot's own custom skills.
   await fs.promises.mkdir(path.join(workDir, '.claude', 'skills'), { recursive: true });
 
@@ -32,7 +33,13 @@ export async function installSkillsToWorkDir(workDir: string, logger: Logger, op
     await ensureLarkCliConfig(options.feishuAppId, options.feishuAppSecret, options.botName, logger);
   }
 
-  deployWorkspaceInstructions(workDir, logger);
+  // Fill the bot-level template with REAL values: the lark-cli profile name is
+  // whatever profile list says for this appId (bot name only when profile add
+  // succeeded), never assumed.
+  const fills: Record<string, string> = {};
+  if (options?.botName) fills['<bot名>'] = options.botName;
+  if (options?.feishuAppId) fills['<profile>'] = resolveLarkProfileName(larkConfigPath, options.feishuAppId);
+  deployWorkspaceInstructions(workDir, logger, fills);
 }
 
 /**
@@ -91,20 +98,48 @@ async function ensureLarkCliConfig(appId: string, appSecret: string, botName: st
     return;
   }
 
-  const args = ['config', 'init', '--app-id', appId, '--app-secret-stdin', '--brand', 'feishu'];
-  if (botName) args.push('--name', botName);
+  // `profile add` is the command that supports --name (config init does NOT —
+  // it silently creates a profile NAMED BY THE APP ID, which is exactly the
+  // field mix-up that bit a fresh machine). Fall back to config init only if
+  // profile add is unavailable (older lark-cli).
   try {
-    await runWithStdin(larkCliBin, args, appSecret, 15_000);
-    logger.info({ appId, profile: botName }, 'lark-cli profile configured');
-  } catch (err: any) {
-    logger.warn(
-      { err: err.message, appId },
-      `Failed to configure lark-cli — run manually: lark-cli config init --app-id ${appId} --app-secret-stdin --brand feishu${botName ? ` --name ${botName}` : ''}`,
+    await runWithStdin(
+      larkCliBin,
+      ['profile', 'add', '--app-id', appId, '--app-secret-stdin', '--brand', 'feishu', '--name', botName || appId, '--use'],
+      appSecret,
+      15_000,
     );
+    logger.info({ appId, profile: botName || appId }, 'lark-cli profile configured (profile add)');
+  } catch (err: any) {
+    logger.warn({ err: err.message, appId }, 'profile add failed — falling back to config init (profile will be named by appId)');
+    try {
+      await runWithStdin(larkCliBin, ['config', 'init', '--app-id', appId, '--app-secret-stdin', '--brand', 'feishu'], appSecret, 15_000);
+      logger.info({ appId }, 'lark-cli profile configured (config init fallback)');
+    } catch (err2: any) {
+      logger.warn(
+        { err: err2.message, appId },
+        `Failed to configure lark-cli — run manually: lark-cli profile add --app-id ${appId} --app-secret-stdin --brand feishu --name ${botName || appId}`,
+      );
+    }
   }
 }
 
-function deployWorkspaceInstructions(workDir: string, logger: Logger): void {
+/**
+ * The ACTUAL lark-cli profile name for an appId (name field of profile list,
+ * falling back to the appId itself). lark-cli's profile namespace is
+ * independent from luckagent bot names — never assume they match.
+ */
+export function resolveLarkProfileName(configPath: string, appId: string): string {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as { apps?: Array<{ appId?: string; name?: string }> };
+    const hit = (parsed.apps ?? []).find((a) => a.appId === appId);
+    return hit?.name || appId;
+  } catch {
+    return appId;
+  }
+}
+
+function deployWorkspaceInstructions(workDir: string, logger: Logger, fills: Record<string, string> = {}): void {
   const thisFile = url.fileURLToPath(import.meta.url);
   const thisDir = path.dirname(thisFile);
   const existingClaudeMd = path.join(workDir, 'CLAUDE.md');
@@ -114,7 +149,7 @@ function deployWorkspaceInstructions(workDir: string, logger: Logger): void {
   ]) {
     if (!fs.existsSync(candidate)) continue;
 
-    copyInstructionFile(candidate, existingClaudeMd, 'CLAUDE.md', logger);
+    copyInstructionFile(candidate, existingClaudeMd, 'CLAUDE.md', logger, fills);
     // AGENTS.md is a SYMLINK to CLAUDE.md — one document, two names, kept for
     // compatibility with any agent tools run manually in this workdir. An
     // existing regular AGENTS.md (user-customized) is left alone.
@@ -125,7 +160,7 @@ function deployWorkspaceInstructions(workDir: string, logger: Logger): void {
         logger.info({ agentsMd }, 'AGENTS.md symlinked to CLAUDE.md');
       } catch (err: any) {
         logger.warn({ err: err?.message }, 'AGENTS.md symlink failed — falling back to copy');
-        copyInstructionFile(fs.existsSync(existingClaudeMd) ? existingClaudeMd : candidate, agentsMd, 'AGENTS.md', logger);
+        copyInstructionFile(fs.existsSync(existingClaudeMd) ? existingClaudeMd : candidate, agentsMd, 'AGENTS.md', logger, fills);
       }
     }
     break;
@@ -154,10 +189,12 @@ function deployWorkspaceInstructions(workDir: string, logger: Logger): void {
 }
 
 
-function copyInstructionFile(src: string, dest: string, fileName: string, logger: Logger): void {
+function copyInstructionFile(src: string, dest: string, fileName: string, logger: Logger, fills: Record<string, string> = {}): void {
   if (fs.existsSync(dest)) return;
   try {
-    fs.copyFileSync(src, dest);
+    let content = fs.readFileSync(src, 'utf-8');
+    for (const [ph, v] of Object.entries(fills)) content = content.split(ph).join(v);
+    fs.writeFileSync(dest, content);
     logger.info({ dest }, `${fileName} deployed to working directory`);
   } catch (err: any) {
     logger.warn({ err: err.message, src, dest }, `Failed to deploy ${fileName}`);
