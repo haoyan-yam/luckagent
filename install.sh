@@ -339,6 +339,22 @@ if [[ "$NO_SYSTEM" != "true" ]]; then
   pm2 start ecosystem.config.cjs
   pm2 save --force >/dev/null 2>&1 || true
 
+  # ---- 开机自启（真实事故：macOS 半夜自动更新重启后 bot 离线一整个上午，
+  # 因为 pm2 startup 从没被执行过——它需要 sudo，不能默默代跑，所以在这里问）----
+  _pm2_startup_configured() {
+    ls "$HOME"/Library/LaunchAgents/*pm2*.plist /Library/LaunchDaemons/*pm2*.plist >/dev/null 2>&1
+  }
+  if [[ "$YES" != "true" ]] && ! _pm2_startup_configured; then
+    if ask_yn "配置开机自启？（推荐：系统更新/断电重启后自动拉起 bot，需要输入密码）" y; then
+      if sudo env PATH="$PATH" "$(command -v pm2)" startup launchd -u "$(whoami)" --hp "$HOME"; then
+        pm2 save --force >/dev/null 2>&1 || true
+        success "开机自启已配置（launchd）"
+      else
+        warn "开机自启配置失败——稍后手动: pm2 startup（按提示执行 sudo 命令）→ pm2 save"
+      fi
+    fi
+  fi
+
   # 等 core 起来后，把首启管理员 token 接到 CLI（memory/skills/agents 子命令用）
   core_data="$HOME/.luckagent-core/data"
   for _ in $(seq 1 15); do
@@ -381,7 +397,12 @@ else
   echo "     然后 luckagent restart"
 fi
 if [[ "$NO_SYSTEM" != "true" ]]; then
-  echo "  4. 开机自启（推荐）：执行  pm2 startup  并按提示运行输出的 sudo 命令，再 pm2 save"
+  if ls "$HOME"/Library/LaunchAgents/*pm2*.plist /Library/LaunchDaemons/*pm2*.plist >/dev/null 2>&1; then
+    echo "  4. 开机自启：✅ 已配置（系统重启后自动拉起）"
+  else
+    echo "  4. ⚠️ 开机自启未配置：执行  pm2 startup  并按提示运行输出的 sudo 命令，再 pm2 save"
+    echo "     （不配的话：系统更新/断电重启后 bot 不会自动恢复——真实事故导致过整个上午离线）"
+  fi
 fi
 echo ""
 if [[ -n "$LARK_CLI_TODO" ]]; then

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  pm2StartupConfigured,
   scanSkillsDir,
   readSkillDescription,
   parseMemoryIndex,
@@ -90,5 +91,15 @@ describe('memoryDirCandidates', () => {
   it('a dotted path yields a second dot-munged candidate', () => {
     const cands = memoryDirCandidates('/srv/app.v2');
     expect(cands.some((c) => c.includes('-srv-app-v2'))).toBe(true);
+  });
+});
+
+describe('pm2StartupConfigured', () => {
+  it('true only when a pm2 plist exists in a launchd dir', () => {
+    const a = tmp('la-'); const b = tmp('ld-');
+    expect(pm2StartupConfigured([a, b])).toBe(false);
+    writeFileSync(join(a, 'pm2.metabot.plist'), 'x');
+    expect(pm2StartupConfigured([a, b])).toBe(true);
+    expect(pm2StartupConfigured(['/nonexistent'])).toBe(false);
   });
 });

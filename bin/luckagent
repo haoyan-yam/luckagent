@@ -487,6 +487,14 @@ check("voice_defaults", True, "ok",
       False,
       voice_default)
 
+import glob as _glob
+_pm2_plists = _glob.glob(str(Path.home() / "Library/LaunchAgents/*pm2*.plist")) + _glob.glob("/Library/LaunchDaemons/*pm2*.plist")
+check("pm2_startup", bool(_pm2_plists), "pm2_startup_missing" if not _pm2_plists else "ok",
+      "PM2 boot-persistence (launchd) configured." if _pm2_plists else "PM2 has NO launchd startup — bots will NOT come back after a reboot (a macOS auto-update outage happened exactly this way).",
+      "Run: pm2 startup  (execute the printed sudo command), then: pm2 save",
+      False,
+      {"plists": _pm2_plists})
+
 lark_bin = shutil.which("lark-cli")
 lark_cfg = Path.home() / ".lark-cli" / "config.json"
 lark_apps = 0

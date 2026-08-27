@@ -70,6 +70,13 @@ export default function OverviewPage({
       {data?.configError && (
         <Alert type="error" banner message={`配置文件异常：${data.configError} —— 下方机器人列表可能不完整，请勿据此判断“尚未配置”。`} />
       )}
+      {data && data.pm2StartupConfigured === false && (
+        <Alert
+          type="warning"
+          banner
+          message={'开机自启未配置——系统更新/断电重启后 bot 不会自动恢复（真实事故：曾因此离线一整个上午）。终端执行 pm2 startup 并按提示运行输出的 sudo 命令，再 pm2 save。'}
+        />
+      )}
       {failCount >= 2 && (
         <Alert type="error" banner message={`桥接连接中断（${error || '轮询失败'}）——若刚触发重启属正常，恢复后自动消失。`} />
       )}

@@ -292,6 +292,19 @@ function resolveBotWorkdir(botsConfigPath: string | undefined, botName: string):
   }
 }
 
+
+/** launchd boot-persistence for pm2 — the missing piece behind a real
+ *  "macOS auto-update rebooted at 2am, bots offline all morning" outage. */
+export function pm2StartupConfigured(roots?: string[]): boolean {
+  const dirs = roots ?? [path.join(os.homedir(), 'Library', 'LaunchAgents'), '/Library/LaunchDaemons'];
+  for (const d of dirs) {
+    try {
+      if (fs.readdirSync(d).some((f) => f.includes('pm2') && f.endsWith('.plist'))) return true;
+    } catch { /* dir absent */ }
+  }
+  return false;
+}
+
 export async function handleAdminRoutes(
   ctx: RouteContext,
   req: http.IncomingMessage,
@@ -484,6 +497,7 @@ export async function handleAdminRoutes(
     const core = await probeCore();
 
     jsonResponse(res, 200, {
+      pm2StartupConfigured: pm2StartupConfigured(),
       bridge: {
         version: pkgVersion(),
         uptime: Math.floor((Date.now() - started) / 1000),

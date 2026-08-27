@@ -14,6 +14,7 @@ export interface Overview {
   core: { up: boolean; uptime?: number; version?: string };
   bots: BotOverview[];
   configDirty: boolean;
+  pm2StartupConfigured?: boolean;
   configError?: string | null;
   schedule: {
     oneTime: number;
