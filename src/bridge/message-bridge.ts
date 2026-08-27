@@ -170,6 +170,24 @@ export interface ActivityEventData {
   timestamp: number;
 }
 
+
+/**
+ * The backend a TURN actually executes on — the single truth source for
+ * "who surfaces AskUserQuestion" decisions. PTY exists ONLY inside the
+ * persistent pool; every legacy per-turn execution is SDK semantics, and a
+ * deepseek pool is forced to SDK regardless of config. Reading raw
+ * config.claude.backend at decision sites is what stranded question cards
+ * (deepseek bots always; pty machines on legacy-path turns).
+ */
+export function effectiveTurnBackend(
+  usePersistent: boolean,
+  engineName: EngineName,
+  configBackend: 'pty' | 'sdk',
+): 'pty' | 'sdk' {
+  if (!usePersistent) return 'sdk';
+  return engineName === 'deepseek' ? 'sdk' : configBackend;
+}
+
 export class MessageBridge {
   private engine: Engine;
   private executor: Executor;
@@ -1203,7 +1221,7 @@ export class MessageBridge {
           // only reaches THIS stream AFTER the user already answered (the
           // flush), so surfacing here would be a post-answer duplicate card.
           // Skip it (the synthetic-id watcher path owns AUQ on PTY).
-          if (this.config.claude.backend !== 'pty' && !surfacedQuestionIds.has(q.toolUseId)) {
+          if (effectiveTurnBackend(true, resolveEngineName(this.config), this.config.claude.backend) !== 'pty' && !surfacedQuestionIds.has(q.toolUseId)) {
             surfacedQuestionIds.add(q.toolUseId);
             await rateLimiter.flush();
             // Main card pointer note, mirroring runOneTurn's runtime hint.
@@ -1378,6 +1396,31 @@ export class MessageBridge {
     this.sessionManager.setGoal(chatId, rest);
   }
 
+
+  /**
+   * Single source of truth for HOW a turn will execute: whether it rides the
+   * persistent pool, and which backend that implies. PTY exists only inside
+   * the persistent pool (deepseek pools are forced to SDK); every legacy
+   * per-turn execution is SDK semantics. Question-card decisions MUST consume
+   * this — reading raw config.claude.backend stranded AskUserQuestion cards
+   * (deepseek bots on every turn; pty machines on legacy-path turns).
+   */
+  private resolveTurnExecution(
+    engineName: EngineName,
+    opts: { maxTurns?: number; allowedTools?: string[] },
+  ): { usePersistent: boolean; backend: 'pty' | 'sdk' } {
+    const usePersistent =
+      this.isPersistentExecutorEnabled() &&
+      (engineName === 'claude' || engineName === 'deepseek') &&
+      engineName === resolveEngineName(this.config) &&
+      opts.maxTurns === undefined &&
+      opts.allowedTools === undefined;
+    return {
+      usePersistent,
+      backend: effectiveTurnBackend(usePersistent, resolveEngineName(this.config), this.config.claude.backend),
+    };
+  }
+
   private async runOneTurn(
     chatId: string,
     engineName: EngineName,
@@ -1403,12 +1446,7 @@ export class MessageBridge {
     // only serves the bot's config-level engine; a session override
     // (/model deepseek on a claude bot, or vice versa) falls back to the
     // per-turn engine path where deriveDeepseekConfig handles auth correctly.
-    const usePersistent =
-      this.isPersistentExecutorEnabled() &&
-      (engineName === 'claude' || engineName === 'deepseek') &&
-      engineName === resolveEngineName(this.config) &&
-      opts.maxTurns === undefined &&
-      opts.allowedTools === undefined;
+    const { usePersistent } = this.resolveTurnExecution(engineName, opts);
 
     if (usePersistent) {
       if (opts.freshSession) {
@@ -2165,6 +2203,10 @@ export class MessageBridge {
     // All turn-starting paths (initial + retry) route through runOneTurn so
     // persistent mode is enforced consistently and stale-session retries
     // properly release the bound executor before reacquiring.
+    // No maxTurns/allowedTools overrides on this path — matches the
+    // runOneTurn call below, so the backend decision is identical.
+    const turnBackend = this.resolveTurnExecution(engineName, {}).backend;
+
     const executionHandle = await this.runOneTurn(chatId, engineName, {
       prompt,
       cwd,
@@ -2247,7 +2289,7 @@ export class MessageBridge {
           // flush), so surfacing it here would be a post-answer DUPLICATE card.
           // The synthetic-id watcher path owns AUQ on PTY — just clear and skip.
           // (Mirrors the continuation-stream guard above.)
-          if (this.config.claude.backend === 'pty') {
+          if (turnBackend === 'pty') {
             processor.clearPendingQuestion();
             continue;
           }

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   MessageBridge,
+  effectiveTurnBackend,
   isStaleSessionError,
   extractSpontaneousSnippet,
   formatSpontaneousCardBody,
@@ -628,5 +629,17 @@ describe('resolvePersistentExecutorEnvDefault', () => {
     expect(resolvePersistentExecutorEnvDefault('no')).toBe(true);
     expect(resolvePersistentExecutorEnvDefault('disabled')).toBe(true);
     expect(resolvePersistentExecutorEnvDefault('truee')).toBe(true);
+  });
+});
+
+describe('effectiveTurnBackend', () => {
+  it('legacy per-turn execution is always SDK, regardless of config', () => {
+    expect(effectiveTurnBackend(false, 'claude', 'pty')).toBe('sdk');
+    expect(effectiveTurnBackend(false, 'deepseek', 'pty')).toBe('sdk');
+  });
+  it('persistent pool follows config for claude, forced sdk for deepseek', () => {
+    expect(effectiveTurnBackend(true, 'claude', 'pty')).toBe('pty');
+    expect(effectiveTurnBackend(true, 'claude', 'sdk')).toBe('sdk');
+    expect(effectiveTurnBackend(true, 'deepseek', 'pty')).toBe('sdk');
   });
 });
