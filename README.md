@@ -146,6 +146,7 @@ luckagent inbox poll            # CLI agent 收件箱
 | [技能体系](docs/claude-code-skills.md) | 随装与可选技能、技能发现机制、工作区两级指令模板 |
 | [CLI 参考](docs/cli-reference.md) | `luckagent` 全命令的用途与示例 |
 | [管理台使用手册](docs/admin-console.md) | 六个页面、机器人增删改流程、重启语义、安全说明 |
+| [更新日志](CHANGELOG.md) | 各版本变更；版本号即管理台总览页所示 |
 | [设计笔记](docs/design-notes.md) | 15 项内建行为增强（代号 A–R）的行为说明与设计取舍 |
 | [常见问题排查](docs/troubleshooting.md) | 端口占用、代理变量坑、启动失败、管理台打不开等 |
 
