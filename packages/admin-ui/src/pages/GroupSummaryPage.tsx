@@ -20,11 +20,13 @@ import { usePoll } from '../hooks/usePoll';
 import type { Overview, ScheduleTask } from '../api/types';
 
 const LABEL_PREFIX = 'group-summary:';
-const DEFAULT_CRON = '0 21 * * 1-5';
-const DEFAULT_TEMPLATE = `请生成本群今日日报（本群 chat_id: {chatId}）。步骤：
-1. 用 lark-cli（--profile {bot} --as bot）拉取本群今天 00:00 至现在的消息记录；
-2. 归纳为四节：📌 今日主题 / ✅ 达成的决定 / 📋 待办与负责人 / ❓ 遗留问题；
-3. 控制在一屏内，直接发到本群；若今日无有效讨论，只发一句「今日无讨论」；
+// 每天早 7 点总结「昨天全天」——配合下面模板的时间窗全覆盖无缺口
+// （工作日版 cron 会让周五的内容永远没人总结）。
+const DEFAULT_CRON = '0 7 * * *';
+const DEFAULT_TEMPLATE = `请生成本群昨日日报（本群 chat_id: {chatId}），标题写明昨天的日期。步骤：
+1. 用 lark-cli（--profile {bot} --as bot）拉取本群昨天 00:00 至今天 00:00（即昨天全天）的消息记录；
+2. 归纳为四节：📌 昨日主题 / ✅ 达成的决定 / 📋 待办与负责人 / ❓ 遗留问题；
+3. 控制在一屏内，直接发到本群；若昨日无有效讨论，只发一句「昨日无讨论」；
 4. 发完后，把值得长期保留、且聊天记录之外查不到的耐久要点（项目决定、deadline、相关方偏好、方案变更、关键分工）写进你的本地记忆；闲聊流水不写，没有耐久信息就不写；涉密内容只写本地、不进共享记忆库。`;
 
 interface Chat {
@@ -360,7 +362,7 @@ export default function GroupSummaryPage() {
       <Typography.Paragraph type="secondary" style={{ marginTop: 12, marginBottom: 0 }}>
         日报本质是 label 为 <Typography.Text code>group-summary:&lt;chatId&gt;</Typography.Text> 的周期任务
         （也会出现在「定时任务」页），调度改动即时生效、无需重启；日报内容由 bot 在对应群会话里
-        用 lark-cli 拉取当天消息后生成并直接发群。忽略名单存于{' '}
+        用 lark-cli 拉取对应时段消息后生成并直接发群。忽略名单存于{' '}
         <Typography.Text code>~/.luckagent/group-summary.json</Typography.Text>。
       </Typography.Paragraph>
 
@@ -379,7 +381,7 @@ export default function GroupSummaryPage() {
             name="cronExpr"
             label="发送时间（cron 表达式）"
             rules={[{ required: true, message: '必填' }]}
-            extra="默认工作日 21:00；时区取 .env 的 SCHEDULE_TIMEZONE"
+            extra="默认每天 07:00（总结昨天全天）；时区取 .env 的 SCHEDULE_TIMEZONE"
           >
             <Input placeholder={DEFAULT_CRON} />
           </Form.Item>
