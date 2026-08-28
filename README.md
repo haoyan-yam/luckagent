@@ -4,6 +4,21 @@
 
 > 本项目基于 [MetaBot](https://xvirobotics.com/metabot/) 构建（见文末[致谢与来源](#致谢与来源)）。
 
+## 界面一览
+
+<table>
+  <tr>
+    <td width="34%" align="center"><b>飞书端</b>——群里 @bot 一句话派活</td>
+    <td width="66%" align="center"><b>Web 管理台</b>——<code>localhost:9100/admin</code></td>
+  </tr>
+  <tr>
+    <td valign="top"><img src="docs/images/feishu-chat.jpg" alt="飞书端：@bot 生图，Complete 卡片带上下文/费用/模型页脚，产物直接回群"></td>
+    <td valign="top"><img src="docs/images/admin-console.jpg" alt="管理台系统总览：进程状态、今日任务与成本、机器人列表、定时任务"></td>
+  </tr>
+</table>
+
+左：@机器人说「做一张喵咪图」，bot 跑完贴出 Complete 卡片（页脚是真实的上下文用量 / 费用 / 服役模型），生成的图片直接发进群。右：管理台系统总览——桥接与 core 进程状态、今日任务数与成本、每个 bot 的引擎与执行器状态、定时任务（图中是一条群日报）。
+
 ## 项目目标
 
 - **把 agent 从终端搬进团队日常沟通的地方。** Claude Code 这类 agent 很强，但入口是本机终端、一人一会话。Luckagent 让它以飞书机器人的身份 7×24 常驻：团队任何人在群里 @它 就能派活，产物（文档、图片、表格、代码）直接回到群里。
