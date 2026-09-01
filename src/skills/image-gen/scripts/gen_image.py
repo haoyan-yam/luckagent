@@ -15,6 +15,7 @@ import base64
 import json
 import mimetypes
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -46,6 +47,60 @@ def estimate_cost(model: str, usage: dict) -> float:
         + image_in * p["image_in"] / 1_000_000
         + image_out * p["image_out"] / 1_000_000
     )
+
+
+# ====== 参数本地校验（发请求前拦截非法组合，省掉一次 400 往返）======
+GPT_IMAGE_2_MAX_EDGE = 3840
+GPT_IMAGE_2_SIZE_MULTIPLE = 16
+GPT_IMAGE_2_MAX_RATIO = 3
+GPT_IMAGE_2_MIN_PIXELS = 655_360
+GPT_IMAGE_2_MAX_PIXELS = 8_294_400
+LEGACY_SIZES = {"1024x1024", "1536x1024", "1024x1536", "auto"}
+
+
+def _die(msg: str):
+    sys.exit(f"ERROR: {msg}")
+
+
+def validate_args(args):
+    """本地校验参数组合，非法直接退出并给出正确写法（不发网络请求）。"""
+    # --- 尺寸 ---
+    if args.size != "auto":
+        m = re.fullmatch(r"([1-9][0-9]*)x([1-9][0-9]*)", args.size)
+        if not m:
+            _die(f"--size 必须是 auto 或 WIDTHxHEIGHT（如 1024x1024），当前：{args.size}")
+        w, h = int(m.group(1)), int(m.group(2))
+        if args.model == "gpt-image-2":
+            long_edge, short_edge = max(w, h), min(w, h)
+            if long_edge > GPT_IMAGE_2_MAX_EDGE:
+                _die(f"gpt-image-2 最长边不能超过 {GPT_IMAGE_2_MAX_EDGE}px，当前 {args.size}"
+                     f"（没有 4096x4096；4K 用 3840x2160 横 / 2160x3840 竖）")
+            if w % GPT_IMAGE_2_SIZE_MULTIPLE or h % GPT_IMAGE_2_SIZE_MULTIPLE:
+                _die(f"gpt-image-2 宽高必须都是 16 的倍数，当前 {args.size}")
+            if long_edge / short_edge > GPT_IMAGE_2_MAX_RATIO:
+                _die(f"gpt-image-2 长短边比不能超过 3:1，当前 {args.size}")
+            if not (GPT_IMAGE_2_MIN_PIXELS <= w * h <= GPT_IMAGE_2_MAX_PIXELS):
+                _die(f"gpt-image-2 总像素须在 {GPT_IMAGE_2_MIN_PIXELS:,}–{GPT_IMAGE_2_MAX_PIXELS:,} 之间，"
+                     f"当前 {args.size} = {w * h:,}")
+        elif args.size not in LEGACY_SIZES:
+            _die(f"{args.model} 仅支持 1024x1024 / 1536x1024 / 1024x1536 / auto，当前 {args.size}")
+
+    # --- 张数 ---
+    if not 1 <= args.n <= 10:
+        _die(f"--n 必须在 1–10 之间，当前 {args.n}")
+
+    # --- 透明背景 ---
+    if args.background == "transparent":
+        if args.model == "gpt-image-2":
+            _die("gpt-image-2 不支持 --background transparent（必 400）。"
+                 "原生透明改用 --model gpt-image-1.5 --background transparent --output-format png；"
+                 "要保留 gpt-image-2 画质则在纯色键背景上生成后跑 remove_chroma_key.py")
+        if (args.output_format or "png") == "jpeg":
+            _die("--background transparent 需要 --output-format png 或 webp（jpeg 没有 alpha 通道）")
+
+    # --- mask 仅 edit 模式有效 ---
+    if args.mask and not args.image:
+        _die("--mask 仅在 edit 模式生效，需要同时传 --image <参考图>")
 
 
 def post_json(url: str, payload: dict, api_key: str, timeout: int) -> dict:
@@ -153,7 +208,9 @@ def main():
     ap.add_argument("--model", default=MODEL_DEFAULT,
                     choices=["gpt-image-2", "gpt-image-1.5", "gpt-image-1"])
     ap.add_argument("--size", default="1024x1024",
-                    help="1024x1024 / 1024x1536 / 1536x1024 / 2048x2048 / 4096x4096 / auto")
+                    help="1024x1024 / 1024x1536 / 1536x1024 / 2048x2048 / 2048x1152 / "
+                         "3840x2160 / 2160x3840 / auto；gpt-image-2 支持任意尺寸："
+                         "最长边≤3840、宽高均为16倍数、长短边比≤3:1、总像素 655,360–8,294,400")
     ap.add_argument("--quality", default="high",
                     choices=["low", "medium", "high", "auto"])
     ap.add_argument("--n", type=int, default=1)
@@ -163,6 +220,7 @@ def main():
                     choices=["png", "jpeg", "webp"])
     ap.add_argument("--timeout", type=int, default=300)
     args = ap.parse_args()
+    validate_args(args)
 
     api_key = (os.environ.get("OPENAI_IMAGE_API_KEY") or os.environ.get("OPENAI_API_KEY")) or API_KEY_DEFAULT
     if not api_key or api_key.startswith("sk-REPLACE"):

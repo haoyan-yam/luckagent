@@ -140,6 +140,77 @@ prompt 本身要尽量具体：主体 + 构图 + 光线 + 风格 + 氛围。中�
 
 ---
 
+## 出图前先填表（use case + prompt schema）
+
+> 澄清流程定的是**执行参数**（尺寸/质量/透明），这一节定的是**画面参数**。每次出图都过一遍，别跳。
+
+### 第一步：认领 use case
+
+先给这次任务定一个 slug，它决定默认动作，也是去 `references/sample-prompts.md` 抄配方的索引键。
+
+**生成类（11）**
+
+| slug | 用在哪 / 默认动作 |
+|---|---|
+| `photorealistic-natural` | 生活方式实拍感；要写具体材质瑕疵（毛孔、织物磨损、颗粒）才像真的 |
+| `product-mockup` | 产品/包装/目录图；干净布光，默认无多余文字与水印 |
+| `ui-mockup` | App/网页界面稿、线框图；**必须指明保真度**（低保真线框 or 高保真） |
+| `infographic-diagram` | 信息图/图解；结构化版式 + 密集文字，质量档别用 low |
+| `scientific-educational` | 教学/科学示意；标注必须准确，先列出必需标签 |
+| `ads-marketing` | 广告 campaign 创意；写清受众、品牌调性、逐字 slogan |
+| `productivity-visual` | 幻灯片、图表、流程、商业数据视觉 |
+| `logo-brand` | logo/标记探索；单色、矢量友好、留白充足 |
+| `illustration-story` | 漫画、绘本、叙事场景 |
+| `stylized-concept` | 风格化概念图、3D/渲染风；网站与游戏素材多归这类 |
+| `historical-scene` | 年代与世界知识准确的场景 |
+
+**编辑类（8）**
+
+| slug | 用在哪 / 默认动作 |
+|---|---|
+| `text-localization` | 换图内文字；只改字，保版式、字体、字号层级 |
+| `identity-preserve` | 试穿、人入场景；锁脸、体型、姿势、发型、表情 |
+| `precise-object-edit` | 增删换某个具体元素；其余像素不动 |
+| `lighting-weather` | 只改时间/季节/天气/氛围，别的不许动 |
+| `background-extraction` | 抠图/透明背景 → 转本文[透明背景](#透明背景出-icon--logo--贴纸时用)两条路径 |
+| `style-transfer` | 套参考图风格，主体/场景可变 |
+| `compositing` | 多图合成插入；对齐光照与透视 |
+| `sketch-to-render` | 线稿/草图 → 写实渲染 |
+
+### 第二步：按 schema 填 prompt
+
+用得上的行才写，空行删掉；需要时可临时加一行自定义标签。
+
+```text
+Use case: <上表 slug>
+Asset type: <这张图最终用在哪>
+Primary request: <用户的核心诉求>
+Input images: <Image 1: 角色; Image 2: 角色>
+Scene/backdrop: <环境>
+Subject: <主体>
+Style/medium: <摄影 / 插画 / 3D / …>
+Composition/framing: <景别、视角、元素位置>
+Lighting/mood: <光线 + 氛围>
+Color palette: <配色>
+Materials/textures: <材质与表面细节>
+Text (verbatim): "<画面里要出现的字，逐字写>"
+Constraints: <必须保持 / 必须避免>
+Avoid: <负面约束>
+```
+
+### 使用规则
+
+- **不加戏**：用户 prompt 已经具体 → 只做归一化整理；很泛 → 才补构图/用途/光线。任何情况下都不要凭空加人、加物、加品牌词、加 slogan。
+- **编辑类每轮重写 invariants**：`change only X; keep Y unchanged` 每次迭代都要重复写，否则多轮必漂移。
+- **迭代只动一行**：改哪里就改哪一行，其余逐字复用——这样重摇不会把已经画对的细节重新掷骰子（同[品牌物料出图法](#品牌物料出图法美观优先)第 5 条）。
+- **母版派生靠它**：系列/多屏共用母版时，各屏之间只允许 `Composition/framing` 这类少数行不同，其余保持逐字一致。
+- **别混淆**：`Scene/backdrop` 是画面里的环境；`--background` 是控透明的 CLI 参数，两回事。`Asset type` / `Input images` 只是 prompt 脚手架，没有对应的命令行参数。
+- **抄现成的**：18 类的完整配方（外加网站素材 / 游戏素材 / 线框图 / logo 四套模板）在 `references/sample-prompts.md`，认准 slug 抄那一节。
+
+---
+
+---
+
 ## 深入参考（按需加载，来自 OpenAI Codex 官方 imagegen skill）
 
 复杂 / 高要求的出图任务，先读对应参考再动手：

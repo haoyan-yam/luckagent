@@ -2,6 +2,10 @@
 
 版本号 = 根 `package.json`（管理台总览页显示的就是它）。升级：`luckagent update`（git 安装）或重跑一行安装命令（tarball 安装）。git tag 与本文件同步打点。
 
+## v0.7.3 — 2026-08-28
+
+- 内置 image-gen 技能同步上游改进：`gen_image.py` 新增**本地参数校验**（尺寸规则/张数/透明背景组合/mask 依赖，非法组合发请求前直接拦截并给出正确写法，省一次 400 往返）；SKILL.md 新增**「出图前先填表」**一节（19 个 use-case slug + prompt schema + 使用规则，配 `references/sample-prompts.md` 按 slug 抄配方）。`luckagent update` 会把更新同步进 `~/.claude/skills`
+
 ## v0.7.2 — 2026-08-28
 
 - 群日报默认口径改为**每天早 7 点总结「昨天全天」**（此前默认工作日 21:00 总结当天；若把旧模板的任务挪到早晨跑，会总结今天 0–7 点的空窗）。已开启的群保留各自既有模板——「关闭」再「开启」一次即套用新默认
