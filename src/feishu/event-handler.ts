@@ -186,29 +186,41 @@ export function createReceiveHandler(
           return;
         }
 
-        // In group chats, only respond when the bot is @mentioned
-        // Exceptions: 2-member groups are treated like DMs; groupNoMention mode skips @mention check
+        // @mention gating.
+        //   Group chats always require an @mention (unless groupNoMention);
+        //   2-member groups are treated like DMs and skip the check.
+        // [design-note S] privateRequireMention: private (p2p) chats require an
+        //   @mention too (Feishu DMs do offer the bot in the @ picker), and the
+        //   2-member-group exemption is dropped — such groups follow normal group
+        //   rules. Unmentioned messages are silently ignored; images/files are
+        //   cached and attached to the next @mention (same as groups).
+        //   groupNoMention only ever governs group chats; the two switches are
+        //   independent. Who may DM at all is design-note A's business.
         const mentions = message.mentions;
-        if (chatType === 'group') {
+        const requireMention = chatType === 'group' || config.privateRequireMention === true;
+        if (requireMention) {
           const botMentioned = botOpenId
             ? mentions?.some((m: any) => m.id?.open_id === botOpenId)
             : mentions && mentions.length > 0;
           if (!botMentioned) {
-            // groupNoMention mode: respond to all messages without @mention
-            if (config.groupNoMention) {
+            if (chatType === 'group' && config.groupNoMention) {
+              // groupNoMention mode: respond to all group messages without @mention
               logger.debug({ chatId }, 'Group no-mention mode enabled, processing without @mention');
-            } else if (messageSender && await isPrivateLikeGroup(chatId, messageSender)) {
+            } else if (
+              chatType === 'group' && !config.privateRequireMention
+              && messageSender && await isPrivateLikeGroup(chatId, messageSender)
+            ) {
               logger.debug({ chatId }, 'Private-like group (2 members), processing without @mention');
             } else if (msgType === 'image' || msgType === 'file') {
               // Cache media messages for later retrieval when user @mentions bot
               const media = parseMediaMessage(message, msgType, logger);
               if (media) {
                 cachePendingMedia(chatId, userId, { ...media, messageId, ts: Date.now() });
-                logger.info({ chatId, userId, msgType, ...media }, 'Cached group media for later @mention');
+                logger.info({ chatId, chatType, userId, msgType, ...media }, 'Cached media for later @mention');
               }
               return;
             } else {
-              logger.debug('Ignoring group message without @mention');
+              logger.debug({ chatId, chatType }, 'Ignoring message without @mention');
               return;
             }
           }
@@ -308,7 +320,10 @@ export function createReceiveHandler(
           }));
           logger.info({ chatId, postExtraImageCount: postExtraImages.length }, 'Attached extra images from post');
         }
-        if (chatType === 'group') {
+        // Re-attach media cached while un-mentioned. Groups always; p2p only
+        // ever has cached media under privateRequireMention ([design-note S]),
+        // so checking every chat type is safe and keeps one code path.
+        {
           const cached = getCachedMedia(chatId, userId, logger); // [design-note N] 过期丢弃要打 WARN
           if (cached.length > 0) {
             const cachedMedia = cached.map(m => ({

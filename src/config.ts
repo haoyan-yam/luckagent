@@ -158,6 +158,12 @@ export interface BotConfig extends BotConfigBase {
   };
   /** When true, respond to all messages in group chats without requiring @mention. */
   groupNoMention?: boolean;
+  /**
+   * [design-note S] When true, private (p2p) chats also require an @mention,
+   * and 2-member groups lose their "private-like" exemption (they follow the
+   * normal group rules). Unset = upstream behaviour: DMs answer directly.
+   */
+  privateRequireMention?: boolean;
   /** When true, ignore private (1-on-1) chats entirely; bot only works in group chats. */
   groupOnly?: boolean;
   /** open_ids allowed to private-chat even when groupOnly is on (e.g. the admin). */
@@ -255,6 +261,12 @@ export interface FeishuBotJsonEntry extends EngineJsonFields {
   downloadsDir?: string;
   /** When true, respond to all messages in group chats without requiring @mention. */
   groupNoMention?: boolean;
+  /**
+   * [design-note S] When true, private (p2p) chats also require an @mention,
+   * and 2-member groups lose their "private-like" exemption (they follow the
+   * normal group rules). Unset = upstream behaviour: DMs answer directly.
+   */
+  privateRequireMention?: boolean;
   /** When true, ignore private (1-on-1) chats entirely; bot only works in group chats. */
   groupOnly?: boolean;
   /** open_ids allowed to private-chat even when groupOnly is on (e.g. the admin). */
@@ -274,6 +286,7 @@ function feishuBotFromJson(entry: FeishuBotJsonEntry): BotConfig {
     ...(entry.visible !== undefined ? { visible: entry.visible } : {}),
     ...(entry.memoryPublic !== undefined ? { memoryPublic: entry.memoryPublic } : {}),
     ...(entry.groupNoMention ? { groupNoMention: true } : {}),
+    ...(entry.privateRequireMention ? { privateRequireMention: true } : {}),
     ...(entry.groupOnly ? { groupOnly: true } : {}),
     ...(entry.groupOnlyAllowUsers?.length ? { groupOnlyAllowUsers: entry.groupOnlyAllowUsers } : {}),
     ...(entry.engine ? { engine: entry.engine } : {}),

@@ -29,7 +29,8 @@
       "feishuAppSecret": "secret2",
       "defaultWorkingDirectory": "/home/user/project-beta",
       "maxTurns": 30,
-      "maxBudgetUsd": 0.5
+      "maxBudgetUsd": 0.5,
+      "privateRequireMention": true
     },
     {
       "name": "project-epsilon",

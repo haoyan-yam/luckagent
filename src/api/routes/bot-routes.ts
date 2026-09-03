@@ -173,6 +173,7 @@ export async function handleBotRoutes(
       ...(body.groupOnly !== undefined ? { groupOnly: body.groupOnly } : {}),
       ...(body.groupOnlyAllowUsers ? { groupOnlyAllowUsers: body.groupOnlyAllowUsers } : {}),
       ...(body.groupNoMention !== undefined ? { groupNoMention: body.groupNoMention } : {}),
+      ...(body.privateRequireMention !== undefined ? { privateRequireMention: body.privateRequireMention } : {}),
       ...(body.budgetLimitDaily ? { budgetLimitDaily: body.budgetLimitDaily } : {}),
       ...(body.maxConcurrentTasks ? { maxConcurrentTasks: body.maxConcurrentTasks } : {}),
       ...(body.ttsVoice ? { ttsVoice: body.ttsVoice } : {}),

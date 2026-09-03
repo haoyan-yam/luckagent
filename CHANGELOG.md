@@ -2,6 +2,10 @@
 
 版本号 = 根 `package.json`（管理台总览页显示的就是它）。升级：`luckagent update`（git 安装）或重跑一行安装命令（tarball 安装）。git tag 与本文件同步打点。
 
+## v0.7.4 — 2026-09-03
+
+- 新增按 bot 开关 `privateRequireMention`（管理台「群聊限制」折叠区「私聊也需要 @ 才响应（两人群同）」）：开启后私聊也要 @ 机器人才响应，判定与群聊完全一致——未 @ 静默忽略，图片/文件暂存等下次 @ 时自动带上；同时取消「两人群视同私聊免 @」的豁免，两人群按普通群规则处理。`groupNoMention` 仍只管群聊，两开关互不干涉。默认关，不配即原行为（私聊直答）。断连补扫回灌的消息走同一门控。设计笔记代号 S
+
 ## v0.7.3 — 2026-08-28
 
 - 内置 image-gen 技能同步上游改进：`gen_image.py` 新增**本地参数校验**（尺寸规则/张数/透明背景组合/mask 依赖，非法组合发请求前直接拦截并给出正确写法，省一次 400 往返）；SKILL.md 新增**「出图前先填表」**一节（19 个 use-case slug + prompt schema + 使用规则，配 `references/sample-prompts.md` 按 slug 抄配方）。`luckagent update` 会把更新同步进 `~/.claude/skills`

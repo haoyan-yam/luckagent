@@ -325,6 +325,14 @@ export default function BotFormDrawer({
                   <Form.Item name="groupNoMention" label="群里无需 @ 也响应" valuePropName="checked">
                     <Switch />
                   </Form.Item>
+                  <Form.Item
+                    name="privateRequireMention"
+                    label="私聊也需要 @ 才响应（两人群同）"
+                    tooltip="开启后私聊里不 @ 机器人的消息静默忽略（图片/文件会暂存，下次 @ 时自动带上）；两人群不再视同私聊，按普通群规则处理"
+                    valuePropName="checked"
+                  >
+                    <Switch />
+                  </Form.Item>
                 </>
               ),
             },

@@ -42,6 +42,7 @@ export interface BotEntry {
   groupOnly?: boolean;
   groupOnlyAllowUsers?: string[];
   groupNoMention?: boolean;
+  privateRequireMention?: boolean;
   ttsVoice?: string;
   deepseek?: { apiKey?: string; model?: string; baseUrl?: string };
   minimax?: { apiKey?: string; model?: string; baseUrl?: string };
