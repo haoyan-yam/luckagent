@@ -304,3 +304,119 @@ describe('[design-note S] privateRequireMention config plumbing', () => {
     expect(entry().groupNoMention).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// [design-note S] Un-@ private TEXT is cached and prepended on the next @mention
+// (the "send links/brief first, @ last" workflow the switch exists for), and
+// rich-text links keep their URL.
+// ---------------------------------------------------------------------------
+import { extractTextFromPost } from '../src/feishu/event-handler.js';
+
+function postEvent(o: EvOpts & { paragraphs: unknown[][] }) {
+  return {
+    message: {
+      message_id: fresh('om'), chat_id: o.chatId, chat_type: o.chatType, message_type: 'post',
+      content: JSON.stringify({ zh_cn: { title: '', content: o.paragraphs } }),
+      mentions: o.mention ? [{ key: '@_user_1', id: { open_id: BOT }, name: 'bot' }] : [],
+    },
+    sender: { sender_id: { open_id: o.userId ?? 'ou_u1' }, sender_type: 'user' },
+  };
+}
+
+describe('[design-note S] un-@ private text is cached and prepended on the next @', () => {
+  it('link + brief first, "@bot go" last → prompt carries all three in order', async () => {
+    const h = makeHandler({ privateRequireMention: true });
+    const chatId = fresh('oc');
+    await h.handle(textEvent({ chatId, chatType: 'p2p', text: 'https://x.feishu.cn/docx/AAA' }));
+    await h.handle(textEvent({ chatId, chatType: 'p2p', text: '根据会议纪要出一份工作安排' }));
+    expect(h.received).toHaveLength(0);
+    await h.handle(textEvent({ chatId, chatType: 'p2p', text: '处理以上需求', mention: true }));
+    expect(h.received).toHaveLength(1);
+    expect(h.received[0].text).toBe('https://x.feishu.cn/docx/AAA\n\n根据会议纪要出一份工作安排\n\n处理以上需求');
+  });
+
+  it('text and media interleave: texts joined in order, media become extraMedia; consumed once', async () => {
+    const h = makeHandler({ privateRequireMention: true });
+    const chatId = fresh('oc');
+    await h.handle(textEvent({ chatId, chatType: 'p2p', text: 'A' }));
+    await h.handle(imageEvent({ chatId, chatType: 'p2p', imageKey: 'img_1' }));
+    await h.handle(textEvent({ chatId, chatType: 'p2p', text: 'B' }));
+    await h.handle(textEvent({ chatId, chatType: 'p2p', text: 'go', mention: true }));
+    expect(h.received[0].text).toBe('A\n\nB\n\ngo');
+    expect(h.received[0].extraMedia?.map((m) => m.imageKey)).toEqual(['img_1']);
+    await h.handle(textEvent({ chatId, chatType: 'p2p', text: 'again', mention: true }));
+    expect(h.received[1].text).toBe('again');
+    expect(h.received[1].extraMedia).toBeUndefined();
+  });
+
+  it('an un-@ quote-reply passes its parentId to the trigger; the trigger\'s own wins', async () => {
+    const h = makeHandler({ privateRequireMention: true });
+    const chatId = fresh('oc');
+    const ev = textEvent({ chatId, chatType: 'p2p', text: '看这个' });
+    (ev.message as any).parent_id = 'om_quoted';
+    await h.handle(ev);
+    await h.handle(textEvent({ chatId, chatType: 'p2p', text: '处理', mention: true }));
+    expect(h.received[0].parentId).toBe('om_quoted');
+    expect(h.received[0].text).toBe('看这个\n\n处理');
+
+    const ev2 = textEvent({ chatId, chatType: 'p2p', text: '看这个' });
+    (ev2.message as any).parent_id = 'om_old';
+    await h.handle(ev2);
+    const trig = textEvent({ chatId, chatType: 'p2p', text: '处理', mention: true });
+    (trig.message as any).parent_id = 'om_new';
+    await h.handle(trig);
+    expect(h.received[1].parentId).toBe('om_new');
+  });
+
+  it('un-@ post in p2p: text cached, its images cached as media', async () => {
+    const h = makeHandler({ privateRequireMention: true });
+    const chatId = fresh('oc');
+    await h.handle(postEvent({ chatId, chatType: 'p2p', paragraphs: [
+      [{ tag: 'text', text: '参考图' }], [{ tag: 'img', image_key: 'img_p1' }], [{ tag: 'img', image_key: 'img_p2' }],
+    ] }));
+    expect(h.received).toHaveLength(0);
+    await h.handle(textEvent({ chatId, chatType: 'p2p', text: '出图', mention: true }));
+    expect(h.received[0].text).toBe('参考图\n\n出图');
+    expect(h.received[0].extraMedia?.map((m) => m.imageKey)).toEqual(['img_p1', 'img_p2']);
+  });
+
+  it('switch off: nothing is ever cached in p2p (messages are answered directly)', async () => {
+    const h = makeHandler();
+    const chatId = fresh('oc');
+    await h.handle(textEvent({ chatId, chatType: 'p2p', text: 'A' }));
+    await h.handle(textEvent({ chatId, chatType: 'p2p', text: 'B' }));
+    expect(h.received.map((m) => m.text)).toEqual(['A', 'B']);
+  });
+
+  it('group text is never cached (switch on or off); group media still is', async () => {
+    const h = makeHandler({ privateRequireMention: true }, 5);
+    const chatId = fresh('oc');
+    await h.handle(textEvent({ chatId, chatType: 'group', text: '闲聊' }));
+    await h.handle(imageEvent({ chatId, chatType: 'group', imageKey: 'img_g' }));
+    await h.handle(textEvent({ chatId, chatType: 'group', text: '看图', mention: true }));
+    expect(h.received[0].text).toBe('看图');
+    expect(h.received[0].extraMedia?.[0].imageKey).toBe('img_g');
+  });
+});
+
+describe('[design-note S] rich-text links keep their URL', () => {
+  const post = (paragraphs: unknown[][]) => ({ zh_cn: { title: '', content: paragraphs } });
+
+  it('label + href → "label (href)"; URL-as-label not duplicated; no href → label', () => {
+    expect(extractTextFromPost(post([[
+      { tag: 'text', text: '见 ' }, { tag: 'a', text: '会议纪要', href: 'https://x.feishu.cn/docx/AAA' },
+    ]]))).toBe('见 会议纪要 (https://x.feishu.cn/docx/AAA)');
+    expect(extractTextFromPost(post([[
+      { tag: 'a', text: 'https://x.feishu.cn/docx/AAA', href: 'https://x.feishu.cn/docx/AAA' },
+    ]]))).toBe('https://x.feishu.cn/docx/AAA');
+    expect(extractTextFromPost(post([[{ tag: 'a', text: 'no-href' }]]))).toBe('no-href');
+  });
+
+  it('the URL survives the whole pipeline into the prompt', async () => {
+    const h = makeHandler();
+    await h.handle(postEvent({ chatId: fresh('oc'), chatType: 'p2p', mention: true, paragraphs: [[
+      { tag: 'a', text: '会议纪要', href: 'https://x.feishu.cn/docx/AAA' },
+    ]] }));
+    expect(h.received[0].text).toContain('https://x.feishu.cn/docx/AAA');
+  });
+});

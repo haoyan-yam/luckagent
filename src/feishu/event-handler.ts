@@ -32,11 +32,18 @@ const memberCountCache = new Map<string, { count: number; ts: number }>();
 // WARN（含文件名），事后可从日志还原「用户发过什么、为什么没带上」。
 // 导出 cachePendingMedia/getCachedMedia/MEDIA_CACHE_TTL_MS 仅为单测；生产只有本文件用。
 export const MEDIA_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+// [design-note S] Cache entries also hold un-@ private TEXT (with the parentId of a
+// quote-reply) alongside media, in arrival order. On the next @mention texts are
+// prepended to the prompt in order and media are attached.
 interface CachedMedia {
   messageId: string;
   imageKey?: string;
   fileKey?: string;
   fileName?: string;
+  /** Body of an un-@ text/post message (mention tags already stripped). */
+  text?: string;
+  /** If that un-@ message was itself a quote-reply: the quoted message id. */
+  parentId?: string;
   ts: number;
 }
 const pendingMediaCache = new Map<string, CachedMedia[]>(); // key: chatId:userId
@@ -66,7 +73,7 @@ export function getCachedMedia(chatId: string, userId: string, logger?: Logger):
       {
         chatId,
         userId,
-        dropped: expired.map(m => m.fileName || m.imageKey || m.fileKey || m.messageId),
+        dropped: expired.map(m => m.fileName || m.imageKey || m.fileKey || (m.text ? m.text.slice(0, 60) : m.messageId)),
         oldestAgeMs: Math.max(...expired.map(m => now - m.ts)),
         ttlMs: MEDIA_CACHE_TTL_MS,
       },
@@ -158,7 +165,7 @@ export function createReceiveHandler(
         const messageId = message.message_id;
         // [design-note P] 引用回复带 parent_id（被引消息 id）；桥接据此把被引内容注入回合上下文。
         // root_id 仅入日志，供「话题内普通消息是否误带 parent_id」这类语义边界的事后诊断。
-        const parentId = message.parent_id;
+        let parentId: string | undefined = message.parent_id;
         if (parentId) {
           logger.info({ chatId, userId, messageId, parentId, rootId: message.root_id }, 'Message is a quote-reply');
         }
@@ -219,6 +226,25 @@ export function createReceiveHandler(
                 logger.info({ chatId, chatType, userId, msgType, ...media }, 'Cached media for later @mention');
               }
               return;
+            } else if (chatType === 'p2p') {
+              // [design-note S] Un-@ private TEXT is cached too. The whole point of the
+              // switch is "send the links/files/brief first, @ last" — dropping the
+              // brief would hand the bot nothing but the final "go". Group text is
+              // never cached: un-@ chatter in a group is not addressed to the bot.
+              const parsed = extractPromptText(message, msgType, logger);
+              if (parsed) {
+                if (parsed.text) {
+                  cachePendingMedia(chatId, userId, { messageId, text: parsed.text, parentId, ts: Date.now() });
+                }
+                for (const key of parsed.postImages) {
+                  cachePendingMedia(chatId, userId, { messageId, imageKey: key, ts: Date.now() });
+                }
+                logger.info(
+                  { chatId, userId, msgType, text: parsed.text.slice(0, 100), postImageCount: parsed.postImages.length, parentId },
+                  'Cached private text for later @mention',
+                );
+              }
+              return;
             } else {
               logger.debug({ chatId, chatType }, 'Ignoring message without @mention');
               return;
@@ -263,41 +289,18 @@ export function createReceiveHandler(
           }
           text = '请分析这个文件';
           logger.info({ userId, chatId, chatType, fileKey, fileName }, 'Received file message');
-        } else if (msgType === 'post') {
-          // Rich text (post) message: extract plain text and images from nested structure
-          try {
-            const content = JSON.parse(message.content);
-            logger.debug({ postContent: JSON.stringify(content).slice(0, 500) }, 'Raw post content');
-            text = extractTextFromPost(content);
-            const postImages = extractImagesFromPost(content);
-            if (postImages.length > 0) {
-              imageKey = postImages[0];
-              postExtraImages = postImages.slice(1);
-            }
-            logger.debug({ extractedText: text.slice(0, 200), imageKey, postImageCount: postImages.length }, 'Extracted post content');
-          } catch {
-            logger.warn({ content: message.content }, 'Failed to parse post message content');
-            return;
-          }
         } else {
-          // Text message: extract and clean text
-          try {
-            const content = JSON.parse(message.content);
-            text = content.text || '';
-          } catch {
-            logger.warn({ content: message.content }, 'Failed to parse message content');
-            return;
+          // Text / rich text (post): extract, clean, split post images
+          const parsed = extractPromptText(message, msgType, logger);
+          if (!parsed) return;
+          text = parsed.text;
+          if (parsed.postImages.length > 0) {
+            imageKey = parsed.postImages[0];
+            postExtraImages = parsed.postImages.slice(1);
           }
         }
 
-        // Common text cleanup for text and post messages
         if (msgType === 'text' || msgType === 'post') {
-          // Strip @mention tags (format: @_user_xxx or similar)
-          text = text.replace(/@_\w+\s*/g, '').trim();
-
-          // Strip Feishu auto-generated markdown links: [text](url) → text
-          text = text.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
-
           if (!text && !imageKey) {
             logger.debug('Empty message after stripping mentions');
             return;
@@ -320,22 +323,37 @@ export function createReceiveHandler(
           }));
           logger.info({ chatId, postExtraImageCount: postExtraImages.length }, 'Attached extra images from post');
         }
-        // Re-attach media cached while un-mentioned. Groups always; p2p only
-        // ever has cached media under privateRequireMention ([design-note S]),
-        // so checking every chat type is safe and keeps one code path.
-        {
-          const cached = getCachedMedia(chatId, userId, logger); // [design-note N] 过期丢弃要打 WARN
-          if (cached.length > 0) {
-            const cachedMedia = cached.map(m => ({
+        // Re-attach what was cached while un-mentioned (one code path for every
+        // chat type; p2p only ever has cache entries under privateRequireMention,
+        // [design-note S]): media → attachments; texts → prepended to this body in
+        // arrival order, the trigger message always last. If this message is not a
+        // quote-reply but a cached one was, reuse the earliest cached parentId so
+        // design-note P's quoted-content injection still fires (single parent only).
+        const cached = getCachedMedia(chatId, userId, logger); // [design-note N] 过期丢弃要打 WARN
+        if (cached.length > 0) {
+          const cachedMedia = cached
+            .filter(m => m.imageKey || m.fileKey)
+            .map(m => ({
               messageId: m.messageId,
               imageKey: m.imageKey,
               fileKey: m.fileKey,
               fileName: m.fileName,
             }));
+          if (cachedMedia.length > 0) {
             extraMedia = extraMedia ? [...extraMedia, ...cachedMedia] : cachedMedia;
-            clearCachedMedia(chatId, userId);
-            logger.info({ chatId, userId, mediaCount: cached.length }, 'Attached cached media to @mention message');
           }
+          const cachedTexts = cached.filter(m => m.text);
+          if (cachedTexts.length > 0) {
+            text = [...cachedTexts.map(m => m.text as string), text].join('\n\n');
+            if (!parentId) {
+              parentId = cachedTexts.find(m => m.parentId)?.parentId;
+            }
+          }
+          clearCachedMedia(chatId, userId);
+          logger.info(
+            { chatId, userId, mediaCount: cachedMedia.length, textCount: cachedTexts.length, parentId },
+            'Attached cached content to @mention message',
+          );
         }
 
         onMessage({ messageId, chatId, chatType, userId, parentId, text, imageKey, fileKey, fileName, extraMedia });
@@ -396,6 +414,36 @@ export function createEventDispatcher(
   });
 
   return dispatcher;
+}
+
+/**
+ * [design-note S] Text / rich-text body extraction + common cleanup, shared by the
+ * main path and the "cache before @" branch. undefined = content failed to parse.
+ */
+function extractPromptText(
+  message: any, msgType: 'text' | 'post', logger: Logger,
+): { text: string; postImages: string[] } | undefined {
+  let text: string;
+  let postImages: string[] = [];
+  try {
+    const content = JSON.parse(message.content);
+    if (msgType === 'post') {
+      logger.debug({ postContent: JSON.stringify(content).slice(0, 500) }, 'Raw post content');
+      text = extractTextFromPost(content);
+      postImages = extractImagesFromPost(content);
+      logger.debug({ extractedText: text.slice(0, 200), postImageCount: postImages.length }, 'Extracted post content');
+    } else {
+      text = content.text || '';
+    }
+  } catch {
+    logger.warn({ content: message.content }, 'Failed to parse message content');
+    return undefined;
+  }
+  // Strip @mention tags (format: @_user_xxx or similar)
+  text = text.replace(/@_\w+\s*/g, '').trim();
+  // Strip Feishu auto-generated markdown links: [text](url) → text
+  text = text.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+  return { text, postImages };
 }
 
 /** Parse image/file message content, returning media fields or undefined on failure. */
@@ -497,7 +545,15 @@ export function extractTextFromPost(content: Record<string, unknown>): string {
       for (const element of paragraph) {
         if (!element || typeof element !== 'object') continue;
         const el = element as Record<string, unknown>;
-        if ((el.tag === 'text' || el.tag === 'a') && typeof el.text === 'string') {
+        if (el.tag === 'a' && typeof el.text === 'string') {
+          // [design-note S] Links used to contribute only their label — a pasted
+          // Feishu doc link reached the bot as a bare title with nothing to open.
+          // Keep the href; don't repeat it when the label already is the URL.
+          const href = typeof el.href === 'string' ? el.href.trim() : '';
+          const label = el.text.trim();
+          if (href && href !== label) line.push(`${label} (${href})`);
+          else line.push(el.text);
+        } else if (el.tag === 'text' && typeof el.text === 'string') {
           line.push(el.text);
         }
       }
