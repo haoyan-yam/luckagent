@@ -30,6 +30,7 @@ import { RateLimiter } from './rate-limiter.js';
 import { OutputsManager } from './outputs-manager.js';
 import { shouldRemindRestart, markReminded, restartSecondsAgo } from './restart-notice.js';
 import { decideRollover, renderHandoffReminder, type HandoffTurn } from './session-rollover.js';
+import type { UserSession } from '../engines/claude/session-manager.js';
 import { MemoryClient } from '../memory/memory-client.js';
 import { AuditLogger } from '../utils/audit-logger.js';
 import { CommandHandler } from './command-handler.js';
@@ -2052,43 +2053,9 @@ export class MessageBridge {
     const activeEngine = session.engine ?? resolveEngineName(this.config);
     const enginePromptText = text;
 
-    // [design-note T] 空闲 ≥3h 且已压缩过的会话：本回合开新会话，并把旧会话最近几轮
-    // 作为交接注入。判定与渲染是纯函数（session-rollover.ts），这里只做编排；任何一步
-    // 出错都退回「照常 resume」，绝不让本回合失败。交接内容要在清掉 sessionId 之前取。
-    let rolledOver = false;
-    let handoffReminder: string | undefined;
-    try {
-      const decision = decideRollover({
-        cwd,
-        sessionId: session.sessionId,
-        engine: engineName,
-        hasActiveGoal: !!session.activeGoal,
-      });
-      this.logger.debug({ chatId, ...decision, transcriptPath: undefined }, 'session rollover check');
-      if (decision.rollover) {
-        handoffReminder = this.buildHandoffReminder(chatId, decision.idleMs ?? 0);
-        const previousSessionId = this.sessionManager.rolloverSession(chatId);
-        try {
-          await this.releaseChatExecutor(chatId, 'idle-compacted-rollover');
-        } catch (err) {
-          this.logger.warn({ err, chatId }, 'rollover: failed to release persistent executor');
-        }
-        rolledOver = true;
-        const idleHours = Math.round(((decision.idleMs ?? 0) / 3_600_000) * 10) / 10;
-        this.logger.info({ chatId, previousSessionId, idleHours, handoff: !!handoffReminder }, 'session rolled over: idle + compacted');
-        this.audit.log({
-          event: 'session_rollover',
-          botName: this.config.name,
-          chatId,
-          userId,
-          meta: { previousSessionId, idleHours, handoff: !!handoffReminder },
-        });
-      }
-    } catch (err) {
-      this.logger.warn({ err, chatId }, 'session rollover check failed; resuming as usual');
-      rolledOver = false;
-      handoffReminder = undefined;
-    }
+    // [design-note T] 空闲 ≥3h 且已压缩过的会话：本回合开新会话并注入交接（编排见
+    // maybeRolloverSession；群消息入口与 API/定时任务入口共用同一段逻辑）。
+    const { rolledOver, handoffReminder } = await this.maybeRolloverSession(chatId, session, engineName, userId, 'message');
 
     // Prepare downloads directory (bot-isolated)
     const downloadsDir = this.config.claude.downloadsDir;
@@ -2749,6 +2716,17 @@ export class MessageBridge {
     const cwd = session.workingDirectory;
     const abortController = new AbortController();
 
+    // [design-note T] 定时任务（群日报）/ API 任务 / 跨 bot 委派也走换新判定——否则早 7 点
+    // 的日报会在旧会话里跑并把空闲计时归零，白天第一条人话要到 3 小时后才换新。
+    // 带 maxTurns / allowedTools 的受限回合（语音等）不参与：它们本就走一次性 legacy spawn。
+    let taskPrompt = prompt;
+    let rolledOver = false;
+    if (options.maxTurns === undefined && options.allowedTools === undefined) {
+      const r = await this.maybeRolloverSession(chatId, session, engineName, userId, 'api');
+      rolledOver = r.rolledOver;
+      if (r.rolledOver && r.handoffReminder) taskPrompt = `${r.handoffReminder}\n\n${prompt}`;
+    }
+
     // [design-note Q] 清空前先补扫:残留 = 漏发文件(发过即删),先发出去再清
     await this.outputHandler.sweepDir(chatId, this.outputsManager.dirFor(chatId));
     const outputsDir = this.outputsManager.prepareDir(chatId);
@@ -2806,7 +2784,7 @@ export class MessageBridge {
     // them per-turn — runOneTurn falls back to legacy spawn automatically
     // when those are set.
     const executionHandle = await this.runOneTurn(chatId, engineName, {
-      prompt,
+      prompt: taskPrompt,
       cwd,
       abortController,
       outputsDir,
@@ -2815,6 +2793,8 @@ export class MessageBridge {
       model: options.model ?? session.model,
       allowedTools: options.allowedTools,
       onTeamEvent,
+      // [design-note T] 换新会话时不 resume
+      freshSession: rolledOver,
     });
 
     const startTime = Date.now();
@@ -3156,6 +3136,50 @@ export class MessageBridge {
    * Card updates don't trigger Feishu mobile push notifications, but new messages do.
    * Only sends for tasks that took longer than 10 seconds.
    */
+  /**
+   * [design-note T] 换新会话编排：判定（纯函数）→ 先取交接 → 清 sessionId → 释放
+   * persistent executor → 审计。任何一步出错都返回「不换」，绝不让本回合失败。
+   * 群消息入口（executeQuery）与 API/定时任务入口（executeApiTask）共用。
+   */
+  private async maybeRolloverSession(
+    chatId: string,
+    session: UserSession,
+    engineName: EngineName,
+    userId: string | undefined,
+    source: 'message' | 'api',
+  ): Promise<{ rolledOver: boolean; handoffReminder?: string }> {
+    try {
+      const decision = decideRollover({
+        cwd: session.workingDirectory,
+        sessionId: session.sessionId,
+        engine: engineName,
+        hasActiveGoal: !!session.activeGoal,
+      });
+      this.logger.debug({ chatId, source, ...decision, transcriptPath: undefined }, 'session rollover check');
+      if (!decision.rollover) return { rolledOver: false };
+      const handoffReminder = this.buildHandoffReminder(chatId, decision.idleMs ?? 0);
+      const previousSessionId = this.sessionManager.rolloverSession(chatId);
+      try {
+        await this.releaseChatExecutor(chatId, 'idle-compacted-rollover');
+      } catch (err) {
+        this.logger.warn({ err, chatId }, 'rollover: failed to release persistent executor');
+      }
+      const idleHours = Math.round(((decision.idleMs ?? 0) / 3_600_000) * 10) / 10;
+      this.logger.info({ chatId, source, previousSessionId, idleHours, handoff: !!handoffReminder }, 'session rolled over: idle + compacted');
+      this.audit.log({
+        event: 'session_rollover',
+        botName: this.config.name,
+        chatId,
+        userId,
+        meta: { source, previousSessionId, idleHours, handoff: !!handoffReminder },
+      });
+      return { rolledOver: true, handoffReminder };
+    } catch (err) {
+      this.logger.warn({ err, chatId, source }, 'session rollover check failed; resuming as usual');
+      return { rolledOver: false };
+    }
+  }
+
   /**
    * [design-note T] 从 SessionRegistry 取本群最近几轮（只含真正到达 bot 的回合）
    * 渲染成交接块。没有 registry / 没有记录 → undefined（新会话照开，只是不带交接）。
