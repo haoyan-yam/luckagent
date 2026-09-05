@@ -249,6 +249,7 @@ luckagent inbox clear [--chat <id>] [--all-chats]
 | `LUCKAGENT_URL` / `API_PORT` / `API_SECRET` | 第二类命令的桥接地址与密钥（默认读安装目录 `.env`） |
 | `LUCKAGENT_CORE_URL` / `LUCKAGENT_CORE_TOKEN` | 第三类命令的 core 地址与 token（token 也可放 `~/.luckagent-core/token`） |
 | `LUCKAGENT_CORE_CLI` | 显式指定 core 功能 CLI 路径 |
+| `LUCKAGENT_ROLLOVER_IDLE_MS` / `LUCKAGENT_ROLLOVER_DISABLED` | 桥接的空闲会话自动换新（design-note T）：空闲阈值毫秒（默认 3 小时）/ 设 `1` 关闭 |
 
 ## 相关文档
 

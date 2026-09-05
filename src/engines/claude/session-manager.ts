@@ -202,6 +202,21 @@ export class SessionManager {
     }
   }
 
+  /**
+   * [design-note T] 只换掉底层引擎会话（下一回合不再 resume），保留累计用量、
+   * 模型/推理强度与目标——用于「空闲且已压缩过」的自动开新会话，与 /reset 的语义不同。
+   */
+  rolloverSession(chatId: string): string | undefined {
+    const session = this.sessions.get(chatId);
+    if (!session || !session.sessionId) return undefined;
+    const previous = session.sessionId;
+    session.sessionId = undefined;
+    session.sessionIdEngine = undefined;
+    this.logger.info({ chatId, previousSessionId: previous.slice(0, 8) }, 'Session rolled over (idle + compacted)');
+    this.saveToDisk();
+    return previous;
+  }
+
   resetSession(chatId: string): void {
     const session = this.sessions.get(chatId);
     if (session) {
