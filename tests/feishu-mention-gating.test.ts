@@ -1,240 +1,230 @@
 import { describe, it, expect } from 'vitest';
 import { createReceiveHandler } from '../src/feishu/event-handler.js';
-import { restItemToEvent } from '../src/feishu/backfill.js';
 import type { BotConfig } from '../src/config.js';
 import type { IncomingMessage } from '../src/types.js';
+import type { ListedMessage } from '../src/feishu/round-context.js';
 
 /**
- * [design-note S] @mention gating across chat types.
+ * [design-note S] @ 门控 + 本轮上下文拉取 — 接收处理器全链路。
  *
- * The receive handler keeps module-level caches keyed by message_id (dedupe),
- * chat_id (member count) and chat_id:user_id (pending media), so every case
- * below uses fresh ids to stay independent of test order.
+ * 0904/0905 生产事故：用户先发链接/要求/图片，几小时后 @ 一句「处理以上问题」，bot 只
+ * 拿到最后一句。现在 @ 触发时桥接按飞书接口拉这个人「本轮」（上一条 @ 之后）的消息：
+ * 文本按序拼在前、媒体作附件、引用回复的被引 id 沿用。私聊（开关开启时）与群聊同一机制，只拉 @ 的
+ * 这个人，别人的消息不拉；未 @ 的消息一律静默。假客户端用一份按 chat 存的历史夹具，
+ * 结构与真实 im.message.list 一致。处理器有模块级去重表，每条消息用新 id。
  */
 
 const BOT = 'ou_bot';
 const logger: any = { debug() {}, info() {}, warn() {}, error() {} };
-
 let seq = 0;
-const fresh = (prefix: string) => `${prefix}_${process.pid}_${Date.now()}_${++seq}`;
+const fresh = (p: string) => `${p}_${process.pid}_${Date.now()}_${++seq}`;
+const T0 = Date.parse('2026-09-05T15:49:00+08:00');
 
-interface EvOpts {
-  chatId: string;
-  chatType: 'p2p' | 'group';
-  userId?: string;
-  mention?: boolean;
+/** 一条历史消息（接口结构）。 */
+function hist(o: {
+  at: number; from?: string; type?: string; content?: unknown; at_bot?: boolean; parent_id?: string; fromBot?: boolean;
+}): ListedMessage {
+  return {
+    message_id: fresh('om'),
+    msg_type: o.type ?? 'text',
+    create_time: String(o.at),
+    parent_id: o.parent_id,
+    sender: o.fromBot
+      ? { id: 'cli_app', id_type: 'app_id', sender_type: 'app' }
+      : { id: o.from ?? 'ou_u1', id_type: 'open_id', sender_type: 'user' },
+    body: { content: JSON.stringify(o.content ?? { text: 'x' }) },
+    mentions: o.at_bot ? [{ key: '@_user_1', id: BOT, name: 'bot' }] : [],
+  };
 }
 
-function textEvent(o: EvOpts & { text: string }) {
+/** 触发事件（WebSocket 结构）。同一条也会被放进历史夹具，与真实一致。 */
+function event(o: {
+  chatId: string; chatType: 'p2p' | 'group'; at?: number; userId?: string; mention?: boolean;
+  type?: 'text' | 'image' | 'post'; text?: string; imageKey?: string; paragraphs?: unknown[][]; parentId?: string;
+}) {
+  const type = o.type ?? 'text';
+  const content = type === 'image'
+    ? { image_key: o.imageKey ?? 'img_t' }
+    : type === 'post'
+      ? { zh_cn: { title: '', content: o.paragraphs ?? [] } }
+      : { text: o.mention ? `@_user_1 ${o.text ?? 'go'}` : (o.text ?? 'go') };
   return {
     message: {
-      message_id: fresh('om'),
-      chat_id: o.chatId,
-      chat_type: o.chatType,
-      message_type: 'text',
-      content: JSON.stringify({ text: o.mention ? `@_user_1 ${o.text}` : o.text }),
+      message_id: fresh('om'), chat_id: o.chatId, chat_type: o.chatType, message_type: type,
+      create_time: String(o.at ?? T0), content: JSON.stringify(content), parent_id: o.parentId,
       mentions: o.mention ? [{ key: '@_user_1', id: { open_id: BOT }, name: 'bot' }] : [],
     },
     sender: { sender_id: { open_id: o.userId ?? 'ou_u1' }, sender_type: 'user' },
   };
 }
 
-function imageEvent(o: EvOpts & { imageKey: string }) {
-  return {
-    message: {
-      message_id: fresh('om'),
-      chat_id: o.chatId,
-      chat_type: o.chatType,
-      message_type: 'image',
-      content: JSON.stringify({ image_key: o.imageKey }),
-      mentions: o.mention ? [{ key: '@_user_1', id: { open_id: BOT }, name: 'bot' }] : [],
-    },
-    sender: { sender_id: { open_id: o.userId ?? 'ou_u1' }, sender_type: 'user' },
-  };
-}
-
-function fileEvent(o: EvOpts & { fileKey: string; fileName: string }) {
-  return {
-    message: {
-      message_id: fresh('om'),
-      chat_id: o.chatId,
-      chat_type: o.chatType,
-      message_type: 'file',
-      content: JSON.stringify({ file_key: o.fileKey, file_name: o.fileName }),
-      mentions: [],
-    },
-    sender: { sender_id: { open_id: o.userId ?? 'ou_u1' }, sender_type: 'user' },
-  };
-}
-
-function makeHandler(cfg: Partial<BotConfig> = {}, memberCount?: number) {
+function makeHandler(cfg: Partial<BotConfig> = {}, history: Record<string, ListedMessage[]> = {}, opts: { listFails?: boolean; memberCount?: number } = {}) {
+  const memberCount = opts.memberCount ?? 5;
   const received: IncomingMessage[] = [];
   const sent: string[] = [];
-  const sender: any = {
-    sendText: async (_chatId: string, text: string) => { sent.push(text); },
+  const listCalls: string[] = [];
+  const messageSender: any = {
+    sendText: async (_c: string, t: string) => { sent.push(t); },
     getChatMemberCount: async () => memberCount,
+    listMessages: async (chatId: string, start: string, end: string) => {
+      listCalls.push(chatId);
+      if (opts.listFails) return undefined;
+      const s = Number(start) * 1000; const e = Number(end) * 1000;
+      const items = (history[chatId] ?? [])
+        .filter((m) => Number(m.create_time) >= s && Number(m.create_time) <= e)
+        .sort((a, b) => Number(b.create_time) - Number(a.create_time));
+      return { items, hasMore: false };
+    },
   };
   const config = { name: 'demo', feishu: { appId: 'a', appSecret: 'b' }, ...cfg } as BotConfig;
-  const handle = createReceiveHandler(config, logger, (m) => received.push(m), BOT, sender);
-  return { handle, received, sent };
+  const handle = createReceiveHandler(config, logger, (m) => received.push(m), BOT, messageSender);
+  return { handle, received, sent, listCalls };
 }
 
-describe('[design-note S] privateRequireMention — private chats', () => {
-  it('default (switch off): p2p answers without @mention (upstream behaviour)', async () => {
+describe('[design-note S] privateRequireMention — gating', () => {
+  it('switch off: p2p answers without @ and never fetches history', async () => {
     const h = makeHandler();
-    const chatId = fresh('oc');
-    await h.handle(textEvent({ chatId, chatType: 'p2p', text: 'hi' }));
+    await h.handle(event({ chatId: fresh('oc'), chatType: 'p2p', text: 'hi' }));
     expect(h.received).toHaveLength(1);
     expect(h.received[0].text).toBe('hi');
-    expect(h.received[0].chatType).toBe('p2p');
+    expect(h.listCalls).toHaveLength(0);
   });
 
-  it('switch on: p2p without @mention is silently dropped (no hint reply)', async () => {
+  it('switch on: p2p without @ is silently dropped (no hint, no fetch); with @ processed and tag stripped', async () => {
     const h = makeHandler({ privateRequireMention: true });
-    const chatId = fresh('oc');
-    await h.handle(textEvent({ chatId, chatType: 'p2p', text: 'hi' }));
+    await h.handle(event({ chatId: fresh('oc'), chatType: 'p2p', text: 'hi' }));
     expect(h.received).toHaveLength(0);
     expect(h.sent).toHaveLength(0);
-  });
-
-  it('switch on: p2p with @mention is processed and the mention tag is stripped', async () => {
-    const h = makeHandler({ privateRequireMention: true });
-    const chatId = fresh('oc');
-    await h.handle(textEvent({ chatId, chatType: 'p2p', text: 'hi', mention: true }));
+    expect(h.listCalls).toHaveLength(0);
+    await h.handle(event({ chatId: fresh('oc'), chatType: 'p2p', mention: true, text: 'hi' }));
     expect(h.received).toHaveLength(1);
     expect(h.received[0].text).toBe('hi');
   });
 
-  it('switch on: a mention of someone else does not count', async () => {
+  it('a mention of someone else does not count', async () => {
     const h = makeHandler({ privateRequireMention: true });
-    const ev = textEvent({ chatId: fresh('oc'), chatType: 'p2p', text: 'hi', mention: true });
+    const ev = event({ chatId: fresh('oc'), chatType: 'p2p', mention: true, text: 'hi' });
     ev.message.mentions = [{ key: '@_user_1', id: { open_id: 'ou_other' }, name: 'x' }];
     await h.handle(ev);
     expect(h.received).toHaveLength(0);
   });
 
-  it('switch on: p2p image/file without @ are cached and attached to the next @mention, once', async () => {
-    const h = makeHandler({ privateRequireMention: true });
+  it('2-member group: exempt from @ when the switch is off (no fetch); a normal group when on', async () => {
+    const off = makeHandler({}, {}, { memberCount: 2 });
+    await off.handle(event({ chatId: fresh('oc'), chatType: 'group', text: 'hi' }));
+    expect(off.received).toHaveLength(1);
+    expect(off.listCalls).toHaveLength(0);
+    const on = makeHandler({ privateRequireMention: true }, {}, { memberCount: 2 });
     const chatId = fresh('oc');
-    await h.handle(imageEvent({ chatId, chatType: 'p2p', imageKey: 'img_1' }));
-    await h.handle(fileEvent({ chatId, chatType: 'p2p', fileKey: 'file_1', fileName: 'a.pdf' }));
-    expect(h.received).toHaveLength(0);
-
-    await h.handle(textEvent({ chatId, chatType: 'p2p', text: 'look', mention: true }));
-    expect(h.received).toHaveLength(1);
-    const extra = h.received[0].extraMedia ?? [];
-    expect(extra.map((m) => m.imageKey ?? m.fileKey)).toEqual(['img_1', 'file_1']);
-    expect(extra[1].fileName).toBe('a.pdf');
-
-    // Cache is consumed — a second @mention carries nothing extra.
-    await h.handle(textEvent({ chatId, chatType: 'p2p', text: 'again', mention: true }));
-    expect(h.received).toHaveLength(2);
-    expect(h.received[1].extraMedia).toBeUndefined();
+    await on.handle(event({ chatId, chatType: 'group', text: 'hi' }));
+    expect(on.received).toHaveLength(0);
+    await on.handle(event({ chatId, chatType: 'group', mention: true, text: 'hi' }));
+    expect(on.received).toHaveLength(1);
   });
 
-  it('switch on: cached media is per sender, not per chat', async () => {
-    const h = makeHandler({ privateRequireMention: true });
-    const chatId = fresh('oc');
-    await h.handle(imageEvent({ chatId, chatType: 'p2p', imageKey: 'img_a', userId: 'ou_a' }));
-    await h.handle(textEvent({ chatId, chatType: 'p2p', text: 'go', mention: true, userId: 'ou_b' }));
-    expect(h.received).toHaveLength(1);
-    expect(h.received[0].extraMedia).toBeUndefined();
-  });
-
-  it('switch on: groupNoMention does not leak into p2p', async () => {
+  it('groupNoMention: group passes without @ and does not fetch; p2p (switch on) still requires @', async () => {
     const h = makeHandler({ privateRequireMention: true, groupNoMention: true });
-    await h.handle(textEvent({ chatId: fresh('oc'), chatType: 'p2p', text: 'hi' }));
-    expect(h.received).toHaveLength(0);
+    await h.handle(event({ chatId: fresh('oc'), chatType: 'group', text: 'hi' }));
+    expect(h.received).toHaveLength(1);
+    expect(h.listCalls).toHaveLength(0);
+    await h.handle(event({ chatId: fresh('oc'), chatType: 'p2p', text: 'hi' }));
+    expect(h.received).toHaveLength(1);
   });
 
-  it('switch on + groupOnly: whitelist gate still runs first, then the @ gate', async () => {
+  it('groupOnly whitelist gate runs before the @ gate', async () => {
     const h = makeHandler({ privateRequireMention: true, groupOnly: true, groupOnlyAllowUsers: ['ou_admin'] });
-    // Not whitelisted: refused with the groupOnly hint even when @mentioned.
-    await h.handle(textEvent({ chatId: fresh('oc'), chatType: 'p2p', text: 'hi', mention: true, userId: 'ou_x' }));
+    await h.handle(event({ chatId: fresh('oc'), chatType: 'p2p', mention: true, userId: 'ou_x' }));
     expect(h.received).toHaveLength(0);
     expect(h.sent).toHaveLength(1);
-    // Whitelisted but no @: silently dropped, no hint.
-    await h.handle(textEvent({ chatId: fresh('oc'), chatType: 'p2p', text: 'hi', userId: 'ou_admin' }));
-    expect(h.received).toHaveLength(0);
-    expect(h.sent).toHaveLength(1);
-    // Whitelisted and @: processed.
-    await h.handle(textEvent({ chatId: fresh('oc'), chatType: 'p2p', text: 'hi', mention: true, userId: 'ou_admin' }));
+    await h.handle(event({ chatId: fresh('oc'), chatType: 'p2p', mention: true, userId: 'ou_admin' }));
     expect(h.received).toHaveLength(1);
   });
 });
 
-describe('[design-note S] privateRequireMention — 2-member groups', () => {
-  it('switch off: 2-member group answers without @mention (private-like exemption)', async () => {
-    const h = makeHandler({}, 2);
-    await h.handle(textEvent({ chatId: fresh('oc'), chatType: 'group', text: 'hi' }));
-    expect(h.received).toHaveLength(1);
-  });
-
-  it('switch on: 2-member group follows normal group rules — @ required', async () => {
-    const h = makeHandler({ privateRequireMention: true }, 2);
+describe('[design-note S] round context fetched on @', () => {
+  it('p2p (switch on), the KK shape: images + question hours earlier, "@bot 处理以上问题" → all in order', async () => {
     const chatId = fresh('oc');
-    await h.handle(textEvent({ chatId, chatType: 'group', text: 'hi' }));
-    expect(h.received).toHaveLength(0);
-    await h.handle(textEvent({ chatId, chatType: 'group', text: 'hi', mention: true }));
-    expect(h.received).toHaveLength(1);
+    const prevAt = hist({ at: T0 - 4 * 3600e3, at_bot: true, content: { text: '@_user_1 上一轮' } });
+    const botReply = hist({ at: T0 - 4 * 3600e3 + 60e3, fromBot: true, type: 'interactive', content: {} });
+    const i1 = hist({ at: T0 - 3 * 3600e3, type: 'image', content: { image_key: 'img_1' } });
+    const i2 = hist({ at: T0 - 3 * 3600e3 + 1e3, type: 'image', content: { image_key: 'img_2' } });
+    const t1 = hist({ at: T0 - 3 * 3600e3 + 30e3, content: { text: '帮我看看岛台台面用哪个颜色' } });
+    const h = makeHandler({ privateRequireMention: true }, { [chatId]: [prevAt, botReply, i1, i2, t1] });
+    await h.handle(event({ chatId, chatType: 'p2p', mention: true, text: '处理以上问题' }));
+    expect(h.received[0].text).toBe('[以下是你本轮早先发来的内容，按时间顺序]\n\n帮我看看岛台台面用哪个颜色\n\n[本条]\n\n处理以上问题');
+    expect(h.received[0].extraMedia?.map((m) => m.imageKey)).toEqual(['img_1', 'img_2']);
+    expect(h.listCalls).toEqual([chatId]);
   });
 
-  it('switch on: 2-member group still honours groupNoMention (it is a group)', async () => {
-    const h = makeHandler({ privateRequireMention: true, groupNoMention: true }, 2);
-    await h.handle(textEvent({ chatId: fresh('oc'), chatType: 'group', text: 'hi' }));
-    expect(h.received).toHaveLength(1);
-  });
-});
-
-describe('group gating unchanged by the switch (regression guard)', () => {
-  it('default: 3+ member group requires @; media cached and attached on @', async () => {
-    const h = makeHandler({}, 5);
+  it('group (switch irrelevant): only the @-er\'s own messages since their previous @', async () => {
     const chatId = fresh('oc');
-    await h.handle(textEvent({ chatId, chatType: 'group', text: 'hi' }));
-    expect(h.received).toHaveLength(0);
-    await h.handle(imageEvent({ chatId, chatType: 'group', imageKey: 'img_g' }));
-    await h.handle(textEvent({ chatId, chatType: 'group', text: 'hi', mention: true }));
-    expect(h.received).toHaveLength(1);
-    expect(h.received[0].extraMedia?.[0].imageKey).toBe('img_g');
+    const mine1 = hist({ at: T0 - 600e3, from: 'ou_me', type: 'file', content: { file_key: 'f1', file_name: '7月导入表.xlsx' } });
+    const theirs = hist({ at: T0 - 500e3, from: 'ou_colleague', type: 'file', content: { file_key: 'f2', file_name: 'other.xlsx' } });
+    const chatter = hist({ at: T0 - 400e3, from: 'ou_colleague', content: { text: '中午吃啥' } });
+    const mine2 = hist({ at: T0 - 300e3, from: 'ou_me', content: { text: '按 7 月格式出 8 月表' } });
+    const h = makeHandler({}, { [chatId]: [mine1, theirs, chatter, mine2] });
+    await h.handle(event({ chatId, chatType: 'group', mention: true, userId: 'ou_me', text: '执行一下上面的任务' }));
+    expect(h.received[0].text).toContain('按 7 月格式出 8 月表');
+    expect(h.received[0].text).not.toContain('中午吃啥');
+    expect(h.received[0].extraMedia?.map((m) => m.fileName)).toEqual(['7月导入表.xlsx']);
   });
 
-  it('switch on: 3+ member group behaves exactly as before', async () => {
-    const h = makeHandler({ privateRequireMention: true }, 5);
+  it('second round starts after the previous @: nothing from the earlier round leaks', async () => {
     const chatId = fresh('oc');
-    await h.handle(textEvent({ chatId, chatType: 'group', text: 'hi' }));
-    expect(h.received).toHaveLength(0);
-    await h.handle(textEvent({ chatId, chatType: 'group', text: 'hi', mention: true }));
-    expect(h.received).toHaveLength(1);
+    const oldMat = hist({ at: T0 - 7200e3, content: { text: '旧材料' } });
+    const oldAt = hist({ at: T0 - 7000e3, at_bot: true, content: { text: '@_user_1 处理' } });
+    const newMat = hist({ at: T0 - 100e3, content: { text: '新材料' } });
+    const h = makeHandler({ privateRequireMention: true }, { [chatId]: [oldMat, oldAt, newMat] });
+    await h.handle(event({ chatId, chatType: 'p2p', mention: true, text: '再处理' }));
+    expect(h.received[0].text).toContain('新材料');
+    expect(h.received[0].text).not.toContain('旧材料');
   });
 
-  it('groupNoMention: 3+ member group answers without @ regardless of the switch', async () => {
-    const h = makeHandler({ privateRequireMention: true, groupNoMention: true }, 5);
-    await h.handle(textEvent({ chatId: fresh('oc'), chatType: 'group', text: 'hi' }));
-    expect(h.received).toHaveLength(1);
-  });
-});
-
-describe('[design-note S] backfill replay goes through the same gate', () => {
-  const item = (mentions: Array<{ key: string; id: string; name: string }>) => ({
-    message_id: fresh('om'), msg_type: 'text', chat_id: fresh('oc'), create_time: '1',
-    sender: { id: 'ou_u1', id_type: 'open_id', sender_type: 'user' },
-    body: { content: JSON.stringify({ text: mentions.length ? '@_user_1 hi' : 'hi' }) },
-    mentions,
+  it('an un-@ quote-reply lends its parentId; the trigger\'s own wins', async () => {
+    const chatId = fresh('oc');
+    const h = makeHandler({ privateRequireMention: true }, { [chatId]: [hist({ at: T0 - 100e3, content: { text: '看这个' }, parent_id: 'om_quoted' })] });
+    await h.handle(event({ chatId, chatType: 'p2p', mention: true, text: '处理' }));
+    expect(h.received[0].parentId).toBe('om_quoted');
+    await h.handle(event({ chatId, chatType: 'p2p', mention: true, text: '处理', parentId: 'om_new', at: T0 + 1e3 }));
+    expect(h.received[1].parentId).toBe('om_new');
   });
 
-  it('switch on: replayed p2p message without @ is dropped, with @ is processed', async () => {
-    const h = makeHandler({ privateRequireMention: true });
-    await h.handle(restItemToEvent(item([]), 'p2p'));
-    expect(h.received).toHaveLength(0);
-    await h.handle(restItemToEvent(item([{ key: '@_user_1', id: BOT, name: 'bot' }]), 'p2p'));
-    expect(h.received).toHaveLength(1);
-    expect(h.received[0].text).toBe('hi');
+  it('@ + image trigger: round text is prepended to the default image prompt', async () => {
+    const chatId = fresh('oc');
+    const h = makeHandler({}, { [chatId]: [hist({ at: T0 - 50e3, content: { text: '按这个风格' } })] });
+    await h.handle(event({ chatId, chatType: 'group', mention: true, type: 'image', imageKey: 'img_t' }));
+    expect(h.received[0].text).toBe('[以下是你本轮早先发来的内容，按时间顺序]\n\n按这个风格\n\n[本条]\n\n请分析这张图片');
+    expect(h.received[0].imageKey).toBe('img_t');
   });
 
-  it('switch off: replayed p2p message without @ is processed', async () => {
-    const h = makeHandler();
-    await h.handle(restItemToEvent(item([]), 'p2p'));
-    expect(h.received).toHaveLength(1);
+  it('post trigger with images keeps its own extra images before the round media', async () => {
+    const chatId = fresh('oc');
+    const h = makeHandler({}, { [chatId]: [hist({ at: T0 - 50e3, type: 'image', content: { image_key: 'img_old' } })] });
+    await h.handle(event({ chatId, chatType: 'group', mention: true, type: 'post', paragraphs: [
+      [{ tag: 'at', user_id: BOT }, { tag: 'text', text: '看图' }],
+      [{ tag: 'img', image_key: 'img_a' }], [{ tag: 'img', image_key: 'img_b' }],
+    ] }));
+    expect(h.received[0].imageKey).toBe('img_a');
+    expect(h.received[0].extraMedia?.map((m) => m.imageKey)).toEqual(['img_b', 'img_old']);
+  });
+
+  it('empty round → plain trigger text; history API failure → task still starts with the failure note', async () => {
+    const ok = makeHandler();
+    await ok.handle(event({ chatId: fresh('oc'), chatType: 'group', mention: true, text: 'hi' }));
+    expect(ok.received[0].text).toBe('hi');
+    const bad = makeHandler({}, {}, { listFails: true });
+    await bad.handle(event({ chatId: fresh('oc'), chatType: 'group', mention: true, text: '处理' }));
+    expect(bad.received).toHaveLength(1);
+    expect(bad.received[0].text).toBe('[本轮历史拉取失败，需要材料请让用户重发]\n\n处理');
+  });
+
+  it('rich-text links keep their URL through the pipeline', async () => {
+    const chatId = fresh('oc');
+    const h = makeHandler({}, { [chatId]: [hist({ at: T0 - 50e3, type: 'post', content: { zh_cn: { title: '', content: [
+      [{ tag: 'a', text: '会议纪要', href: 'https://x.feishu.cn/docx/AAA' }],
+    ] } } })] });
+    await h.handle(event({ chatId, chatType: 'group', mention: true, text: '根据纪要出方案' }));
+    expect(h.received[0].text).toContain('会议纪要 (https://x.feishu.cn/docx/AAA)');
   });
 });
 
@@ -278,145 +268,19 @@ describe('[design-note S] privateRequireMention config plumbing', () => {
     expect(byName.on.privateRequireMention).toBe(true);
     expect(byName.off.privateRequireMention).toBeUndefined();
     expect(byName.unset.privateRequireMention).toBeUndefined();
-    // Independent of the neighbouring switches.
-    expect(byName.on.groupNoMention).toBeUndefined();
-    expect(byName.on.groupOnly).toBeUndefined();
   });
 
-  it('admin writer: true/false persist as booleans, "" deletes the key, others untouched', () => {
+  it('admin writer: true/false persist as booleans, "" deletes the key', () => {
     const cfgPath = path.join(dir, 'bots.json');
     fs.writeFileSync(cfgPath, JSON.stringify({ feishuBots: [] }));
-    addBot(cfgPath, 'feishu', {
-      name: 'demo', feishuAppId: 'cli_test', feishuAppSecret: 's', defaultWorkingDirectory: '/tmp/demo',
-      groupNoMention: true,
-    } as any);
+    addBot(cfgPath, 'feishu', { name: 'demo', feishuAppId: 'cli_test', feishuAppSecret: 's', defaultWorkingDirectory: '/tmp/demo', groupNoMention: true } as any);
     const entry = () => readBotsConfig(cfgPath).feishuBots![0] as any;
-
     updateBot(cfgPath, 'demo', { privateRequireMention: true });
     expect(entry().privateRequireMention).toBe(true);
-    expect(entry().groupNoMention).toBe(true);
-
     updateBot(cfgPath, 'demo', { privateRequireMention: false });
     expect(entry().privateRequireMention).toBe(false);
-
     updateBot(cfgPath, 'demo', { privateRequireMention: '' });
     expect(entry().privateRequireMention).toBeUndefined();
     expect(entry().groupNoMention).toBe(true);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// [design-note S] Un-@ private TEXT is cached and prepended on the next @mention
-// (the "send links/brief first, @ last" workflow the switch exists for), and
-// rich-text links keep their URL.
-// ---------------------------------------------------------------------------
-import { extractTextFromPost } from '../src/feishu/event-handler.js';
-
-function postEvent(o: EvOpts & { paragraphs: unknown[][] }) {
-  return {
-    message: {
-      message_id: fresh('om'), chat_id: o.chatId, chat_type: o.chatType, message_type: 'post',
-      content: JSON.stringify({ zh_cn: { title: '', content: o.paragraphs } }),
-      mentions: o.mention ? [{ key: '@_user_1', id: { open_id: BOT }, name: 'bot' }] : [],
-    },
-    sender: { sender_id: { open_id: o.userId ?? 'ou_u1' }, sender_type: 'user' },
-  };
-}
-
-describe('[design-note S] un-@ private text is cached and prepended on the next @', () => {
-  it('link + brief first, "@bot go" last → prompt carries all three in order', async () => {
-    const h = makeHandler({ privateRequireMention: true });
-    const chatId = fresh('oc');
-    await h.handle(textEvent({ chatId, chatType: 'p2p', text: 'https://x.feishu.cn/docx/AAA' }));
-    await h.handle(textEvent({ chatId, chatType: 'p2p', text: '根据会议纪要出一份工作安排' }));
-    expect(h.received).toHaveLength(0);
-    await h.handle(textEvent({ chatId, chatType: 'p2p', text: '处理以上需求', mention: true }));
-    expect(h.received).toHaveLength(1);
-    expect(h.received[0].text).toBe('https://x.feishu.cn/docx/AAA\n\n根据会议纪要出一份工作安排\n\n处理以上需求');
-  });
-
-  it('text and media interleave: texts joined in order, media become extraMedia; consumed once', async () => {
-    const h = makeHandler({ privateRequireMention: true });
-    const chatId = fresh('oc');
-    await h.handle(textEvent({ chatId, chatType: 'p2p', text: 'A' }));
-    await h.handle(imageEvent({ chatId, chatType: 'p2p', imageKey: 'img_1' }));
-    await h.handle(textEvent({ chatId, chatType: 'p2p', text: 'B' }));
-    await h.handle(textEvent({ chatId, chatType: 'p2p', text: 'go', mention: true }));
-    expect(h.received[0].text).toBe('A\n\nB\n\ngo');
-    expect(h.received[0].extraMedia?.map((m) => m.imageKey)).toEqual(['img_1']);
-    await h.handle(textEvent({ chatId, chatType: 'p2p', text: 'again', mention: true }));
-    expect(h.received[1].text).toBe('again');
-    expect(h.received[1].extraMedia).toBeUndefined();
-  });
-
-  it('an un-@ quote-reply passes its parentId to the trigger; the trigger\'s own wins', async () => {
-    const h = makeHandler({ privateRequireMention: true });
-    const chatId = fresh('oc');
-    const ev = textEvent({ chatId, chatType: 'p2p', text: '看这个' });
-    (ev.message as any).parent_id = 'om_quoted';
-    await h.handle(ev);
-    await h.handle(textEvent({ chatId, chatType: 'p2p', text: '处理', mention: true }));
-    expect(h.received[0].parentId).toBe('om_quoted');
-    expect(h.received[0].text).toBe('看这个\n\n处理');
-
-    const ev2 = textEvent({ chatId, chatType: 'p2p', text: '看这个' });
-    (ev2.message as any).parent_id = 'om_old';
-    await h.handle(ev2);
-    const trig = textEvent({ chatId, chatType: 'p2p', text: '处理', mention: true });
-    (trig.message as any).parent_id = 'om_new';
-    await h.handle(trig);
-    expect(h.received[1].parentId).toBe('om_new');
-  });
-
-  it('un-@ post in p2p: text cached, its images cached as media', async () => {
-    const h = makeHandler({ privateRequireMention: true });
-    const chatId = fresh('oc');
-    await h.handle(postEvent({ chatId, chatType: 'p2p', paragraphs: [
-      [{ tag: 'text', text: '参考图' }], [{ tag: 'img', image_key: 'img_p1' }], [{ tag: 'img', image_key: 'img_p2' }],
-    ] }));
-    expect(h.received).toHaveLength(0);
-    await h.handle(textEvent({ chatId, chatType: 'p2p', text: '出图', mention: true }));
-    expect(h.received[0].text).toBe('参考图\n\n出图');
-    expect(h.received[0].extraMedia?.map((m) => m.imageKey)).toEqual(['img_p1', 'img_p2']);
-  });
-
-  it('switch off: nothing is ever cached in p2p (messages are answered directly)', async () => {
-    const h = makeHandler();
-    const chatId = fresh('oc');
-    await h.handle(textEvent({ chatId, chatType: 'p2p', text: 'A' }));
-    await h.handle(textEvent({ chatId, chatType: 'p2p', text: 'B' }));
-    expect(h.received.map((m) => m.text)).toEqual(['A', 'B']);
-  });
-
-  it('group text is never cached (switch on or off); group media still is', async () => {
-    const h = makeHandler({ privateRequireMention: true }, 5);
-    const chatId = fresh('oc');
-    await h.handle(textEvent({ chatId, chatType: 'group', text: '闲聊' }));
-    await h.handle(imageEvent({ chatId, chatType: 'group', imageKey: 'img_g' }));
-    await h.handle(textEvent({ chatId, chatType: 'group', text: '看图', mention: true }));
-    expect(h.received[0].text).toBe('看图');
-    expect(h.received[0].extraMedia?.[0].imageKey).toBe('img_g');
-  });
-});
-
-describe('[design-note S] rich-text links keep their URL', () => {
-  const post = (paragraphs: unknown[][]) => ({ zh_cn: { title: '', content: paragraphs } });
-
-  it('label + href → "label (href)"; URL-as-label not duplicated; no href → label', () => {
-    expect(extractTextFromPost(post([[
-      { tag: 'text', text: '见 ' }, { tag: 'a', text: '会议纪要', href: 'https://x.feishu.cn/docx/AAA' },
-    ]]))).toBe('见 会议纪要 (https://x.feishu.cn/docx/AAA)');
-    expect(extractTextFromPost(post([[
-      { tag: 'a', text: 'https://x.feishu.cn/docx/AAA', href: 'https://x.feishu.cn/docx/AAA' },
-    ]]))).toBe('https://x.feishu.cn/docx/AAA');
-    expect(extractTextFromPost(post([[{ tag: 'a', text: 'no-href' }]]))).toBe('no-href');
-  });
-
-  it('the URL survives the whole pipeline into the prompt', async () => {
-    const h = makeHandler();
-    await h.handle(postEvent({ chatId: fresh('oc'), chatType: 'p2p', mention: true, paragraphs: [[
-      { tag: 'a', text: '会议纪要', href: 'https://x.feishu.cn/docx/AAA' },
-    ]] }));
-    expect(h.received[0].text).toContain('https://x.feishu.cn/docx/AAA');
   });
 });

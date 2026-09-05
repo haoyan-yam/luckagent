@@ -2,6 +2,7 @@ import * as lark from '@larksuiteoapi/node-sdk';
 import type { BotConfig } from '../config.js';
 import type { Logger } from '../utils/logger.js';
 import { MessageSender } from './message-sender.js';
+import { fetchRoundContext, buildRoundPrompt, type RoundContext } from './round-context.js';
 
 // Re-export from shared types so existing imports continue to work
 export type { IncomingMessage } from '../types.js';
@@ -23,74 +24,6 @@ export type CardActionHandler = (event: CardActionEvent) => void;
 // Cache for group member counts (to avoid calling Feishu API on every message)
 const MEMBER_COUNT_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const memberCountCache = new Map<string, { count: number; ts: number }>();
-
-// Cache for recent media messages in group chats (file/image sent without @mention).
-// When a user later @mentions the bot, cached media is attached automatically.
-// [design-note N] TTL 5 分钟太短：2026-07-21 13:29 缓存的两个文件，13:39 @bot 时
-// 已过期被【静默】过滤，用户以为 bot 收到了文件。传大文件、写一段说明再 @，超过
-// 5 分钟太常见。提到 30 分钟（缓存只存 key 不存内容，内存无压力）；过期丢弃必须打
-// WARN（含文件名），事后可从日志还原「用户发过什么、为什么没带上」。
-// 导出 cachePendingMedia/getCachedMedia/MEDIA_CACHE_TTL_MS 仅为单测；生产只有本文件用。
-export const MEDIA_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
-// [design-note S] Cache entries also hold un-@ private TEXT (with the parentId of a
-// quote-reply) alongside media, in arrival order. On the next @mention texts are
-// prepended to the prompt in order and media are attached.
-interface CachedMedia {
-  messageId: string;
-  imageKey?: string;
-  fileKey?: string;
-  fileName?: string;
-  /** Body of an un-@ text/post message (mention tags already stripped). */
-  text?: string;
-  /** If that un-@ message was itself a quote-reply: the quoted message id. */
-  parentId?: string;
-  ts: number;
-}
-const pendingMediaCache = new Map<string, CachedMedia[]>(); // key: chatId:userId
-
-function cacheMediaKey(chatId: string, userId: string): string {
-  return `${chatId}:${userId}`;
-}
-
-/** [design-note N] 入缓存收口成函数（原是调用点内联三行），单测得以直接构造过期条目。 */
-export function cachePendingMedia(chatId: string, userId: string, media: CachedMedia): void {
-  const key = cacheMediaKey(chatId, userId);
-  const items = pendingMediaCache.get(key) || [];
-  items.push(media);
-  pendingMediaCache.set(key, items);
-}
-
-export function getCachedMedia(chatId: string, userId: string, logger?: Logger): CachedMedia[] {
-  const key = cacheMediaKey(chatId, userId);
-  const items = pendingMediaCache.get(key);
-  if (!items) return [];
-  const now = Date.now();
-  const valid = items.filter(m => now - m.ts < MEDIA_CACHE_TTL_MS);
-  // [design-note N] 过期丢弃绝不静默：WARN 带文件名/图片 key 与滞留时长
-  const expired = items.filter(m => now - m.ts >= MEDIA_CACHE_TTL_MS);
-  if (expired.length > 0 && logger) {
-    logger.warn(
-      {
-        chatId,
-        userId,
-        dropped: expired.map(m => m.fileName || m.imageKey || m.fileKey || (m.text ? m.text.slice(0, 60) : m.messageId)),
-        oldestAgeMs: Math.max(...expired.map(m => now - m.ts)),
-        ttlMs: MEDIA_CACHE_TTL_MS,
-      },
-      'Cached media expired before @mention and was dropped (NOT attached to the task)',
-    );
-  }
-  if (valid.length === 0) {
-    pendingMediaCache.delete(key);
-    return [];
-  }
-  pendingMediaCache.set(key, valid);
-  return valid;
-}
-
-function clearCachedMedia(chatId: string, userId: string): void {
-  pendingMediaCache.delete(cacheMediaKey(chatId, userId));
-}
 
 // Dedup cache for already-processed message ids. Feishu retries webhook delivery
 // (at-least-once) when the handler is slow to respond — e.g. a long-running task
@@ -205,50 +138,24 @@ export function createReceiveHandler(
         //   independent. Who may DM at all is design-note A's business.
         const mentions = message.mentions;
         const requireMention = chatType === 'group' || config.privateRequireMention === true;
-        if (requireMention) {
-          const botMentioned = botOpenId
-            ? mentions?.some((m: any) => m.id?.open_id === botOpenId)
-            : mentions && mentions.length > 0;
-          if (!botMentioned) {
-            if (chatType === 'group' && config.groupNoMention) {
-              // groupNoMention mode: respond to all group messages without @mention
-              logger.debug({ chatId }, 'Group no-mention mode enabled, processing without @mention');
-            } else if (
-              chatType === 'group' && !config.privateRequireMention
-              && messageSender && await isPrivateLikeGroup(chatId, messageSender)
-            ) {
-              logger.debug({ chatId }, 'Private-like group (2 members), processing without @mention');
-            } else if (msgType === 'image' || msgType === 'file') {
-              // Cache media messages for later retrieval when user @mentions bot
-              const media = parseMediaMessage(message, msgType, logger);
-              if (media) {
-                cachePendingMedia(chatId, userId, { ...media, messageId, ts: Date.now() });
-                logger.info({ chatId, chatType, userId, msgType, ...media }, 'Cached media for later @mention');
-              }
-              return;
-            } else if (chatType === 'p2p') {
-              // [design-note S] Un-@ private TEXT is cached too. The whole point of the
-              // switch is "send the links/files/brief first, @ last" — dropping the
-              // brief would hand the bot nothing but the final "go". Group text is
-              // never cached: un-@ chatter in a group is not addressed to the bot.
-              const parsed = extractPromptText(message, msgType, logger);
-              if (parsed) {
-                if (parsed.text) {
-                  cachePendingMedia(chatId, userId, { messageId, text: parsed.text, parentId, ts: Date.now() });
-                }
-                for (const key of parsed.postImages) {
-                  cachePendingMedia(chatId, userId, { messageId, imageKey: key, ts: Date.now() });
-                }
-                logger.info(
-                  { chatId, userId, msgType, text: parsed.text.slice(0, 100), postImageCount: parsed.postImages.length, parentId },
-                  'Cached private text for later @mention',
-                );
-              }
-              return;
-            } else {
-              logger.debug({ chatId, chatType }, 'Ignoring message without @mention');
-              return;
-            }
+        const botMentioned = botOpenId
+          ? mentions?.some((m: any) => m.id?.open_id === botOpenId)
+          : mentions && mentions.length > 0;
+        if (requireMention && !botMentioned) {
+          if (chatType === 'group' && config.groupNoMention) {
+            // groupNoMention mode: respond to all group messages without @mention
+            logger.debug({ chatId }, 'Group no-mention mode enabled, processing without @mention');
+          } else if (
+            chatType === 'group' && !config.privateRequireMention
+            && messageSender && await isPrivateLikeGroup(chatId, messageSender)
+          ) {
+            logger.debug({ chatId }, 'Private-like group (2 members), processing without @mention');
+          } else {
+            // [design-note S] Un-@ messages are silently ignored — but not lost: on
+            // this sender's next @mention the bridge pulls their "round" from the
+            // Feishu API (see round-context.ts). No in-memory cache, no TTL.
+            logger.debug({ chatId, chatType, msgType }, 'Ignoring message without @mention');
+            return;
           }
         }
 
@@ -323,37 +230,36 @@ export function createReceiveHandler(
           }));
           logger.info({ chatId, postExtraImageCount: postExtraImages.length }, 'Attached extra images from post');
         }
-        // Re-attach what was cached while un-mentioned (one code path for every
-        // chat type; p2p only ever has cache entries under privateRequireMention,
-        // [design-note S]): media → attachments; texts → prepended to this body in
-        // arrival order, the trigger message always last. If this message is not a
-        // quote-reply but a cached one was, reuse the earliest cached parentId so
-        // design-note P's quoted-content injection still fires (single parent only).
-        const cached = getCachedMedia(chatId, userId, logger); // [design-note N] 过期丢弃要打 WARN
-        if (cached.length > 0) {
-          const cachedMedia = cached
-            .filter(m => m.imageKey || m.fileKey)
-            .map(m => ({
-              messageId: m.messageId,
-              imageKey: m.imageKey,
-              fileKey: m.fileKey,
-              fileName: m.fileName,
-            }));
-          if (cachedMedia.length > 0) {
-            extraMedia = extraMedia ? [...extraMedia, ...cachedMedia] : cachedMedia;
-          }
-          const cachedTexts = cached.filter(m => m.text);
-          if (cachedTexts.length > 0) {
-            text = [...cachedTexts.map(m => m.text as string), text].join('\n\n');
-            if (!parentId) {
-              parentId = cachedTexts.find(m => m.parentId)?.parentId;
-            }
-          }
-          clearCachedMedia(chatId, userId);
-          logger.info(
-            { chatId, userId, mediaCount: cachedMedia.length, textCount: cachedTexts.length, parentId },
-            'Attached cached content to @mention message',
+        // [design-note S] On an @mention, pull this sender's "round" (everything
+        // they sent since their previous @mention) from the Feishu API: texts are
+        // prepended in order, media become attachments, an un-@ quote-reply lends
+        // its parentId. Same mechanism for p2p and groups; only the @-er's own
+        // messages are pulled. Not fetched when the message got through without an
+        // @ (groupNoMention / private-like group / switch off) — nothing accumulates
+        // there. Any failure degrades to one note in the prompt; never blocks.
+        if (requireMention && botMentioned && messageSender) {
+          const triggerTimeMs = Number(message.create_time) || Date.now();
+          const round: RoundContext = await fetchRoundContext(
+            (c, st, et, pt) => messageSender.listMessages(c, st, et, pt),
+            { chatId, triggerMessageId: messageId, triggerTimeMs, senderId: userId, botOpenId },
+            { extractPostText: extractTextFromPost, extractPostImages: extractImagesFromPost },
           );
+          if (round.error) {
+            logger.warn({ chatId, chatType, userId, error: round.error, scanned: round.scanned }, 'Round context fetch failed; continuing without it');
+          }
+          if (round.media.length > 0) {
+            extraMedia = extraMedia ? [...extraMedia, ...round.media] : round.media;
+          }
+          if (!parentId) {
+            parentId = round.texts.find(m => m.parentId)?.parentId;
+          }
+          text = buildRoundPrompt(round, text);
+          if (round.texts.length > 0 || round.media.length > 0 || round.truncated) {
+            logger.info(
+              { chatId, chatType, userId, textCount: round.texts.length, mediaCount: round.media.length, truncated: round.truncated, scanned: round.scanned, parentId },
+              'Attached round context to @mention message',
+            );
+          }
         }
 
         onMessage({ messageId, chatId, chatType, userId, parentId, text, imageKey, fileKey, fileName, extraMedia });
@@ -446,32 +352,12 @@ function extractPromptText(
   return { text, postImages };
 }
 
-/** Parse image/file message content, returning media fields or undefined on failure. */
-function parseMediaMessage(
-  message: any, msgType: string, logger: Logger,
-): { imageKey?: string; fileKey?: string; fileName?: string } | undefined {
-  try {
-    const content = JSON.parse(message.content);
-    if (msgType === 'image') {
-      const imageKey = content.image_key;
-      return imageKey ? { imageKey } : undefined;
-    }
-    if (msgType === 'file') {
-      const fileKey = content.file_key;
-      const fileName = content.file_name;
-      return (fileKey && fileName) ? { fileKey, fileName } : undefined;
-    }
-  } catch {
-    logger.warn({ msgType }, 'Failed to parse media message for caching');
-  }
-  return undefined;
-}
-
 /**
  * Extract all image_keys from a Feishu post (rich text) message.
  * Looks for { tag: "img", image_key: "..." } elements in the post content.
  */
-function extractImagesFromPost(content: Record<string, unknown>): string[] {
+// [design-note S] Exported so round-context can reuse the post image parser.
+export function extractImagesFromPost(content: Record<string, unknown>): string[] {
   const bodies: Array<Record<string, unknown>> = [];
 
   if (Array.isArray(content.content)) {

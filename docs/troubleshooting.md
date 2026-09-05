@@ -69,7 +69,7 @@ pm2 save             # 固化当前进程列表（luckagent start/update 也会�
 4. **权限没开通**——至少要有 `im:message`、`im:message:readonly`、`im:resource`、`im:chat:readonly`，加完权限要重新发版。清单见[飞书应用配置](feishu-app-setup.md#第四步配置权限)。
 5. **改了配置没重启**——`bots.json` 的任何增删改都需要 `luckagent restart` 生效，管理台会亮「配置已变更」提示。
 6. **bots.json 语法错 / 工作目录不存在**——`luckagent doctor` 的 `bots_config` 检查项会指出来。
-7. **没 @ 机器人**——默认群聊需要 @ 才响应（除非该 bot 配了 `groupNoMention: true`）；配了 `privateRequireMention: true` 的 bot 连私聊和两人群也要 @（不 @ 静默不回，飞书私聊输入 @ 能选到机器人；私聊里不 @ 发的链接/要求/文件会暂存 30 分钟，等下一次 @ 一起带上）；配了 `groupOnly` 的 bot 私聊只理白名单。
+7. **没 @ 机器人**——默认群聊需要 @ 才响应（除非该 bot 配了 `groupNoMention: true`）；配了 `privateRequireMention: true` 的 bot 连私聊和两人群也要 @（不 @ 静默不回，飞书私聊输入 @ 能选到机器人；私聊里不 @ 发的链接/要求/文件不会丢，下一次 @ 时按飞书接口拉本轮消息一起带上，48 小时内有效；群聊同理但只拉 @ 的那个人自己发的）；配了 `groupOnly` 的 bot 私聊只理白名单。
 8. **Claude 引擎认证**——`.env` 里配 `ANTHROPIC_API_KEY`，或设 `CLAUDE_EXECUTABLE_PATH` 指向一个已登录的 Claude Code CLI 复用订阅。
 
 以上都对还不行，看日志找具体报错（下一条）。

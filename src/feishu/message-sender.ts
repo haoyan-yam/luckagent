@@ -569,6 +569,37 @@ export class MessageSender {
    * [design-note P] 拉取指定消息内容（引用回复解析用）。任何失败（无权限、
    * 已删除、网络、SDK 以 {code,msg} 返回业务错）都返回 undefined，绝不抛出。
    */
+  /**
+   * [design-note S] Page a chat's messages newest-first inside a time window
+   * (im.v1.message.list) for round-context fetching. Returns undefined on any
+   * failure so the caller can degrade; never throws.
+   */
+  async listMessages(
+    chatId: string, startTimeSec: string, endTimeSec: string, pageToken?: string,
+  ): Promise<{ items: any[]; hasMore: boolean; pageToken?: string } | undefined> {
+    try {
+      const resp: any = await this.client.im.v1.message.list({
+        params: {
+          container_id_type: 'chat',
+          container_id: chatId,
+          start_time: startTimeSec,
+          end_time: endTimeSec,
+          sort_type: 'ByCreateTimeDesc',
+          page_size: 50,
+          ...(pageToken ? { page_token: pageToken } : {}),
+        },
+      });
+      if (resp?.code !== undefined && resp?.code !== null && resp.code !== 0) {
+        this.logger.warn({ chatId, code: resp.code, msg: resp.msg }, 'listMessages returned error code');
+        return undefined;
+      }
+      return { items: resp?.data?.items ?? [], hasMore: Boolean(resp?.data?.has_more), pageToken: resp?.data?.page_token };
+    } catch (err) {
+      this.logger.warn({ err, chatId }, 'listMessages failed');
+      return undefined;
+    }
+  }
+
   async fetchMessage(messageId: string): Promise<FetchedMessage | undefined> {
     try {
       const resp = await this.client.im.v1.message.get({ path: { message_id: messageId } });
