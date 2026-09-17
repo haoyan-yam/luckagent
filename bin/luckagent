@@ -253,7 +253,8 @@ if [[ ! -d "$LUCKAGENT_HOME/.git" ]]; then
   fi
   info "Restarting Luckagent..."
   _write_restart_breadcrumb
-  pm2 restart luckagent-bridge luckagent-core 2>/dev/null || pm2 start ecosystem.config.cjs
+  # 从配置文件重启：重新求值 ecosystem.config.cjs 的 env（PATH 里的 venv 等），未启动的会拉起
+  pm2 restart "$LUCKAGENT_HOME/ecosystem.config.cjs" 2>/dev/null || pm2 start "$LUCKAGENT_HOME/ecosystem.config.cjs"
   pm2 save --force 2>/dev/null || true
 
   success "Luckagent updated and restarted!"
@@ -281,10 +282,14 @@ cmd_stop()    {
 }
 cmd_restart() {
   _write_restart_breadcrumb
+  # 从 ecosystem.config.cjs 重启而不是按进程名：`pm2 restart <name>` 沿用首次 start 时的
+  # env，配置文件里新增的 PATH（如 ~/.luckagent/venv/bin）永远带不上；从配置文件 restart
+  # 会重新求值 env（pm2 7 实测），--only 限定进程，未启动的进程会被顺带拉起。
+  local eco="$LUCKAGENT_HOME/ecosystem.config.cjs"
   case "${1:-}" in
-    --all)  pm2 restart luckagent-bridge luckagent-core ;;
-    --core) pm2 restart luckagent-core ;;
-    *)      pm2 restart luckagent-bridge ;;
+    --all)  pm2 restart "$eco" ;;
+    --core) pm2 restart "$eco" --only luckagent-core ;;
+    *)      pm2 restart "$eco" --only luckagent-bridge ;;
   esac
 }
 cmd_logs()    {

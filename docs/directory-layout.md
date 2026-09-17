@@ -84,6 +84,7 @@ Luckagent 涉及四类目录：安装目录、每个 bot 的工作目录、两�
 | `outbound-ledger.db` | 出站台账：bot 发出的卡片终版文本与媒资 key，供「引用回复」上下文回捞 |
 | `agent-teams.db` | Agent Teams（团队/任务/消息/运行）状态 |
 | `budgets.json` | 每 bot 每日预算用量 |
+| `group-summary.json` | 群日报页的「已忽略」群列表（明确不总结的群，不再被「未配置」提示打扰） |
 | `last-restart.json` | 重启面包屑：重启后注入一次性提醒，防 agent 从历史会话里看到「请重启」又循环重启 |
 | `default.env` | 可选的内部默认环境变量（优先级低于真实环境变量与项目 `.env`） |
 | `venv/` | install.sh 用 brew python@3.13 建的 Python 虚拟环境，装有 `requirements.txt` 的基础包（python-pptx / openpyxl / Pillow / pandas / PyMuPDF …）。`ecosystem.config.cjs` 与 `~/.zprofile` 都把 `venv/bin` 前置到 PATH，bot 会话与终端里的 `python3` 均指向它；bot 临时 `pip install` 的包也落在这里，不污染系统 Python |

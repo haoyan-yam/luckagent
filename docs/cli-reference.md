@@ -26,7 +26,7 @@
 
 ### `luckagent restart [--core|--all]`（别名 `rs`）
 
-参数语义同 `stop`，默认只重启 bridge。重启前会写入「重启面包屑」（`~/.luckagent/last-restart.json`），让重启后的 agent 会话知道「刚刚已经重启过了」，避免从历史消息里再触发一次重启形成循环。
+参数语义同 `stop`，默认只重启 bridge。v0.7.10 起从 `ecosystem.config.cjs` 重启（`--only` 限定进程），因此配置文件里的 env 变更（如前置到 PATH 的 `~/.luckagent/venv/bin`）会随重启生效——按进程名 `pm2 restart` 做不到这一点。重启前会写入「重启面包屑」（`~/.luckagent/last-restart.json`），让重启后的 agent 会话知道「刚刚已经重启过了」，避免从历史消息里再触发一次重启形成循环。
 
 ```bash
 luckagent restart          # 改了 bots.json / .env 后生效配置
@@ -52,7 +52,7 @@ luckagent logs -n 200          # 先回放最近 200 行
 一条命令完成升级，依次执行：
 
 1. `git pull --ff-only`（要求安装目录是 git 检出；CLI 自身被更新时会自动用新版重跑）；
-2. `npm install` + `npm run build`；
+2. `npm install` + `npm run build`，并把 `requirements.txt` 同步进 `~/.luckagent/venv`（venv 不存在则跳过；brew 侧的 LibreOffice / ffmpeg 等只由 `install.sh` 安装）；
 3. 复制 CLI 到 `~/.local/bin`；
 4. 同步技能（详见[技能体系](claude-code-skills.md#luckagent-update-的技能同步)）；
 5. `pm2 restart` 两个进程 + `pm2 save`。
@@ -69,6 +69,8 @@ luckagent logs -n 200          # 先回放最近 200 行
 | `luckagent_core` | core `/health` 是否可达、token 是否就位 |
 | `bots_config` | bots.json 可解析、各 bot 工作目录是否存在 |
 | `voice_defaults` | TTS 凭证是否配置 |
+| `lark_cli` | lark-cli 是否安装、是否至少有一个 bot 的 app profile |
+| `office_media_toolchain` | 办公与媒体工具链是否齐全：ffmpeg / soffice / pdftotext 三个二进制、Noto Sans CJK SC 字体、`~/.luckagent/venv` 及其 11 个基础包能否导入；缺项时重跑 `bash install.sh` 只补缺的 |
 
 ```bash
 luckagent doctor           # 人类可读

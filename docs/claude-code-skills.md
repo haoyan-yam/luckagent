@@ -22,7 +22,7 @@
 | `luckagent` | **CLI 参考技能**：教 agent 用 `luckagent memory / skills / agents / inbox / teams / schedule / talk / voice` 等全部命令，是 bot 融入协作体系的说明书 | `packages/skills/luckagent/` |
 | `voice` | 文本转语音：`luckagent voice tts` 的用法（生成 MP3、发语音） | `src/skills/voice/` |
 | `opencli`（条件启用） | 把 155+ 网站变成 CLI、驱动本机已登录的 Chrome 做浏览器自动化。**仅当检测到 `opencli` 二进制时才安装**——之后装了二进制，重跑一次 `bash install.sh`（非 git 检出）或 `luckagent update`（git 检出）即启用；还需本机装 Chrome 并登录目标网站 | `src/skills/opencli/` |
-| `frontend-slides`（第三方 · MIT） | 生成零依赖、动画丰富的单文件 HTML 演示文稿，或把 PPT/PPTX 转成网页（转换需 `pip install python-pptx`）。安装时从上游 [zarazhangrui/frontend-slides](https://github.com/zarazhangrui/frontend-slides) 拉取到 `~/.claude/skills/`，`install.sh` / `luckagent update` 都会跟进上游更新 | 上游仓库（不入本仓） |
+| `frontend-slides`（第三方 · MIT） | 生成零依赖、动画丰富的单文件 HTML 演示文稿，或把 PPT/PPTX 转成网页（转换用的 `python-pptx` 已随安装脚本预装在 `~/.luckagent/venv`）。安装时从上游 [zarazhangrui/frontend-slides](https://github.com/zarazhangrui/frontend-slides) 拉取到 `~/.claude/skills/`，`install.sh` / `luckagent update` 都会跟进上游更新 | 上游仓库（不入本仓） |
 | `image-gen` | 文生图 / 图生图 / 改图，**双 provider 统一入口 `gen.py`**：按 key 自动判定——配了 OpenAI key（`OPENAI_IMAGE_API_KEY`/`OPENAI_API_KEY`）走 gpt-image-2，仅配 `ARK_API_KEY` 走火山 Seedream（4K、组图、多参考图，需在方舟控制台开通模型）。脚本零依赖，含提示词打法参考与绿幕抠图 | `src/skills/image-gen/` |
 
 **飞书 bot 额外装 19 个 `lark-*` 技能**（lark-doc、lark-im、lark-calendar、lark-sheets、lark-base、lark-task、lark-drive、lark-mail、lark-wiki 等），让 agent 会用 `lark-cli` 操作飞书文档/消息/日历/多维表格等 11 个业务域。lark-cli 是**必备组件**，安装脚本会自动装好（含 19 个技能）；若曾安装失败可手动补：
@@ -72,7 +72,7 @@ npx skills add larksuite/cli --all -y -g   # 拉取 19 个官方技能到全局
 cp -r 某技能目录 ~/.claude/skills/
 ```
 
-引入外部技能前自查三件事：**①** SKILL.md 里不要有其他机器的绝对路径、真实群/人 ID；**②** 依赖的密钥是否已进本机 `.env`；**③** 依赖的本地二进制是否已装（缺二进制的技能只会误导 agent）。
+引入外部技能前自查三件事：**①** SKILL.md 里不要有其他机器的绝对路径、真实群/人 ID；**②** 依赖的密钥是否已进本机 `.env`；**③** 依赖的本地二进制与 Python 包是否已装——安装脚本已预装 python-pptx / openpyxl / Pillow / pandas / PyMuPDF 等基础包与 LibreOffice / ffmpeg / poppler，`luckagent doctor` 的 `office_media_toolchain` 项可核对（缺二进制的技能只会误导 agent）。
 
 ## 中央技能中心（跨 bot 共享）
 

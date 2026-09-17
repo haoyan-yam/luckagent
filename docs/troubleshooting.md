@@ -109,6 +109,21 @@ sudo chown -R "$(whoami)" ~/.npm
 - `git pull --ff-only` 拒绝合并：本地改过源码导致无法快进。先 `git stash`（或提交到自己的分支）再 update；
 - 安装目录不是 git 检出（get.sh 在无 git 机器上的 tarball 下载模式）：update 的拉码步骤不可用，改用 `curl -fsSL https://codeload.github.com/haoyan-yam/luckagent/tar.gz/refs/heads/main | tar -xz --strip-components=1 -C ~/luckagent` 覆盖最新代码后重跑 `bash install.sh`（幂等，含依赖/构建/重启）。
 
+## 做 PPT / Excel / PDF 时报缺包，或找不到 soffice / ffmpeg
+
+bot 产出办公文件依赖安装脚本装的**办公与媒体工具链**（`~/.luckagent/venv` 里的 python-pptx / openpyxl / Pillow / pandas / PyMuPDF 等，以及 LibreOffice、ffmpeg、poppler、Noto CJK 字体）。先看：
+
+```bash
+luckagent doctor
+```
+
+`office_media_toolchain` 一项会列出缺什么。处置：
+
+- **缺项**：重跑 `cd ~/luckagent && bash install.sh`（幂等，只装缺的）；`luckagent update` 只同步 Python 包，不装 brew 侧的东西；
+- **v0.7.9 之前装的老机器**：工具链从未装过，同样重跑一次 `install.sh`；
+- **venv 损坏**（多半是 `brew upgrade` 换了 Python 小版本后 `ModuleNotFoundError` 或 `python: bad interpreter`）：`install.sh` 会检测到并自动重建；
+- **bot 会话里 `python3` 仍是系统 Python**：PM2 进程还带着旧 PATH。`pm2 restart <进程名>` 与管理台的「重启」按钮都**沿用首次启动时的 env**，不会重读 `ecosystem.config.cjs`（pm2 7 实测）；执行 `luckagent restart`（v0.7.10 起改为从配置文件重启，会重新求值 PATH），或重跑 `bash install.sh`。
+
 ## 还没解决？
 
 - 翻[设计笔记](design-notes.md)确认你遇到的是不是「特性」（比如发送暂存目录里文件消失＝已发送成功）；

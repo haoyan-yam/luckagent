@@ -2,6 +2,11 @@
 
 版本号 = 根 `package.json`（管理台总览页显示的就是它）。升级：`luckagent update`（git 安装）或重跑一行安装命令（tarball 安装）。git tag 与本文件同步打点。
 
+## v0.7.10 — 2026-09-18
+
+- **`luckagent restart` / `update` 改为从 `ecosystem.config.cjs` 重启**（`--only` 限定进程）：此前按进程名 `pm2 restart` 会沿用首次 start 时的 env，v0.7.9 在配置文件里前置的 venv PATH 在老机器上永远带不上，bot 会话里的 `python3` 仍是系统 Python（pm2 7.0.1 实测：按名 restart 保留旧 env，从配置文件 start/restart 均重新求值，`--only` 只动指定进程且未启动的会拉起）。管理台「重启」按钮走 exit + PM2 自动拉起，同样不刷新 env——升级后第一次请用 `luckagent restart` 或重跑 `install.sh`
+- 文档对齐 v0.7.0–v0.7.9：管理台手册补「技能」「记忆」两页与总览的密钥三态 / 订阅登录 / 自启横幅；CLI 参考补 doctor 的 `lark_cli`、`office_media_toolchain` 检查项与 update 的 requirements 同步；设计笔记计数 16→17（A–T）；技能体系与排障文档补工具链说明；飞书配置指南补 v0.7.8 拉本轮上下文所需权限；目录结构补 `group-summary.json`
+
 ## v0.7.9 — 2026-09-17
 
 - **安装脚本内置办公与媒体工具链**：`install.sh` 新增「办公与媒体工具链」段，brew 安装 ffmpeg、poppler、LibreOffice、Noto Sans CJK SC 字体，并用 python@3.13 建 `~/.luckagent/venv` 装入根目录新增的 `requirements.txt`（python-pptx / openpyxl / Pillow / numpy / pandas / python-docx / lxml / matplotlib / xlsxwriter / PyMuPDF / edge-tts）。清单来自生产环境 18 个 bot 的实际引用统计：python-pptx、openpyxl、Pillow 是产出三大件，LibreOffice 转 pdf/图自检，ffmpeg 转语音回复，Noto CJK 是排字默认中文字体。此前这些全靠 bot 在任务里临时安装，散落在系统 Python 里、换机不可复现、随 Xcode CLT 升级集体失效
