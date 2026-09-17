@@ -1,0 +1,15 @@
+# Luckagent bot 工作区的 Python 基础包（install.sh 装进 ~/.luckagent/venv）。
+# 这是 bot 日常产出（PPT / Excel / Word / 图片 / PDF / 语音）的最小集合，
+# 来源于生产环境 18 个 bot 一年多的实际引用统计；重型包（torch / whisper /
+# rembg / opencv 等）刻意不放，bot 用到时自行安装。
+python-pptx
+openpyxl
+Pillow
+numpy
+pandas
+python-docx
+lxml
+matplotlib
+xlsxwriter
+PyMuPDF
+edge-tts

@@ -2,6 +2,12 @@
 
 版本号 = 根 `package.json`（管理台总览页显示的就是它）。升级：`luckagent update`（git 安装）或重跑一行安装命令（tarball 安装）。git tag 与本文件同步打点。
 
+## v0.7.9 — 2026-09-17
+
+- **安装脚本内置办公与媒体工具链**：`install.sh` 新增「办公与媒体工具链」段，brew 安装 ffmpeg、poppler、LibreOffice、Noto Sans CJK SC 字体，并用 python@3.13 建 `~/.luckagent/venv` 装入根目录新增的 `requirements.txt`（python-pptx / openpyxl / Pillow / numpy / pandas / python-docx / lxml / matplotlib / xlsxwriter / PyMuPDF / edge-tts）。清单来自生产环境 18 个 bot 的实际引用统计：python-pptx、openpyxl、Pillow 是产出三大件，LibreOffice 转 pdf/图自检，ffmpeg 转语音回复，Noto CJK 是排字默认中文字体。此前这些全靠 bot 在任务里临时安装，散落在系统 Python 里、换机不可复现、随 Xcode CLT 升级集体失效
+- venv 的 `bin` 前置到 `~/.zprofile` 与 `ecosystem.config.cjs` 的 PATH，终端和 PM2 里的 bot 会话 `python3` 都解析到它；`luckagent update` 顺带同步 `requirements.txt`；`luckagent doctor` 新增 `office_media_toolchain` 检查（二进制 / 字体 / venv / 11 个模块可导入）
+- 单项安装失败只警告并在结尾打印待办命令，不中断安装；`--no-system` 跳过整段。工作区共用规范新增「本机工具链」段，告诉 agent 已有什么、别重复装
+
 ## v0.7.8 — 2026-09-06
 
 - **@ 触发时按飞书接口拉「本轮」上下文，取代内存缓存**（私聊群聊同一机制）：只拉 @ 的这个人上一条 @ 之后的消息，上限 48 小时/100 条；文本按时间顺序拼到提示词前面、触发消息永远在最后，图片/文件作附件，引用回复的被引内容照常注入。v0.7.5 的「暂存 30 分钟」有三处硬伤——只按内存存、桥接重启即丢、材料发完几小时再 @ 就超时（生产实锤）——飞书接口里什么都有，现在完全无状态。群聊只拉 @ 的人自己的消息，同事的闲聊和文件不拉。拉取失败降级为提示词里一句说明，任务照常启动。需要应用有读取单聊/群消息权限，缺权限时优雅降级

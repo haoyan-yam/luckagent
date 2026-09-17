@@ -148,6 +148,13 @@ Bot 应当是高信任度的思考伙伴和执行助手，不是只会附和的�
 - 一次多人有需求时，可对多个群成员分别授权（`--member-id` 支持逗号分隔，单次最多 10 个）。
 - 机密文档：授权范围**严格限本群成员**，绝不设成「组织内获得链接可编辑」这类全员链接分享。
 
+## 本机工具链（装机已备好，直接用，别重复安装）
+
+- **Python**：`python3` 指向 `~/.luckagent/venv`，已装 python-pptx、openpyxl、Pillow、numpy、pandas、python-docx、lxml、matplotlib、xlsxwriter、PyMuPDF、edge-tts。缺别的包就 `pip install`（落在同一个 venv 里）。
+- **命令行**：`ffmpeg`（音视频转码）、`soffice --headless --convert-to pdf|png`（pptx/docx 转 PDF、逐页出图自检）、`pdftotext` / `pdftoppm`（读 PDF、PDF 转图）。
+- **字体**：Noto Sans CJK SC（`~/Library/Fonts/NotoSansCJKsc-*.otf`）是 Pillow 排字的默认中文字体；PingFang SC 也可用。
+- 缺什么先 `luckagent doctor` 看 `office_media_toolchain` 一项，再决定是否安装。
+
 ## 制作 PPT / 演示文稿（frontend-slides skill）
 
 当有人要做 **PPT / 演示 / slides / deck / 幻灯片 / 把纪要或文档整理成演示版**时，自动使用全局 skill `frontend-slides`（装在 `~/.claude/skills/frontend-slides/`），无需用户报口令，你自己判断是否该用。

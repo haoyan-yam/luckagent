@@ -16,7 +16,8 @@
 | Claude 认证 | 二选一：[Anthropic API Key](https://console.anthropic.com)，或 Claude Code 订阅账号（安装脚本可代装 CLI，登录需自己跑一次 `claude`） |
 | 生图 key（可选） | 二选一：[OpenAI](https://platform.openai.com) 的 key，或 [火山方舟](https://console.volcengine.com/ark) 的 ARK key（需在控制台开通 Doubao-Seedream 模型） |
 | DeepSeek / MiniMax 引擎（可选） | **无需装任何东西，只要一个 API key**（[DeepSeek](https://platform.deepseek.com) / [MiniMax](https://platform.minimaxi.com)）。详见 [docs/engines.md](docs/engines.md) |
-| 时间 | 全程约 20–40 分钟（首次装 Xcode 命令行工具占大头） |
+| 磁盘 | 办公与媒体工具链（LibreOffice、ffmpeg、poppler、Noto CJK 字体、Python 基础包）约 1.5GB |
+| 时间 | 全程约 20–40 分钟（首次装 Xcode 命令行工具与 LibreOffice 下载占大头） |
 
 ---
 
@@ -59,6 +60,7 @@ bash install.sh
 | 生成 `bots.json` | 空列表——机器人稍后用管理台向导创建 | 无 |
 | 技能同步 | 内置技能装进全局目录；并从 GitHub 拉取 frontend-slides（HTML 演示文稿生成，第三方 MIT） | 无；拉取失败仅警告不影响安装 |
 | lark-cli（必装） | 自动安装飞书官方 CLI + 19 个 AI 技能（文档/表格/日历操作、群日报拉消息都依赖它） | 无；万一安装失败，结尾会打印待办命令 |
+| 办公与媒体工具链（必装） | brew 安装 ffmpeg、poppler、LibreOffice、Noto Sans CJK SC 字体，并用 python@3.13 建 `~/.luckagent/venv` 装入 `requirements.txt`（python-pptx / openpyxl / Pillow / numpy / pandas / python-docx / lxml / matplotlib / xlsxwriter / PyMuPDF / edge-tts）——bot 产出 PPT/Excel/Word/PDF/图片/语音都靠它们 | 无；单项失败只警告，结尾打印待办命令 |
 | PM2 启动 | 启动 `luckagent-bridge` + `luckagent-core` 两个常驻进程 | 无 |
 
 结尾会打印：**管理台地址、API_SECRET、下一步指引**。把 API_SECRET 复制下来。
@@ -158,7 +160,7 @@ luckagent doctor --json   # 本机体检（runtime/PM2/core/bots/voice 等检查
 | --- | --- |
 | `~/luckagent/` | 程序本体（代码、`.env`、`bots.json`、`logs/`） |
 | `~/projects/` | 各机器人的工作目录（`<bot>/inputs\|outputs\|work` + 共用规范 `CLAUDE.md`） |
-| `~/.luckagent/` | 运行状态（定时任务、会话、活动记录数据库） |
+| `~/.luckagent/` | 运行状态（定时任务、会话、活动记录数据库）+ `venv/`（bot 用的 Python 与基础包） |
 | `~/.luckagent-core/` | core 数据（`token`、`data/central.db` 共享记忆库） |
 | `~/.claude/skills/` | 随装技能（luckagent / voice / lark-* / frontend-slides 等） |
 | `~/.local/bin/luckagent` | CLI 命令 |
@@ -185,7 +187,7 @@ bash ~/luckagent/scripts/uninstall.sh
 ```
 
 移除 PM2 进程、安装目录（含 `.env`/`bots.json`）、状态目录、CLI 与随装技能；
-**保留** `~/projects/` 工作区与项目记忆、brew/node/lark-cli/claude 等共享工具（脚本结尾会列出保留项与可选清理命令）。
+**保留** `~/projects/` 工作区与项目记忆、brew/node/lark-cli/claude 以及 ffmpeg/LibreOffice/poppler/字体等共享工具（脚本结尾会列出保留项与可选清理命令）。
 
 ## 9. 常见问题（更多见 docs/troubleshooting.md）
 

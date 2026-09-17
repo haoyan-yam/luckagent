@@ -77,7 +77,7 @@
 
 ## 系统要求
 
-- **macOS**（目标机型 Mac mini / MacBook，Apple Silicon）；安装脚本会自动补齐 Homebrew、node 22、PM2、lark-cli 等依赖
+- **macOS**（目标机型 Mac mini / MacBook，Apple Silicon）；安装脚本会自动补齐 Homebrew、node 22、PM2、lark-cli，以及办公与媒体工具链（ffmpeg / LibreOffice / poppler / Noto CJK 字体 / Python 基础包）
 - 一个**飞书企业自建应用**（安装后管理台的「接入向导」会手把手带你创建，或先看[配置指南](docs/feishu-app-setup.md)）
 - 至少一种**引擎认证**：Claude 订阅登录或 `ANTHROPIC_API_KEY`；或 DeepSeek / MiniMax 的 API key（`DEEPSEEK_API_KEY` / `MINIMAX_API_KEY`，零 CLI 安装）。详见[引擎配置](docs/engines.md)
 

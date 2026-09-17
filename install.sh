@@ -3,7 +3,7 @@
 #
 #   bash install.sh              # 交互安装（推荐）
 #   bash install.sh --yes        # 全部用默认值，不提问
-#   bash install.sh --no-system  # 跳过系统级步骤（Homebrew/node/pm2/全局 npm），
+#   bash install.sh --no-system  # 跳过系统级步骤（Homebrew/node/pm2/全局 npm/办公媒体工具链），
 #                                # 只装项目本体——用于沙箱测试或已备齐环境的机器
 #
 # 安装完成后：浏览器打开 http://localhost:9100/admin，用打印出的 API_SECRET 登录，
@@ -358,6 +358,84 @@ else
   command -v lark-cli &>/dev/null || warn "--no-system：跳过 lark-cli 安装，但它是必备组件——正式环境请确保已装（npm i -g @larksuite/cli）"
 fi
 
+# ---- 办公与媒体工具链（必装：bot 产出 PPT/Excel/Word/PDF/图片/语音都靠它们）----
+# 来源于生产环境 18 个 bot 的实际依赖统计：python-pptx / openpyxl / Pillow 是产出的三大件，
+# LibreOffice 负责 pptx 转 pdf/图自检，poppler 读 PDF，ffmpeg 转语音回复，Noto CJK 是 Pillow 排字的默认中文字体。
+# 以前这些全靠 bot 在任务里临时 pip/brew 装，散落在系统 Python 里、换机不可复现——现在装机一次到位。
+DEPS_TODO=""
+_deps_todo() { DEPS_TODO="${DEPS_TODO}     $1"$'\n'; }
+LUCKAGENT_PY_FORMULA="python@3.13"
+LUCKAGENT_VENV="$HOME/.luckagent/venv"
+if [[ "$NO_SYSTEM" != "true" ]] && command -v brew &>/dev/null; then
+  echo ""
+  echo -e "${BOLD}—— 办公与媒体工具链 ——${NC}"
+  # brew formula：ffmpeg（语音回复 mp3→opus）、poppler（pdftotext/pdftoppm）
+  for f in ffmpeg poppler; do
+    if brew list --formula "$f" &>/dev/null; then
+      success "$f 已安装"
+    else
+      info "安装 $f ..."
+      brew install "$f" && success "$f 已安装" || { warn "$f 安装失败"; _deps_todo "brew install $f"; }
+    fi
+  done
+  # LibreOffice：pptx/docx 转 pdf、转图逐页自检；bridge 的 pptx 预览也调 soffice
+  if brew list --cask libreoffice &>/dev/null || [[ -d /Applications/LibreOffice.app ]]; then
+    success "LibreOffice 已安装"
+  else
+    info "安装 LibreOffice（约 400MB，耐心等）..."
+    brew install --cask libreoffice && success "LibreOffice 已安装" || { warn "LibreOffice 安装失败"; _deps_todo "brew install --cask libreoffice"; }
+  fi
+  # 手动装的 LibreOffice 不会把 soffice 放进 PATH——补一个软链
+  if ! command -v soffice &>/dev/null && [[ -x /Applications/LibreOffice.app/Contents/MacOS/soffice ]]; then
+    mkdir -p "$HOME/.local/bin"
+    ln -sf /Applications/LibreOffice.app/Contents/MacOS/soffice "$HOME/.local/bin/soffice"
+    info "已链接 soffice → ~/.local/bin/soffice"
+  fi
+  # Noto Sans CJK SC：Pillow 排字与 LibreOffice 渲染的默认中文字体
+  if brew list --cask font-noto-sans-cjk-sc &>/dev/null || ls "$HOME"/Library/Fonts/NotoSansCJKsc-Regular.otf /Library/Fonts/NotoSansCJKsc-Regular.otf &>/dev/null; then
+    success "Noto Sans CJK SC 字体已安装"
+  else
+    info "安装 Noto Sans CJK SC 字体 ..."
+    brew install --cask font-noto-sans-cjk-sc && success "Noto Sans CJK SC 字体已安装" || { warn "字体安装失败"; _deps_todo "brew install --cask font-noto-sans-cjk-sc"; }
+  fi
+  # Python：固定用 brew 的 python@3.13 建一个专用 venv，不碰系统自带的 Python
+  # （系统 Python 随 Xcode CLT 升级会整体换版本，装在里面的包会集体失效）
+  if ! brew list --formula "$LUCKAGENT_PY_FORMULA" &>/dev/null; then
+    info "安装 $LUCKAGENT_PY_FORMULA ..."
+    brew install "$LUCKAGENT_PY_FORMULA" || { warn "$LUCKAGENT_PY_FORMULA 安装失败"; _deps_todo "brew install $LUCKAGENT_PY_FORMULA"; }
+  fi
+  py_bin="$(brew --prefix "$LUCKAGENT_PY_FORMULA" 2>/dev/null)/bin/python3.13"
+  if [[ -x "$py_bin" ]]; then
+    if [[ -x "$LUCKAGENT_VENV/bin/python" ]] && "$LUCKAGENT_VENV/bin/python" -c 'import sys' &>/dev/null; then
+      info "Python venv 已存在: $LUCKAGENT_VENV"
+    else
+      [[ -d "$LUCKAGENT_VENV" ]] && { warn "旧 venv 已损坏（多半是 Python 升级所致），重建"; rm -rf "$LUCKAGENT_VENV"; }
+      info "创建 Python venv: $LUCKAGENT_VENV ..."
+      mkdir -p "$HOME/.luckagent"
+      "$py_bin" -m venv "$LUCKAGENT_VENV" || { warn "venv 创建失败"; _deps_todo "$py_bin -m venv $LUCKAGENT_VENV"; }
+    fi
+    if [[ -x "$LUCKAGENT_VENV/bin/python" ]]; then
+      info "安装 Python 基础包（requirements.txt：python-pptx / openpyxl / Pillow / pandas / PyMuPDF …）..."
+      "$LUCKAGENT_VENV/bin/python" -m pip install -q --upgrade pip >/dev/null 2>&1 || true
+      if "$LUCKAGENT_VENV/bin/python" -m pip install -q -r "$LUCKAGENT_HOME/requirements.txt"; then
+        success "Python 基础包已就绪（$("$LUCKAGENT_VENV/bin/python" --version 2>&1)）"
+      else
+        warn "Python 基础包安装失败"; _deps_todo "$LUCKAGENT_VENV/bin/python -m pip install -r $LUCKAGENT_HOME/requirements.txt"
+      fi
+      # venv 排在 PATH 最前：本终端、新终端、PM2 里的 bot 会话（ecosystem.config.cjs 同样前置）都解析到它
+      case ":$PATH:" in
+        *":$LUCKAGENT_VENV/bin:"*) ;;
+        *) export PATH="$LUCKAGENT_VENV/bin:$PATH" ;;
+      esac
+      _persist_zprofile 'export PATH="$HOME/.luckagent/venv/bin:$PATH"'
+    fi
+  else
+    warn "找不到 $LUCKAGENT_PY_FORMULA 解释器，跳过 Python venv"
+  fi
+elif [[ "$NO_SYSTEM" == "true" ]]; then
+  warn "--no-system：跳过办公与媒体工具链（ffmpeg / LibreOffice / poppler / Noto CJK / Python venv）——正式环境请确保已装"
+fi
+
 # ---- 工作区目录 ----
 BOTS_ROOT="$HOME/projects"
 mkdir -p "$BOTS_ROOT"
@@ -449,6 +527,11 @@ echo ""
 if [[ -n "$LARK_CLI_TODO" ]]; then
   echo -e "  ${RED}❗ 待办${NC}: lark-cli 未装齐（必备组件），请手动执行:"
   echo "     $LARK_CLI_TODO"
+  echo ""
+fi
+if [[ -n "$DEPS_TODO" ]]; then
+  echo -e "  ${RED}❗ 待办${NC}: 办公与媒体工具链未装齐（bot 做 PPT/Excel/PDF/语音会缺能力），请手动执行:"
+  printf '%s' "$DEPS_TODO"
   echo ""
 fi
 echo "  可选能力（编辑 .env 填 key 后 luckagent restart 生效）:"

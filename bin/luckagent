@@ -103,6 +103,13 @@ if [[ ! -d "$LUCKAGENT_HOME/.git" ]]; then
   info "Building..."
   npm run build
 
+  # 同步 Python 基础包（requirements.txt 有增删时随 update 生效；venv 由 install.sh 创建）
+  if [[ -x "$HOME/.luckagent/venv/bin/python" && -f "$LUCKAGENT_HOME/requirements.txt" ]]; then
+    info "Syncing Python packages (requirements.txt)..."
+    "$HOME/.luckagent/venv/bin/python" -m pip install -q -r "$LUCKAGENT_HOME/requirements.txt" \
+      || warn "Python package sync failed — re-run: bash install.sh"
+  fi
+
   # Update CLI tools in ~/.local/bin.
   # `luckagent` is the sole dispatcher (bridge process control + delegate to
   # luckagent-core feature CLI). `mb`/`mm`/`mh`/`mbcore` are legacy and stay removed.
@@ -513,6 +520,37 @@ check("lark_cli", lark_ok,
       False,
       {"binary": lark_bin, "configExists": lark_cfg.exists(), "appProfiles": lark_apps})
 
+# 办公与媒体工具链（install.sh 的「办公与媒体工具链」段装的东西）
+venv_py = Path.home() / ".luckagent" / "venv" / "bin" / "python"
+tool_bins = {t: shutil.which(t) for t in ("ffmpeg", "soffice", "pdftotext")}
+if not tool_bins["soffice"] and Path("/Applications/LibreOffice.app/Contents/MacOS/soffice").exists():
+    tool_bins["soffice"] = "/Applications/LibreOffice.app/Contents/MacOS/soffice"
+font_ok = any(Path(d, "NotoSansCJKsc-Regular.otf").exists() for d in (Path.home() / "Library/Fonts", Path("/Library/Fonts")))
+py_mods_missing = []
+py_ver = None
+if venv_py.exists():
+    try:
+        out = subprocess.run([str(venv_py), "-c",
+            "import sys,importlib.util\nmods=['pptx','openpyxl','PIL','numpy','pandas','docx','lxml','matplotlib','xlsxwriter','fitz','edge_tts']\n"
+            "miss=[m for m in mods if importlib.util.find_spec(m) is None]\nprint(sys.version.split()[0]);print(','.join(miss))"],
+            capture_output=True, text=True, timeout=20)
+        lines = out.stdout.strip().splitlines()
+        py_ver = lines[0] if lines else None
+        py_mods_missing = [m for m in (lines[1].split(",") if len(lines) > 1 else []) if m]
+    except Exception as e:
+        py_mods_missing = [f"<venv unusable: {e}>"]
+missing = [t for t, b in tool_bins.items() if not b]
+if not font_ok: missing.append("font:NotoSansCJKsc")
+if not venv_py.exists(): missing.append("python-venv")
+elif py_mods_missing: missing.append("python-pkgs:" + ",".join(py_mods_missing))
+check("office_media_toolchain", not missing,
+      "toolchain_incomplete" if missing else "ok",
+      "ffmpeg / LibreOffice / poppler / Noto CJK / Python venv all present." if not missing
+      else "Missing: " + ", ".join(missing) + " — bots will lack PPT/Excel/PDF/voice capabilities.",
+      "Re-run: cd ~/luckagent && bash install.sh  (idempotent; installs only what is missing).",
+      False,
+      {"binaries": tool_bins, "notoCjkFont": font_ok, "venv": str(venv_py) if venv_py.exists() else None,
+       "pythonVersion": py_ver, "missingPythonModules": py_mods_missing})
 
 report["ok"] = all(c.get("ok") for c in checks if c["name"] in ("luckagent_home", "pm2_runtime", "bridge_health"))
 report["summary"] = {

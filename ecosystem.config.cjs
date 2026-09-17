@@ -1,4 +1,10 @@
 const path = require('path');
+const os = require('os');
+
+// install.sh 建的 Python venv（python-pptx / openpyxl / Pillow …）。前置到 PATH，
+// bridge 派生的 bot 会话里 `python3` 就解析到它，而不是系统自带的 Python。
+const venvBin = path.join(os.homedir(), '.luckagent', 'venv', 'bin');
+const PATH = [venvBin, process.env.PATH || ''].filter(Boolean).join(path.delimiter);
 
 module.exports = {
   apps: [
@@ -32,7 +38,8 @@ module.exports = {
       // Environment
       env: {
         NODE_ENV: 'production',
-        CLAUDE_MAX_TURNS: '',  // unlimited turns (override any inherited shell env)
+        PATH,
+        CLAUDE_MAX_TURNS: ''  // unlimited turns (override any inherited shell env)
       },
     },
     {
