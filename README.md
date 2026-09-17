@@ -21,10 +21,10 @@
 
 ## 项目目标
 
-- **把 agent 从终端搬进团队日常沟通的地方。** Claude Code 这类 agent 很强，但入口是本机终端、一人一会话。Luckagent 让它以飞书机器人的身份 7×24 常驻：团队任何人在群里 @它 就能派活，产物（文档、图片、表格、代码）直接回到群里。
+- **把 agent 从终端搬进团队日常沟通的地方。** Claude Code 这类 agent 很强，但入口是本机终端、一人一会话。Luckagent 让它以飞书机器人的身份 7×24 常驻：团队任何人在群里 @它 就能派活，产物（PPT、表格、文档、图片、代码、语音）直接回到群里。
 - **完全自托管、数据不出自己机器。** 跑在你的 Mac mini / MacBook 上：飞书凭证、聊天记录、工作文件、API key 都留在本机；对外只有到飞书开放平台的 websocket 长连接和你选择的模型 API。两个服务端口默认只绑 `127.0.0.1`。
 - **多 bot、多引擎、一份配置。** 一台机器跑任意多个机器人，每个 bot 独立的飞书应用、工作目录、引擎（Claude / DeepSeek / MiniMax）与预算限额，适合「一个项目一个 bot 同事」的用法。
-- **生产可靠优先。** 本项目源自一套在真实团队里连续运行数月的飞书 bot 集群，消息合并、附件收发、发送目录清理、引用上下文注入等 15 项行为增强都是实际踩坑后的沉淀（见[设计笔记](docs/design-notes.md)），并配有 750+ 自动化测试。
+- **生产可靠优先。** 本项目源自一套在真实团队里连续运行数月的飞书 bot 集群，消息合并、附件收发、发送目录清理、引用上下文注入、空闲会话自动换新等 17 项行为增强都是实际踩坑后的沉淀（见[设计笔记](docs/design-notes.md)），并配有近千条自动化测试。
 
 ## 架构
 
@@ -59,20 +59,21 @@
 
 ### 一条消息的生命周期
 
-1. **接收**：飞书事件经 websocket 长连接推到 bridge（无需公网回调地址）；快速连发的多条消息会自动合并成一轮。
-2. **会话**：每个聊天（群/私聊）对应一个持续的 agent 会话——各引擎默认走**持久执行器池**（长驻进程，支持 Agent Teams、`/goal` 多轮自动推进、后台任务），其余引擎逐回合拉起。
-3. **执行**：引擎在该 bot 的独立工作目录里全工具运行；聊天里发的文件自动下载到 `inputs/` 供 agent 直接使用。
+1. **接收**：飞书事件经 websocket 长连接推到 bridge（无需公网回调地址）；快速连发的多条消息会自动合并成一轮。@bot 触发时按飞书接口拉取这个人上一次 @ 之后发的材料（文本、链接、图片、文件）一并带上，支持「先发材料、最后 @」的用法；断连重连后会补扫盲区消息。
+2. **会话**：每个聊天（群/私聊）对应一个持续的 agent 会话——各引擎默认走**持久执行器池**（长驻进程，支持 Agent Teams、`/goal` 多轮自动推进、后台任务），其余引擎逐回合拉起。会话空闲 3 小时以上且经历过上下文压缩时自动开新会话，并把旧会话最近的交接摘要注入首条提示词，避免会话文件无限膨胀、压缩随机砸在任务中间。
+3. **执行**：引擎在该 bot 的独立工作目录里全工具运行；聊天里发的文件自动下载到 `inputs/` 供 agent 直接使用。装机即备好办公与媒体工具链（python-pptx / openpyxl / Pillow 等 Python 基础包、LibreOffice、ffmpeg、poppler、Noto CJK 字体），做 PPT、表格、文档、PDF、图片、语音不用临时装环境。
 4. **回贴**：过程流式更新到飞书卡片；agent 放进发送暂存目录的产物**发过即删**，回合结束再补扫一次防漏发（归档另存 `outputs/`）。
-5. **管控**：预算限额、并发上限、群聊白名单、`/model` 会话内切引擎等都按 bot 配置；全程记账可在管理台与 `luckagent stats` 查看。
+5. **管控**：预算限额、并发上限、群聊白名单、私聊是否也需 @、`/model` 会话内切引擎等都按 bot 配置；全程记账可在管理台与 `luckagent stats` 查看。
 
 ## 特性
 
 - **多 bot 单进程**：一份 `bots.json` 配任意多个飞书机器人，各自独立的应用凭证、工作目录、引擎与预算限额。
 - **多引擎可选**：每个 bot 用 `engine: "claude" | "deepseek" | "minimax"` 选择后端；Claude 支持 API key 或订阅登录，DeepSeek / MiniMax 走各家官方 Anthropic 兼容端点、只要 key 零安装（均支持看图）。所有引擎共享同一 Claude Code 运行时——持久会话、Agent Teams、记忆体系完全一致。
-- **Web 管理台**：系统总览、机器人管理（含手把手的飞书接入向导）、定时任务、运行日志、系统配置，浏览器里完成从建应用到跑通的全流程。
-- **定时任务**：一次性延迟与 cron 周期任务，CLI / 管理台 / HTTP API 三种入口，持久化、重启自动恢复。
-- **生产磨出来的稳定性**（详见 [设计笔记](docs/design-notes.md)）：文件上传超时重试、快速连发消息合并、群聊引用回复精确通知、被引消息上下文注入、出站内容脱敏、发送目录「发过即删 + 漏发补扫」、超大附件分片下载、发送失败明确告知等，全部内建。
+- **Web 管理台**：系统总览、机器人管理（含手把手的飞书接入向导）、定时任务、群日报、技能与记忆、运行日志、系统配置，浏览器里完成从建应用到跑通的全流程。
+- **定时任务与群日报**：一次性延迟与 cron 周期任务，CLI / 管理台 / HTTP API 三种入口，持久化、重启自动恢复；群日报按群名一键开关，默认每天早 7 点总结昨天全天。
+- **生产磨出来的稳定性**（详见 [设计笔记](docs/design-notes.md)）：文件上传超时重试、快速连发消息合并、群聊引用回复精确通知、被引消息上下文注入、@ 时按接口拉本轮材料、空闲会话自动换新并交接、出站内容脱敏、发送目录「发过即删 + 漏发补扫」、超大附件分片下载、长连接断连补扫、发送失败明确告知等，全部内建。
 - **跨 bot 协作**：共享记忆沉淀知识、技能中心复用方法、agent 总线让 bot 之间互相委托任务，也支持跨主机 peers 联邦。
+- **办公与媒体工具链**：安装脚本一次装齐 bot 产出所需的 Python 基础包（python-pptx / openpyxl / Pillow / pandas / PyMuPDF 等，独立 venv 不碰系统 Python）、LibreOffice、ffmpeg、poppler 与 Noto CJK 字体；`luckagent doctor` 可检查是否齐全。
 - **语音**：文本转语音（豆包 / OpenAI / ElevenLabs / Edge TTS），可配置语音回复。
 
 ## 系统要求
@@ -150,6 +151,8 @@ luckagent inbox poll            # CLI agent 收件箱
 | git 检出（git clone / 一行命令在有 git 的机器上） | `luckagent update`（git pull + 重装依赖 + 构建 + 同步技能 + 重启） |
 | 无 `.git` 的安装（一行命令在裸机上的 tarball 下载模式） | `curl -fsSL https://codeload.github.com/haoyan-yam/luckagent/tar.gz/refs/heads/main \| tar -xz --strip-components=1 -C ~/luckagent`，然后重跑 `bash install.sh`（幂等） |
 
+> v0.7.9 起的办公与媒体工具链（LibreOffice / ffmpeg / poppler / 字体 / Python venv）只由 `install.sh` 安装，`luckagent update` 不会补装。老机器升级后重跑一次 `bash install.sh`（幂等，只装缺的），或先跑 `luckagent doctor` 看 `office_media_toolchain` 一项。
+
 ## 文档
 
 | 文档 | 内容 |
@@ -160,9 +163,9 @@ luckagent inbox poll            # CLI agent 收件箱
 | [定时任务](docs/scheduling.md) | CLI / 管理台 / HTTP API 三种入口，cron 与时区，暂停恢复 |
 | [技能体系](docs/claude-code-skills.md) | 随装与可选技能、技能发现机制、工作区两级指令模板 |
 | [CLI 参考](docs/cli-reference.md) | `luckagent` 全命令的用途与示例 |
-| [管理台使用手册](docs/admin-console.md) | 六个页面、机器人增删改流程、重启语义、安全说明 |
+| [管理台使用手册](docs/admin-console.md) | 各页面说明（含群日报）、机器人增删改流程、重启语义、安全说明 |
 | [更新日志](CHANGELOG.md) | 各版本变更；版本号即管理台总览页所示 |
-| [设计笔记](docs/design-notes.md) | 15 项内建行为增强（代号 A–R）的行为说明与设计取舍 |
+| [设计笔记](docs/design-notes.md) | 17 项内建行为增强（代号 A–T）的行为说明、开关与设计取舍 |
 | [常见问题排查](docs/troubleshooting.md) | 端口占用、代理变量坑、启动失败、管理台打不开等 |
 
 ## 安全提示
