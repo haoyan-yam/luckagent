@@ -134,7 +134,7 @@ describe('OutputHandler.sendOutputFiles', () => {
 
   it('coalesces multiple oversized files into a single notice', async () => {
     fs.writeFileSync(path.join(chatDir, 'huge1.png'), Buffer.alloc(10 * 1024 * 1024 + 1));
-    fs.writeFileSync(path.join(chatDir, 'huge2.zip'), Buffer.alloc(30 * 1024 * 1024 + 1));
+    fs.writeFileSync(path.join(chatDir, 'huge2.bin'), Buffer.alloc(30 * 1024 * 1024 + 1));
     fs.writeFileSync(path.join(chatDir, 'ok.txt'),    Buffer.alloc(100));
     const { sender, sends, notices } = buildSender();
     await new OutputHandler(mockLogger, sender, outputs).sendOutputFiles('chat-1', chatDir, mockProcessor, emptyState());
@@ -143,7 +143,7 @@ describe('OutputHandler.sendOutputFiles', () => {
     // Single notice listing both oversized files
     expect(notices).toHaveLength(1);
     expect(notices[0].content).toContain('huge1.png');
-    expect(notices[0].content).toContain('huge2.zip');
+    expect(notices[0].content).toContain('huge2.bin');
     expect(notices[0].content).toContain('2');  // count
   });
 

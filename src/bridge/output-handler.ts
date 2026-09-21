@@ -5,6 +5,7 @@ import type { CardState } from '../types.js';
 import type { IMessageSender } from './message-sender.interface.js';
 import { StreamProcessor, extractImagePaths } from '../engines/index.js';
 import { OutputsManager } from './outputs-manager.js';
+import { inspectOutboundFile } from '../utils/memory-export-guard.js';
 
 /**
  * Feishu API limits documented at
@@ -18,6 +19,12 @@ import { OutputsManager } from './outputs-manager.js';
  */
 const IMAGE_MAX_BYTES = 10 * 1024 * 1024; // 10 MB
 const FILE_MAX_BYTES  = 30 * 1024 * 1024; // 30 MB
+
+/** [design-note U] 被记忆库闸门拦下的文件（已从发送目录删除，只剩通知用的名字与原因） */
+interface BlockedFile {
+  fileName: string;
+  reason:   string;
+}
 
 interface OversizedFile {
   fileName:  string;
@@ -83,10 +90,21 @@ export class OutputHandler {
     sentPaths: Set<string>,
     oversized: OversizedFile[],
     failedSends: { fileName: string; isImage: boolean; filePath?: string }[],
+    blocked: BlockedFile[] = [],
   ): Promise<void> {
     const outputFiles = this.outputsManager.scanOutputs(outputsDir);
     for (const file of outputFiles) {
       try {
+        // [design-note U] 记忆库出站闸门：发出前先检查，命中即删除（不发）并记下通知。
+        // 放在尺寸判断之前——超限的记忆包也不该以「太大」为由留在目录里。
+        const verdict = inspectOutboundFile(file.filePath);
+        if (verdict.blocked) {
+          this.logger.warn({ filePath: file.filePath, reason: verdict.reason }, 'Memory export guard: blocked outbound file');
+          blocked.push({ fileName: file.fileName, reason: verdict.reason ?? '记忆库内容' });
+          this.tryUnlink(file.filePath);
+          sentPaths.add(file.filePath);
+          continue;
+        }
         if (file.isImage && file.sizeBytes <= IMAGE_MAX_BYTES) {
           this.logger.info({ filePath: file.filePath }, 'Sending output image from outputs dir');
           const ok = await this.sender.sendImageFile(chatId, file.filePath);
@@ -133,7 +151,9 @@ export class OutputHandler {
       const sentPaths = new Set<string>();
       const oversized: OversizedFile[] = [];
       const failedSends: { fileName: string; isImage: boolean; filePath?: string }[] = [];
-      await this.sendDirFilesLocked(chatId, outputsDir, sentPaths, oversized, failedSends);
+      const blocked: BlockedFile[] = []; // [design-note U]
+      await this.sendDirFilesLocked(chatId, outputsDir, sentPaths, oversized, failedSends, blocked);
+      if (blocked.length > 0) await this.sendBlockedNotice(chatId, blocked);
       if (oversized.length > 0) await this.sendOversizedNotice(chatId, oversized);
       if (failedSends.length > 0) await this.sendFailedNotice(chatId, failedSends);
       this.deleteNoticedLeftovers(outputsDir, [...oversized, ...failedSends]);
@@ -153,7 +173,8 @@ export class OutputHandler {
 
     // 1. Scan the outputs directory for any files the agent placed there
     //    [design-note Q] 逻辑提取到 sendDirFilesLocked(发过即删),与补扫共用
-    await this.sendDirFilesLocked(chatId, outputsDir, sentPaths, oversized, failedSends);
+    const blocked: BlockedFile[] = []; // [design-note U]
+    await this.sendDirFilesLocked(chatId, outputsDir, sentPaths, oversized, failedSends, blocked);
 
     // 2. Fallback: send images detected via old method (Write tool tracking + response text scanning)
     const imagePaths = new Set<string>(processor.getImagePaths());
@@ -195,6 +216,11 @@ export class OutputHandler {
       await this.sendOversizedNotice(chatId, oversized);
     }
 
+    // 3b. [design-note U] 被记忆库闸门拦下的文件：明确告知拦了什么、为什么，不静默吞。
+    if (blocked.length > 0) {
+      await this.sendBlockedNotice(chatId, blocked);
+    }
+
     // 4. [design-note L] 经 patch K 重试后仍发送失败的文件/图片 → 明确告知，不再静默丢。
     if (failedSends.length > 0) {
       await this.sendFailedNotice(chatId, failedSends);
@@ -217,6 +243,20 @@ export class OutputHandler {
       await this.sender.sendTextNotice(chatId, '⚠️ 有文件没发出来', body, 'red');
     } catch (err) {
       this.logger.warn({ err, chatId, count: files.length }, 'Failed to send send-failure notice');
+    }
+  }
+
+  /**
+   * [design-note U] 记忆库闸门拦截通知。措辞面向群里的人：说清「没发、为什么、找谁」，
+   * 不透露本机路径；文件已删除，所以不会每轮重复通知。
+   */
+  private async sendBlockedNotice(chatId: string, files: BlockedFile[]): Promise<void> {
+    const list = files.map((f) => `- \`${f.fileName}\` — ${f.reason}`).join('\n');
+    const body = `下面${files.length === 1 ? '这个文件' : `这 ${files.length} 个文件`}被拦下、**没有发出**：本地记忆库（含其打包与摘录）不可外发。如需迁移记忆，请联系管理员在主机侧操作：\n\n${list}`;
+    try {
+      await this.sender.sendTextNotice(chatId, '🔒 已拦截：记忆库不外发', body, 'red');
+    } catch (err) {
+      this.logger.warn({ err, chatId, count: files.length }, 'Failed to send memory-guard notice');
     }
   }
 
