@@ -45,8 +45,11 @@ export default function LoginPage() {
       }}
     >
       <Card style={{ width: 400 }}>
-        <Typography.Title level={3} style={{ textAlign: 'center' }}>
-          🍀 Luckagent 控制台
+        <div style={{ textAlign: 'center' }}>
+          <img src={`${import.meta.env.BASE_URL}logo.svg`} alt="" width={64} height={64} />
+        </div>
+        <Typography.Title level={3} style={{ textAlign: 'center', marginTop: 8 }}>
+          Luckagent 控制台
         </Typography.Title>
         <Typography.Paragraph type="secondary" style={{ textAlign: 'center' }}>
           输入 API 密钥登录（安装时生成的 <code>API_SECRET</code>，见 <code>.env</code>）

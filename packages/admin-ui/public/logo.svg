@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Luckagent">
+  <polygon points="180.5,146.9 331.5,146.9 256.0,71.4" fill="#E9AE3A"><title>antenna</title></polygon>
+  <polygon points="248.7,161.5 87.4,161.5 248.7,322.8" fill="#163A6B"><title>head-l</title></polygon>
+  <polygon points="263.3,161.5 424.6,161.5 263.3,322.8" fill="#179C95"><title>head-r</title></polygon>
+  <polygon points="94.6,210.6 94.6,307.2 46.3,258.9" fill="#7DB7F0"><title>ear-l</title></polygon>
+  <polygon points="417.4,210.6 417.4,307.2 465.7,258.9" fill="#E9AE3A"><title>ear-r</title></polygon>
+  <polygon points="114.9,365.1 193.5,365.1 193.5,443.6 114.9,443.6" fill="#7DB7F0"><title>mouth-sq</title></polygon>
+  <polygon points="235.7,443.6 308.3,443.6 386.8,365.1 314.3,365.1" fill="#163A6B"><title>mouth-pg</title></polygon>
+  <circle cx="145.5" cy="258.9" r="21.8" fill="#163A6B"/>
+  <circle cx="366.5" cy="258.9" r="21.8" fill="#163A6B"/>
+</svg>

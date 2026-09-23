@@ -81,8 +81,11 @@ export default function App() {
   return (
     <Layout style={{ minHeight: '100vh' }}>
       <Sider theme="dark" width={200}>
-        <div style={{ color: '#fff', fontSize: 18, fontWeight: 700, padding: '16px 24px' }}>
-          🍀 Luckagent
+        <div
+          style={{ color: '#fff', fontSize: 18, fontWeight: 700, padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 10 }}
+        >
+          <img src={`${import.meta.env.BASE_URL}logo-dark.svg`} alt="" width={30} height={30} />
+          Luckagent
         </div>
         <Menu
           theme="dark"
