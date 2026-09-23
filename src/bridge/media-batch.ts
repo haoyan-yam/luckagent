@@ -7,16 +7,56 @@ export interface PendingBatch {
 }
 
 export function isDefaultMediaText(msg: IncomingMessage): boolean {
-  return (!!msg.imageKey && msg.text === DEFAULT_IMAGE_TEXT)
-    || (!!msg.fileKey && msg.text === DEFAULT_FILE_TEXT);
+  return (!!msg.imageKey && msg.text === DEFAULT_IMAGE_TEXT) || (!!msg.fileKey && msg.text === DEFAULT_FILE_TEXT);
+}
+
+type MediaRef = NonNullable<IncomingMessage['extraMedia']>[number];
+
+/**
+ * Every attachment a message carries: its primary slot plus whatever is already
+ * in its extraMedia (a rich-text post's 2nd+ images, the @-round's earlier
+ * uploads). Merges must carry all of these — replacing extraMedia silently
+ * dropped them.
+ */
+function mediaOf(m: IncomingMessage): MediaRef[] {
+  const out: MediaRef[] = [];
+  if (m.imageKey || m.fileKey) {
+    out.push({ messageId: m.messageId, imageKey: m.imageKey, fileKey: m.fileKey, fileName: m.fileName });
+  }
+  if (m.extraMedia?.length) out.push(...m.extraMedia);
+  return out;
+}
+
+const mediaKey = (m: MediaRef) => `${m.messageId}|${m.imageKey ?? ''}|${m.fileKey ?? ''}`;
+
+/**
+ * Drop repeated attachments (same message + key) and the one already sitting in
+ * the merged message's primary slot, so nothing is downloaded twice. Keeps the
+ * first occurrence's order; undefined when nothing is left.
+ */
+function dedupeMedia(list: MediaRef[], primary: IncomingMessage): MediaRef[] | undefined {
+  const seen = new Set<string>();
+  if (primary.imageKey || primary.fileKey) {
+    seen.add(mediaKey({ messageId: primary.messageId, imageKey: primary.imageKey, fileKey: primary.fileKey }));
+  }
+  const out = list.filter((m) => {
+    const k = mediaKey(m);
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  return out.length > 0 ? out : undefined;
 }
 
 export function mergeBatchMessages(messages: IncomingMessage[]): IncomingMessage {
   const first = messages[0];
   if (messages.length === 1) return first;
 
-  const imageCount = messages.filter((m) => m.imageKey).length;
-  const fileCount = messages.filter((m) => m.fileKey).length;
+  const extraMedia = dedupeMedia(messages.flatMap(mediaOf), first);
+  const primary = first.imageKey || first.fileKey ? mediaOf(first).slice(0, 1) : [];
+  const all = [...primary, ...(extraMedia ?? [])];
+  const imageCount = all.filter((m) => m.imageKey).length;
+  const fileCount = all.filter((m) => m.fileKey).length;
   const parts: string[] = [];
   if (imageCount > 0) parts.push(`${imageCount}张图片`);
   if (fileCount > 0) parts.push(`${fileCount}个文件`);
@@ -24,24 +64,19 @@ export function mergeBatchMessages(messages: IncomingMessage[]): IncomingMessage
   return {
     ...first,
     text: `请分析这些${parts.join('和')}`,
-    extraMedia: messages.slice(1).map((m) => ({
-      messageId: m.messageId,
-      imageKey: m.imageKey,
-      fileKey: m.fileKey,
-      fileName: m.fileName,
-    })),
+    extraMedia,
   };
 }
 
+/**
+ * Fold batched media-only messages into the text message that flushed them.
+ * The text message keeps its own primary slot and its own extraMedia; the
+ * batch's media (sent earlier) come first.
+ */
 export function mergeBatchWithText(batchMsgs: IncomingMessage[], textMsg: IncomingMessage): IncomingMessage {
   return {
     ...textMsg,
-    extraMedia: batchMsgs.map((m) => ({
-      messageId: m.messageId,
-      imageKey: m.imageKey,
-      fileKey: m.fileKey,
-      fileName: m.fileName,
-    })),
+    extraMedia: dedupeMedia([...batchMsgs.flatMap(mediaOf), ...(textMsg.extraMedia ?? [])], textMsg),
   };
 }
 
@@ -58,20 +93,9 @@ export function mergeSameSenderMessages(base: IncomingMessage, next: IncomingMes
   if (base.text && !isDefaultMediaText(base)) texts.push(base.text);
   if (next.text && !isDefaultMediaText(next)) texts.push(next.text);
 
-  const extraMedia = [...(base.extraMedia ?? [])];
-  if (next.imageKey || next.fileKey) {
-    extraMedia.push({
-      messageId: next.messageId,
-      imageKey: next.imageKey,
-      fileKey: next.fileKey,
-      fileName: next.fileName,
-    });
-  }
-  if (next.extraMedia?.length) extraMedia.push(...next.extraMedia);
-
   return {
     ...base,
     text: texts.length > 0 ? texts.join('\n') : base.text,
-    extraMedia: extraMedia.length > 0 ? extraMedia : undefined,
+    extraMedia: dedupeMedia([...(base.extraMedia ?? []), ...mediaOf(next)], base),
   };
 }
