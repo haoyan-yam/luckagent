@@ -293,7 +293,7 @@ export default function BotFormDrawer({
               children: (
                 <>
                   <Form.Item name="model" label="模型覆盖（Claude）">
-                    <Input placeholder="留空用默认" />
+                    <Input placeholder="留空 = 用「系统配置 → 默认设置」里的 Claude 默认模型" />
                   </Form.Item>
                   <Form.Item name="maxTurns" label="单任务最大回合数">
                     <InputNumber min={1} style={{ width: '100%' }} />

@@ -5,8 +5,9 @@ import * as dotenv from 'dotenv';
 import { execFile } from 'node:child_process';
 import type * as http from 'node:http';
 import { readBotsConfig } from '../bots-config-writer.js';
-import { expandUserPath } from '../../config.js';
-import { resolveEngineName } from '../../engines/index.js';
+import { expandUserPath, ORIGINAL_ENV_KEYS } from '../../config.js';
+import { COMPAT_PROVIDERS, resolveEngineName } from '../../engines/index.js';
+import { EDITABLE_DEFAULTS, validateDefaultsUpdate, writeEnvUpdates } from '../env-defaults.js';
 import { jsonResponse, parseJsonBody } from './helpers.js';
 import type { RouteContext } from './types.js';
 
@@ -130,15 +131,67 @@ function pm2Jlist(): Promise<{ available: boolean; apps?: Array<Record<string, u
   });
 }
 
+function onPath(bin: string): boolean {
+  for (const dir of (process.env.PATH || '').split(path.delimiter)) {
+    if (!dir) continue;
+    try { fs.accessSync(path.join(dir, bin), fs.constants.X_OK); return true; } catch { /* next */ }
+  }
+  return false;
+}
+
+/** 磁盘 .env（与 config.ts loadEnvFiles 同一路径解析）——用于「待重启生效」判定 */
+function readDiskEnv(): Record<string, string> {
+  try {
+    return dotenv.parse(fs.readFileSync(path.resolve('.env')));
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * image-gen backend (same resolution as scripts/gen.py). Login is judged by the
+ * auth file only — a stale login still reads as logged in; the live probe
+ * (/admin/api/image-gen/probe, `luckagent doctor`) runs `codex login status`.
+ */
+function imageGenStatus(diskEnv: Record<string, string>) {
+  const configured = (process.env.IMAGE_GEN_PROVIDER || diskEnv.IMAGE_GEN_PROVIDER || '').trim().toLowerCase();
+  const codexHome = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
+  const codexInstalled = onPath(process.env.CODEX_BIN || 'codex');
+  const codexLoggedIn = codexInstalled && fs.existsSync(path.join(codexHome, 'auth.json'));
+  const hasArk = !!(process.env.ARK_API_KEY || diskEnv.ARK_API_KEY);
+  const provider =
+    configured === 'codex' || configured === 'seedream' ? configured
+      : codexLoggedIn ? 'codex'
+        : hasArk ? 'seedream'
+          : null;
+  return { configured: configured || null, provider, codexInstalled, codexLoggedIn, hasArkApiKey: hasArk };
+}
+
+/** Live `codex login status` probe for the admin console's 「重新检测」 button. */
+function probeCodex(): Promise<{ installed: boolean; loggedIn: boolean; version: string | null; detail: string }> {
+  const bin = process.env.CODEX_BIN || 'codex';
+  const run = (args: string[]) =>
+    new Promise<{ ok: boolean; out: string }>((resolve) => {
+      execFile(bin, args, { timeout: 10_000 }, (err, stdout, stderr) => {
+        resolve({ ok: !err, out: `${stdout ?? ''}${stderr ?? ''}`.trim() });
+      });
+    });
+  if (!onPath(bin) && !path.isAbsolute(bin)) {
+    return Promise.resolve({ installed: false, loggedIn: false, version: null, detail: 'codex not found on PATH' });
+  }
+  return Promise.all([run(['--version']), run(['login', 'status'])]).then(([v, st]) => {
+    const text = st.out.toLowerCase();
+    return {
+      installed: v.ok || st.ok,
+      loggedIn: st.ok && text.includes('logged in') && !text.includes('not logged in'),
+      version: v.ok ? v.out.split(/\s+/).pop() || null : null,
+      detail: st.out.slice(0, 200),
+    };
+  });
+}
+
 /** Effective-config view: whitelisted, secrets reduced to set/tail hints. */
 function effectiveConfig(ctx: RouteContext): Record<string, unknown> {
-  const onPath = (bin: string): boolean => {
-    for (const dir of (process.env.PATH || '').split(path.delimiter)) {
-      if (!dir) continue;
-      try { fs.accessSync(path.join(dir, bin), fs.constants.X_OK); return true; } catch { /* next */ }
-    }
-    return false;
-  };
   const claudeCliInstalled = (): boolean => onPath('claude');
   // Subscription-login state as cached by the Claude CLI in ~/.claude.json
   // (refreshed whenever claude runs — profileFetchedAt tells how fresh).
@@ -163,22 +216,6 @@ function effectiveConfig(ctx: RouteContext): Record<string, unknown> {
       return { cliInstalled, loggedIn: false };
     }
   };
-  // image-gen backend (same resolution as scripts/gen.py, minus the live
-  // `codex login status` probe — the panel only checks for the auth file, so a
-  // stale login still reads as logged in; `luckagent doctor` does the real probe).
-  const imageGenStatus = () => {
-    const configured = (process.env.IMAGE_GEN_PROVIDER || diskEnv.IMAGE_GEN_PROVIDER || '').trim().toLowerCase();
-    const codexHome = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
-    const codexInstalled = onPath(process.env.CODEX_BIN || 'codex');
-    const codexLoggedIn = codexInstalled && fs.existsSync(path.join(codexHome, 'auth.json'));
-    const hasArk = !!(process.env.ARK_API_KEY || diskEnv.ARK_API_KEY);
-    const provider =
-      configured === 'codex' || configured === 'seedream' ? configured
-        : codexLoggedIn ? 'codex'
-          : hasArk ? 'seedream'
-            : null;
-    return { configured: configured || null, provider, codexInstalled, codexLoggedIn, hasArkApiKey: hasArk };
-  };
   const readCoreTokenFile = (): string | undefined => {
     try {
       const v = fs.readFileSync(path.join(os.homedir(), '.luckagent-core', 'token'), 'utf-8').trim();
@@ -189,14 +226,7 @@ function effectiveConfig(ctx: RouteContext): Record<string, unknown> {
   };
   const secretHint = (v: string | undefined) =>
     v ? { set: true, tail: v.slice(-4) } : { set: false };
-  // 磁盘 .env（与 config.ts loadEnvFiles 同一路径解析）——用于「待重启生效」判定
-  const diskEnv: Record<string, string> = (() => {
-    try {
-      return dotenv.parse(fs.readFileSync(path.resolve('.env')));
-    } catch {
-      return {};
-    }
-  })();
+  const diskEnv = readDiskEnv();
   const envHint = (name: string) => envCredentialState(process.env[name], diskEnv[name]);
   // bot 级单独配置的引擎 key（存 bots.json，不上全局面板）——补充提示防「配了却不显示」
   const botLevel = (() => {
@@ -246,7 +276,7 @@ function effectiveConfig(ctx: RouteContext): Record<string, unknown> {
       elevenlabs: envHint('ELEVENLABS_API_KEY'),
     },
     claudeAuth: claudeAuthStatus(),
-    imageGen: imageGenStatus(),
+    imageGen: imageGenStatus(diskEnv),
   };
 }
 
@@ -500,7 +530,8 @@ export async function handleAdminRoutes(
       }
     }
 
-    const runningNames = new Set(registry.list().map((b) => b.name));
+    const runningInfo = new Map(registry.list().map((b) => [b.name, b]));
+    const runningNames = new Set(runningInfo.keys());
     const since = todayStartMs();
     const todayEvents = activityStore?.list({ since, limit: 2000 }) ?? [];
 
@@ -524,6 +555,8 @@ export async function handleAdminRoutes(
       return {
         name: c.name,
         engine: bot ? resolveEngineName(bot.config) : c.engine,
+        // effective default model (bots.json → .env default); null on claude = follow the plan
+        model: runningInfo.get(c.name)?.model ?? null,
         workDir: c.workDir,
         running: runningNames.has(c.name),
         executors,
@@ -655,6 +688,60 @@ export async function handleAdminRoutes(
     logger.warn('admin console requested a bridge restart — exiting for PM2 to respawn');
     jsonResponse(res, 202, { restarting: true, etaSec: 5 });
     setTimeout(() => process.exit(0), 500);
+    return true;
+  }
+
+  // GET /admin/api/config/defaults — the console-editable global defaults.
+  // live = what the running bridge (and every bot session it spawned) uses;
+  // disk = what .env holds now (differs after a save until the restart).
+  if (method === 'GET' && url === '/admin/api/config/defaults') {
+    const diskEnv = readDiskEnv();
+    const values: Record<string, { live: string; disk: string; lockedByProcessEnv: boolean }> = {};
+    for (const key of Object.keys(EDITABLE_DEFAULTS)) {
+      values[key] = {
+        live: process.env[key]?.trim() || '',
+        disk: diskEnv[key]?.trim() || '',
+        lockedByProcessEnv: ORIGINAL_ENV_KEYS.has(key),
+      };
+    }
+    jsonResponse(res, 200, {
+      values,
+      options: {
+        deepseek: { defaultModel: COMPAT_PROVIDERS.deepseek.defaultModel, models: COMPAT_PROVIDERS.deepseek.models },
+        minimax: { defaultModel: COMPAT_PROVIDERS.minimax.defaultModel, models: COMPAT_PROVIDERS.minimax.models },
+      },
+      // CLAUDE_MODEL empty falls back to ANTHROPIC_MODEL before "follow the plan"
+      anthropicModel: process.env.ANTHROPIC_MODEL?.trim() || null,
+      imageGen: imageGenStatus(diskEnv),
+    });
+    return true;
+  }
+
+  // PUT /admin/api/config/defaults — write whitelisted keys to .env; applies on restart
+  if (method === 'PUT' && url === '/admin/api/config/defaults') {
+    const result = validateDefaultsUpdate(await parseJsonBody(req));
+    if ('error' in result) {
+      jsonResponse(res, 400, { error: result.error });
+      return true;
+    }
+    try {
+      writeEnvUpdates(path.resolve('.env'), result.updates);
+    } catch (err: any) {
+      logger.error({ err: err?.message }, 'admin: failed to write .env defaults');
+      jsonResponse(res, 500, { error: `写入 .env 失败: ${err?.message || err}` });
+      return true;
+    }
+    const runningTasks = registry
+      .listRegistered()
+      .reduce((n, b) => n + (b.bridge.getRunningTasksInfo?.().length ?? 0), 0);
+    logger.info({ updates: result.updates }, 'admin: global defaults written to .env');
+    jsonResponse(res, 200, { saved: Object.keys(result.updates), requiresRestart: true, runningTasks });
+    return true;
+  }
+
+  // GET /admin/api/image-gen/probe — live `codex login status` (the config view only checks the auth file)
+  if (method === 'GET' && url === '/admin/api/image-gen/probe') {
+    jsonResponse(res, 200, await probeCodex());
     return true;
   }
 

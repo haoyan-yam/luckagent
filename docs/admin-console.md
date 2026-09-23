@@ -33,6 +33,7 @@ bot 的增删改查（读写 `bots.json`）：
 - **群聊限制**：折叠区里可开「仅群聊模式」（`groupOnly`），并配**私聊白名单**——编辑运行中的 bot 时可先选一个群、再**按姓名勾选群成员**（自动填入 open_id），也支持直接粘贴 `ou_` 字符串；把白名单清空后保存即真正移除（非敏感字段在编辑态支持「清空 = 删除该配置项」）。同一折叠区还有「群里无需 @ 也响应」（`groupNoMention`）和「私聊也需要 @ 才响应（两人群同）」（`privateRequireMention`）两个开关：前者只管群聊，后者让私聊也走「不 @ 不理」的群聊规则（私聊里未 @ 发的文本/链接/图片/文件不会丢：下次 @ 时桥接按飞书接口拉这个人本轮的消息一起带上，48 小时内有效），并取消两人群的免 @ 豁免；默认都关。
 - **删除**：从配置移除该 bot（工作目录不会被删）。
 - **测试连接**：用当前凭证实时调飞书的 tenant_access_token 接口，验证 App ID/Secret 是否有效，不用等重启。
+- **模型列**：列表显示每个运行中 bot **实际生效**的默认模型（bot 自己的设置 → 系统配置里的全局默认）；Claude bot 显示「跟随订阅」表示没有指定模型、由订阅档位决定。
 
 ⚠️ **任何增删改都不会热生效**——接口会明确返回 `requiresRestart: true`。流程固定是：**改 → 保存 → 点右上角「重启」→ 等 5 秒左右自动恢复**。桥接允许 `bots.json` 为空启动，所以全新安装可以先进管理台再从零加第一个 bot。
 
@@ -76,14 +77,28 @@ bot 的增删改查（读写 `bots.json`）：
 
 ### 系统配置
 
-**只读**的生效配置视图（`GET /admin/api/config`）：
+**默认设置**（可编辑，写入 `.env`）——整机默认值，单个 bot 在「机器人管理 → 编辑」里单独设置的引擎 / 模型优先：
+
+| 项 | `.env` 键 | 取值 |
+| --- | --- | --- |
+| 默认引擎 | `LUCKAGENT_ENGINE` | Claude Code / DeepSeek / MiniMax |
+| Claude 默认模型 | `CLAUDE_MODEL` | 「跟随订阅档位」（推荐，不写）或手填模型 ID |
+| DeepSeek / MiniMax 默认模型 | `DEEPSEEK_MODEL` / `MINIMAX_MODEL` | 下拉，选项与 bot 表单同源；清空 = 各引擎默认 |
+| 生图后端 | `IMAGE_GEN_PROVIDER` | 自动（Codex 优先）/ Codex / 火山 Seedream；旁边显示 Codex 是否已装已登录、有无火山 key，「重新检测」实时跑一次 `codex login status` |
+
+- 保存只改动过的项，然后弹框确认是否**立即重启桥接**（会写明当前有几个任务在跑、重启会中断它们）；选「稍后」则各项显示「已保存，重启桥接后生效（当前运行：…）」。
+- 只能改上表这五个键，值也逐个校验——`API_SECRET`、各类 key、端口等仍只能在终端编辑 `.env`，后台不会变成通用的 `.env` 编辑器。写入是原子替换，保持文件 0600 权限，其余行原样保留；清空一项 = 把该行注释掉。
+- 某项如果在 PM2 启动时的环境变量里就已存在，`.env` 覆盖不了，界面会标红提示。
+- Codex 的安装与登录仍需在这台 Mac 的终端里做（`npm i -g @openai/codex`、`codex login`），后台只显示状态与命令。
+
+**有效配置**（只读，`GET /admin/api/config`）：
 
 - 端口与绑定地址（apiPort / apiHost / core 地址）；
 - 关键路径（安装目录、bots.json、状态目录、日志目录、发送暂存根目录）；
 - 引擎默认值（Claude 模型与 backend、调度时区）；
 - 凭证配置状态——只显示「是否已设置 + 末 4 位」，永远不回显完整密钥。
 
-页面也提供重启按钮。改配置本身请编辑 `.env` / `bots.json` 后重启。
+其余配置请编辑 `.env` / `bots.json` 后重启。
 
 ## 重启按钮的语义
 
@@ -112,6 +127,9 @@ bot 的增删改查（读写 `bots.json`）：
 | `GET /admin/api/logs?file=out\|error&lines=200` | tail 日志 |
 | `GET /admin/api/pm2` | PM2 进程列表（只读） |
 | `GET /admin/api/config` | 生效配置（密钥掩码） |
+| `GET /admin/api/config/defaults` | 可编辑的全局默认值：每项的 `live`（运行中）/ `disk`（.env 里）值、下拉选项、生图后端状态 |
+| `PUT /admin/api/config/defaults` | 写入默认值（白名单键 + 值校验，`""` = 取消设置），返回 `requiresRestart` 与当前运行任务数 |
+| `GET /admin/api/image-gen/probe` | 实时探测 Codex：是否安装、版本、`codex login status` 结果 |
 | `POST /admin/api/feishu/test-connection` | 验证飞书凭证（传 `{appId, appSecret}` 或 `{botName}`） |
 | `POST /admin/api/restart` | 重启桥接（进程自退出 + PM2 拉起） |
 | `GET /admin/api/feishu/chats?bot=<name>` | 列出 bot 所在的群（群名 + chat_id，供群日报页与选人器） |

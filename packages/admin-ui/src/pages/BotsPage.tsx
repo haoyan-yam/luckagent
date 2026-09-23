@@ -58,6 +58,20 @@ export default function BotsPage({ onChanged }: { onChanged: () => void }) {
     },
     { title: '引擎', dataIndex: 'engine', key: 'engine', render: (v?: string) => <Tag>{v || 'claude'}</Tag> },
     {
+      title: '模型',
+      key: 'model',
+      render: (_: unknown, b: BotOverview) =>
+        !b.running ? (
+          <Typography.Text type="secondary">—</Typography.Text>
+        ) : b.model ? (
+          <Typography.Text style={{ fontSize: 12 }}>{b.model}</Typography.Text>
+        ) : (
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            跟随订阅
+          </Typography.Text>
+        ),
+    },
+    {
       title: '今日任务',
       key: 'today',
       render: (_: unknown, b: BotOverview) => `${b.today.tasks}${b.today.failed ? `（${b.today.failed} 失败）` : ''}`,

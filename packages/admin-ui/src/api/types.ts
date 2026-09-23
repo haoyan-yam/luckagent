@@ -1,6 +1,8 @@
 export interface BotOverview {
   name: string;
   engine: string;
+  /** Effective default model; null on claude = follow the subscription plan. */
+  model?: string | null;
   workDir: string | null;
   running: boolean;
   executors: { total: number; active: number };
@@ -98,4 +100,27 @@ export interface EffectiveConfig {
     codexLoggedIn: boolean;
     hasArkApiKey: boolean;
   };
+}
+
+export interface DefaultValue {
+  live: string;
+  disk: string;
+  lockedByProcessEnv: boolean;
+}
+
+export interface ConfigDefaults {
+  values: Record<'LUCKAGENT_ENGINE' | 'CLAUDE_MODEL' | 'DEEPSEEK_MODEL' | 'MINIMAX_MODEL' | 'IMAGE_GEN_PROVIDER', DefaultValue>;
+  options: {
+    deepseek: { defaultModel: string; models: Array<{ id: string; note: string }> };
+    minimax: { defaultModel: string; models: Array<{ id: string; note: string }> };
+  };
+  anthropicModel: string | null;
+  imageGen: NonNullable<EffectiveConfig['imageGen']>;
+}
+
+export interface CodexProbe {
+  installed: boolean;
+  loggedIn: boolean;
+  version: string | null;
+  detail: string;
 }

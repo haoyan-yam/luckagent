@@ -4,8 +4,15 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import type { AgentTeamConfig } from './agent-teams/team-store.js';
 
+/**
+ * Keys already present in the process environment before any env file was
+ * applied (e.g. exported in the shell that started PM2). .env never overrides
+ * these — the admin console uses this to warn that editing .env won't apply.
+ */
+export const ORIGINAL_ENV_KEYS: ReadonlySet<string> = new Set(Object.keys(process.env));
+
 function loadEnvFiles(): void {
-  const originalEnv = new Set(Object.keys(process.env));
+  const originalEnv = ORIGINAL_ENV_KEYS;
   const defaultEnvFiles = [
     process.env.LUCKAGENT_DEFAULT_ENV_FILE,
     '/etc/luckagent/default.env',

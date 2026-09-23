@@ -2,6 +2,13 @@
 
 版本号 = 根 `package.json`（管理台总览页显示的就是它）。升级：`luckagent update`（git 安装）或重跑一行安装命令（tarball 安装）。git tag 与本文件同步打点。
 
+## v0.7.14 — 2026-09-23
+
+- **管理台可编辑全局默认值**：系统配置页新增「默认设置」卡片——默认引擎（`LUCKAGENT_ENGINE`）、Claude 默认模型（「跟随订阅档位」或手填 ID，`CLAUDE_MODEL`）、DeepSeek / MiniMax 默认模型（下拉，与 bot 表单同源）、生图后端（自动 / Codex / 火山 Seedream，`IMAGE_GEN_PROVIDER`，附 Codex 安装/登录状态与「重新检测」实时探测）。保存只提交改动项，随后弹框确认是否立即重启桥接（写明当前运行中的任务数、重启会中断它们）；选稍后则逐项标出「已保存，重启后生效（当前运行：…）」
+- 写入安全：`PUT /admin/api/config/defaults` 只接受这五个键并逐值校验（`API_SECRET`、各类 key 等一律拒绝，后台不会变成通用 `.env` 编辑器）；原子替换、保持 0600、只动目标行，清空 = 注释掉该行；某键若已在 PM2 启动环境里，界面标红提示 `.env` 覆盖不了。新增 `GET /admin/api/config/defaults`、`GET /admin/api/image-gen/probe`
+- 机器人列表新增「模型」列，显示每个运行中 bot 实际生效的默认模型（Claude 未指定时显示「跟随订阅」）；bot 表单 Claude 模型框提示改为指向全局默认
+- 测试：`tests/env-defaults.test.ts` 14 例（白名单与值校验含换行注入、行级替换/模板行/追加/注释/去重、原子写与权限）；本地一次性桥接实例上端到端验证保存 → 确认框 → 重启生效 → 取消设置
+
 ## v0.7.13 — 2026-09-23
 
 - **生图改为 Codex 优先、火山 Seedream 兜底，去掉 OpenAI API 后端**：`image-gen` 技能新增 codex 后端——调本机 Codex CLI 内置的 image_gen 工具出图，走 ChatGPT 订阅额度，不需要任何 key（原生透明底、参考图、并行候选、跨进程并发上限 `CODEX_IMAGE_MAX_CONCURRENCY`）。统一入口 `gen.py` 的判定顺序：`--provider` > `.env` 的 `IMAGE_GEN_PROVIDER` > Codex 已登录 > `ARK_API_KEY`；走 Codex 时若未登录或撞订阅额度且配了火山 key，自动改用 Seedream 重出（`--provider` 强制时不兜底）。两个后端参数统一为 `--aspect / --size / --image / --n / --transparent`，Seedream 的透明底由 gen.py 在色键背景上生成后本地自动抠图，多张统一命名 `<stem>_1..N`。`gen_image.py`（OpenAI gpt-image-2）与 `references/image-api.md` 删除，SKILL.md 与两份提示词参考同步改写
