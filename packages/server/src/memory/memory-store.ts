@@ -107,8 +107,21 @@ function nowISO(): string {
   return new Date().toISOString();
 }
 
-function slugify(title: string): string {
-  return title.toLowerCase().trim().replace(/[^a-z0-9-_]+/g, '-').replace(/^-+|-+$/g, '');
+/**
+ * Title → path segment. Keeps Unicode letters, marks and digits, so a Chinese
+ * title stays Chinese. The old ASCII-only rule turned every non-Latin title
+ * into '', collapsing the doc path onto its folder (and the second such doc
+ * into a 409). A title with nothing sluggable (emoji / punctuation only) gets
+ * the caller's fallback.
+ */
+export function slugify(title: string, fallback = 'untitled'): string {
+  const slug = title
+    .normalize('NFKC')
+    .toLowerCase()
+    .trim()
+    .replace(/[^\p{L}\p{M}\p{N}_-]+/gu, '-')
+    .replace(/^-+|-+$/g, '');
+  return slug || fallback;
 }
 
 export function escapeFts5Query(query: string): string {
@@ -398,7 +411,7 @@ export class MemoryStore {
       folderId = data.folder_id || 'root';
       const folder = this.findFolderById(folderId);
       if (!folder) throw Object.assign(new Error('folder_not_found'), { statusCode: 404 });
-      docPath = joinPath(folder.path, slugify(title));
+      docPath = joinPath(folder.path, slugify(title, `untitled-${crypto.randomUUID().slice(0, 8)}`));
       if (!canWritePath(cred, docPath)) {
         throw Object.assign(new Error('forbidden'), { statusCode: 403 });
       }
@@ -515,7 +528,7 @@ export class MemoryStore {
     if (data.title !== undefined || data.folder_id !== undefined) {
       const folder = this.findFolderById(folderId);
       if (!folder) throw Object.assign(new Error('folder_not_found'), { statusCode: 404 });
-      docPath = joinPath(folder.path, slugify(title));
+      docPath = joinPath(folder.path, slugify(title, `untitled-${row.id.slice(0, 8)}`));
       if (!canWritePath(cred, docPath)) {
         throw Object.assign(new Error('forbidden'), { statusCode: 403 });
       }

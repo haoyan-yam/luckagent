@@ -440,3 +440,39 @@ describe('TaskScheduler destroy()', () => {
     expect(callsAfter).toBe(callsBefore);
   });
 });
+
+// =====================================================================
+// Delays beyond setTimeout's ~24.8-day cap
+// =====================================================================
+
+describe('TaskScheduler one-time tasks — long delays', () => {
+  const THIRTY_DAYS_S = 30 * 24 * 60 * 60;
+
+  it('does not fire a 30-day task early (setTimeout overflow)', async () => {
+    const registry = createMockRegistry();
+    const scheduler = new TaskScheduler(registry, createMockLogger());
+    scheduler.scheduleTask({ botName: 'b', chatId: 'c', prompt: 'in a month', delaySeconds: THIRTY_DAYS_S });
+    const bridge = (registry.get as any)().bridge;
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(bridge.executeApiTask).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(25 * 24 * 60 * 60 * 1000); // past the first re-check
+    expect(bridge.executeApiTask).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(5 * 24 * 60 * 60 * 1000);
+    expect(bridge.executeApiTask).toHaveBeenCalledTimes(1);
+    scheduler.destroy();
+  });
+
+  it('a cancelled long-delay task never fires', async () => {
+    const registry = createMockRegistry();
+    const scheduler = new TaskScheduler(registry, createMockLogger());
+    const task = scheduler.scheduleTask({ botName: 'b', chatId: 'c', prompt: 'x', delaySeconds: THIRTY_DAYS_S });
+    await vi.advanceTimersByTimeAsync(26 * 24 * 60 * 60 * 1000); // re-check timer already re-armed
+    expect(scheduler.cancelTask(task.id)).toBe(true);
+    await vi.advanceTimersByTimeAsync(10 * 24 * 60 * 60 * 1000);
+    expect((registry.get as any)().bridge.executeApiTask).not.toHaveBeenCalled();
+    scheduler.destroy();
+  });
+});

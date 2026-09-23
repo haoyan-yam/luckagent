@@ -4,7 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { loadConfig, DEFAULT_URL } from '../src/config.js';
 import { request } from '../src/client.js';
-import { parseArgs, resolveContentTypeFlag, resolveShareFlag, cmdCreate, cmdMkdir, cmdVisibility, defaultWritePrefix } from '../src/commands.js';
+import { parseArgs, resolveContentTypeFlag, resolveShareFlag, cmdCreate, cmdMkdir, cmdVisibility, defaultWritePrefix, slugify } from '../src/commands.js';
 
 describe('parseArgs', () => {
   it('splits positional and flags', () => {
@@ -225,6 +225,13 @@ describe('cmdCreate / cmdMkdir — write target', () => {
     expect(bodyOf(post).path).toBe('/users/bot-x/smoke-test-cli');
   });
 
+  it('create: a Chinese title keeps its own path segment instead of collapsing onto the namespace', async () => {
+    const calls = stubFetch({ botName: 'bot-x', role: 'member' });
+    await cmdCreate(cfg, parseArgs(['项目决策记录', 'hello']));
+    const post = calls.find((c) => c.url.endsWith('/api/memory/documents'))!;
+    expect(bodyOf(post).path).toBe('/users/bot-x/项目决策记录');
+  });
+
   it('create: bare invocation by an admin keeps the root default (no path)', async () => {
     const calls = stubFetch({ botName: 'admin-bot', role: 'admin' });
     await cmdCreate(cfg, parseArgs(['Smoke Test CLI', 'hello']));
@@ -414,5 +421,19 @@ describe('cmdVisibility — read + toggle', () => {
     stubFetch({ botName: 'bot-x', role: 'member' });
     await expect(cmdVisibility(cfg, parseArgs(['maybe'])))
       .rejects.toMatchObject({ message: /expected 'public' or 'private'/, exitCode: 2 });
+  });
+});
+
+describe('slugify', () => {
+  it('keeps ASCII behaviour: lowercase, non-word runs to single dashes', () => {
+    expect(slugify('Smoke Test CLI')).toBe('smoke-test-cli');
+    expect(slugify('  a/b  c!! ')).toBe('a-b-c');
+  });
+  it('keeps Unicode letters and digits', () => {
+    expect(slugify('项目决策 v2')).toBe('项目决策-v2');
+    expect(slugify('Café 会议纪要：第3次')).toBe('café-会议纪要-第3次');
+  });
+  it('falls back to a unique untitled segment when nothing is sluggable', () => {
+    expect(slugify('🎉🎉')).toMatch(/^untitled-[0-9a-z]+$/);
   });
 });

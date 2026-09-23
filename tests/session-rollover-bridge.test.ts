@@ -204,9 +204,10 @@ describe('executeApiTask (scheduled daily report / API tasks) honours rollover',
       captured = opts;
       throw new Error('stop-here');
     });
-    await expect(bridge.executeApiTask({ prompt: '请生成本群昨日日报', chatId: 'chat-d' })).rejects.toThrow(
-      'stop-here',
-    );
+    // A turn that fails to start resolves as a failed task (card finalized), it does not throw.
+    const res = await bridge.executeApiTask({ prompt: '请生成本群昨日日报', chatId: 'chat-d' });
+    expect(res).toMatchObject({ success: false });
+    expect(res.error).toContain('stop-here');
     expect(captured.freshSession).toBe(true);
     expect(captured.prompt.startsWith('<system-reminder>')).toBe(true);
     expect(captured.prompt).toContain('昨天的日报已发');
@@ -229,7 +230,8 @@ describe('executeApiTask (scheduled daily report / API tasks) honours rollover',
       captured = opts;
       throw new Error('stop-here');
     });
-    await expect(bridge.executeApiTask({ prompt: 'hi', chatId: 'chat-e', maxTurns: 1 })).rejects.toThrow('stop-here');
+    const res = await bridge.executeApiTask({ prompt: 'hi', chatId: 'chat-e', maxTurns: 1 });
+    expect(res.error).toContain('stop-here');
     expect(captured.freshSession).toBe(false);
     expect(captured.prompt).toBe('hi');
     expect(bridge.sessionManager.getSession('chat-e').sessionId).toBe(SID);

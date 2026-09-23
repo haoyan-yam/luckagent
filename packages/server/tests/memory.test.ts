@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { makeKit, type TestKit } from './helpers.js';
 import type { Credential } from '../src/auth/credentials.js';
+import { slugify } from '../src/memory/memory-store.js';
 
 let kit: TestKit | undefined;
 
@@ -137,5 +138,43 @@ describe('MemoryStore + ACL', () => {
     }
     // member can't see /shared via /users prefix
     expect(list.some((f) => f.path === '/shared/teamx')).toBe(false);
+  });
+});
+
+describe('MemoryStore: non-ASCII titles get their own path segment', () => {
+  it('slugify keeps Unicode letters and falls back when nothing is sluggable', () => {
+    expect(slugify('My Note')).toBe('my-note');
+    expect(slugify('项目决策：第3次')).toBe('项目决策-第3次');
+    expect(slugify('!!!', 'untitled-x')).toBe('untitled-x');
+  });
+
+  it('two Chinese-titled docs in one folder get distinct paths (no 409, no folder-path collapse)', () => {
+    kit = makeKit('mem-cjk');
+    const me = issue(kit, 'cjk-bot', 'member');
+    const folder = kit.memory.createFolder({ path: '/users/cjk-bot/notes' }, me);
+    const a = kit.memory.createDocument({ title: '项目决策记录', folder_id: folder.id, content: 'a' }, me);
+    const b = kit.memory.createDocument({ title: '会议纪要', folder_id: folder.id, content: 'b' }, me);
+    expect(a.path).toBe('/users/cjk-bot/notes/项目决策记录');
+    expect(b.path).toBe('/users/cjk-bot/notes/会议纪要');
+    expect(kit.memory.getDocument('/users/cjk-bot/notes/会议纪要', me)?.id).toBe(b.id);
+  });
+
+  it('emoji-only titles still get a unique path', () => {
+    kit = makeKit('mem-emoji');
+    const me = issue(kit, 'emo-bot', 'member');
+    const folder = kit.memory.createFolder({ path: '/users/emo-bot/notes' }, me);
+    const a = kit.memory.createDocument({ title: '🎉', folder_id: folder.id, content: 'a' }, me);
+    const b = kit.memory.createDocument({ title: '🎉', folder_id: folder.id, content: 'b' }, me);
+    expect(a.path).not.toBe(b.path);
+    expect(a.path.startsWith('/users/emo-bot/notes/untitled-')).toBe(true);
+  });
+
+  it('renaming to a Chinese title moves the doc to that segment', () => {
+    kit = makeKit('mem-cjk-rename');
+    const me = issue(kit, 'cjk-bot', 'member');
+    const folder = kit.memory.createFolder({ path: '/users/cjk-bot/notes' }, me);
+    const doc = kit.memory.createDocument({ title: 'draft', folder_id: folder.id, content: 'x' }, me);
+    const renamed = kit.memory.updateDocument(doc.id, { title: '正式方案' }, me);
+    expect(renamed?.path).toBe('/users/cjk-bot/notes/正式方案');
   });
 });

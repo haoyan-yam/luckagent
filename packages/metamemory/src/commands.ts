@@ -60,8 +60,20 @@ function encodeIdOrPath(s: string): string {
   return encodeURIComponent(s);
 }
 
-function slugify(title: string): string {
-  return title.toLowerCase().trim().replace(/[^a-z0-9-_]+/g, '-').replace(/^-+|-+$/g, '');
+/**
+ * Title → path segment; same rule as the server's memory-store slugify. Keeps
+ * Unicode letters/marks/digits so a Chinese title doesn't slugify to '' (which
+ * collapsed the doc path onto the caller's namespace root). Nothing sluggable
+ * → a unique `untitled-<base36 time>` segment.
+ */
+export function slugify(title: string): string {
+  const slug = title
+    .normalize('NFKC')
+    .toLowerCase()
+    .trim()
+    .replace(/[^\p{L}\p{M}\p{N}_-]+/gu, '-')
+    .replace(/^-+|-+$/g, '');
+  return slug || `untitled-${Date.now().toString(36)}`;
 }
 
 interface Whoami {

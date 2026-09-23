@@ -65,6 +65,9 @@ function downloadFailReason(res: DownloadOutcome): string {
 
 const TASK_TIMEOUT_MS = 24 * 60 * 60 * 1000; // 24 hours
 const QUESTION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes for user to answer
+/** How long a new turn waits for an aborting turn to drain (> the executor's 8 s drain cap). */
+const TURN_SLOT_WAIT_MS = 10_000;
+const TURN_SLOT_POLL_MS = 100;
 /**
  * Window during which a freshly-resolved between-turn question card is reused
  * (updated in place) for the next sub-question of the same AskUserQuestion
@@ -204,10 +207,13 @@ export class MessageBridge {
   private outputHandler: OutputHandler;
   readonly costTracker: CostTracker;
   private sessionRegistry?: SessionRegistry;
-  /** Chats admitted into executeQuery but not yet registered in runningTasks
-   *  (the chunked-download phase of >100MB files lives here — a second file
-   *  arriving then must QUEUE, not start a colliding turn). */
-  private admitting = new Set<string>();
+  /** Chats admitted into executeQuery / executeApiTask but not yet registered
+   *  in runningTasks (the chunked-download phase of >100MB files lives here —
+   *  a second file arriving then must QUEUE, not start a colliding turn).
+   *  Keyed to a per-call token: a finishing turn drains the queue (processQueue)
+   *  BEFORE its own admission is released, so it must only clear its own token,
+   *  never the one the next queued turn just set. */
+  private admitting = new Map<string, symbol>();
   private runningTasks = new Map<string, RunningTask>(); // keyed by chatId
   // [design-note F] 每个 chat「最近开始的那个任务」的发起人（open_id + chatType）。
   // 在 executeQuery 任务开始时写入 = 任务归属人（与 patch H 注入同源），供「选择卡 @ 提问人」用。
@@ -1473,6 +1479,14 @@ export class MessageBridge {
         apiContext: opts.apiContext,
         outputsDir: opts.outputsDir,
       });
+      // A just-aborted turn (/stop, /reset, timeout) drains asynchronously and
+      // keeps activeTurn set until it does — nextTurn() would throw "turn … is
+      // in flight". The executor force-clears a stuck drain after
+      // abortDrainTimeoutMs (8 s), so wait a bounded bit longer than that.
+      const deadline = Date.now() + TURN_SLOT_WAIT_MS;
+      while (exec.hasActiveTurn() && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, TURN_SLOT_POLL_MS));
+      }
       // TurnHandle is structurally compatible with ExecutionHandle (stream,
       // sendAnswer, resolveQuestion, finish) — see persistent-executor.ts.
       return exec.nextTurn(opts.prompt) as unknown as ExecutionHandle;
@@ -2032,12 +2046,57 @@ export class MessageBridge {
     // Admission marker covers the WHOLE call — including the chunked-download
     // phase that precedes runningTasks registration — so concurrent messages
     // queue instead of racing (see isBusy()).
-    this.admitting.add(msg.chatId);
+    const release = this.admit(msg.chatId);
     try {
       await this.executeQueryInner(msg);
     } finally {
-      this.admitting.delete(msg.chatId);
+      release();
     }
+  }
+
+  /** Mark a chat as admitted; the returned release only clears this call's own token. */
+  private admit(chatId: string): () => void {
+    const token = Symbol('admission');
+    this.admitting.set(chatId, token);
+    return () => {
+      if (this.admitting.get(chatId) === token) this.admitting.delete(chatId);
+    };
+  }
+
+  /**
+   * A turn failed to START (executor acquire/spawn failed, or the executor
+   * still had a turn in flight). The thinking card was already sent — finalize
+   * it to an error so the user isn't left with a spinner, record the failure,
+   * and drain anything that queued behind this turn.
+   */
+  private async failTurnStart(opts: {
+    chatId: string;
+    userId: string;
+    prompt: string;
+    displayPrompt: string;
+    cardMessageId?: string;
+    err: unknown;
+  }): Promise<string> {
+    const { chatId, userId, prompt, displayPrompt, cardMessageId, err } = opts;
+    const errorMessage = `启动任务失败：${(err as Error)?.message || String(err)}`;
+    this.logger.error({ err, chatId, userId }, 'Failed to start turn');
+    this.audit.log({ event: 'task_error', botName: this.config.name, chatId, userId, prompt, error: errorMessage });
+    this.emitActivity({
+      type: 'task_failed', botName: this.config.name, chatId, userId, prompt: prompt?.slice(0, 200),
+      errorMessage, timestamp: Date.now(),
+    });
+    this.costTracker.record({ botName: this.config.name, userId, success: false, durationMs: 0 });
+    if (cardMessageId) {
+      await this.sendFinalCard(cardMessageId, {
+        status: 'error',
+        userPrompt: displayPrompt,
+        responseText: '',
+        toolCalls: [],
+        errorMessage,
+      }, chatId);
+    }
+    this.processQueue(chatId);
+    return errorMessage;
   }
 
   private async executeQueryInner(msg: IncomingMessage): Promise<void> {
@@ -2246,17 +2305,42 @@ export class MessageBridge {
     // runOneTurn call below, so the backend decision is identical.
     const turnBackend = this.resolveTurnExecution(engineName, {}).backend;
 
-    const executionHandle = await this.runOneTurn(chatId, engineName, {
-      prompt,
-      cwd,
-      abortController,
-      outputsDir,
-      apiContext,
-      model: session.model,
-      onTeamEvent,
-      // [design-note T] 换新会话时不 resume（sessionId 已清，这里再显式声明一次）
-      freshSession: rolledOver,
-    });
+    // [design-note] 只清理落在系统 temp 里的下载；下载进持久项目目录（配了
+    // downloadsDir 的 bot，如 <project>/inputs）的上传文件保留，方便用户之后
+    // 说“再用一下那个文件”时 bot 仍能在本地找到，而不必让用户重新上传。
+    const releaseTurnFiles = () => {
+      const inTmp = (p: string) => p.startsWith(os.tmpdir());
+      if (imagePath && inTmp(imagePath)) {
+        try { fs.unlinkSync(imagePath); } catch { /* ignore */ }
+      }
+      if (filePath && inTmp(filePath)) {
+        try { fs.unlinkSync(filePath); } catch { /* ignore */ }
+      }
+      for (const p of extraPaths) {
+        if (inTmp(p)) { try { fs.unlinkSync(p); } catch { /* ignore */ } }
+      }
+      try { this.outputsManager.cleanup(outputsDir); } catch { /* ignore */ }
+    };
+
+    let executionHandle: ExecutionHandle;
+    try {
+      executionHandle = await this.runOneTurn(chatId, engineName, {
+        prompt,
+        cwd,
+        abortController,
+        outputsDir,
+        apiContext,
+        model: session.model,
+        onTeamEvent,
+        // [design-note T] 换新会话时不 resume（sessionId 已清，这里再显式声明一次）
+        freshSession: rolledOver,
+      });
+    } catch (err) {
+      // The thinking card is already out — never leave it spinning.
+      await this.failTurnStart({ chatId, userId, prompt: text, displayPrompt, cardMessageId: messageId, err });
+      releaseTurnFiles();
+      return;
+    }
 
     // Register running task
     const startTime = Date.now();
@@ -2688,29 +2772,27 @@ export class MessageBridge {
         metrics.setGauge('luckagent_active_tasks', this.runningTasks.size);
         this.processQueue(chatId);
       }
-      // [design-note] 只清理落在系统 temp 里的下载；下载进持久项目目录（配了
-      // downloadsDir 的 bot，如 <project>/inputs）的上传文件保留，方便用户之后
-      // 说“再用一下那个文件”时 bot 仍能在本地找到，而不必让用户重新上传。
-      const inTmp = (p: string) => p.startsWith(os.tmpdir());
-      if (imagePath && inTmp(imagePath)) {
-        try { fs.unlinkSync(imagePath); } catch { /* ignore */ }
-      }
-      if (filePath && inTmp(filePath)) {
-        try { fs.unlinkSync(filePath); } catch { /* ignore */ }
-      }
-      for (const p of extraPaths) {
-        if (inTmp(p)) { try { fs.unlinkSync(p); } catch { /* ignore */ } }
-      }
-      try { this.outputsManager.cleanup(outputsDir); } catch { /* ignore */ }
+      releaseTurnFiles();
     }
   }
 
   async executeApiTask(options: ApiTaskOptions): Promise<ApiTaskResult> {
-    const { prompt, chatId, userId = 'api', sendCards = false } = options;
-
-    if (this.isBusy(chatId)) {
+    // Busy check and admission happen synchronously, before the first await:
+    // rollover / sweepDir / sendCard below all yield, and a user message
+    // arriving then must queue instead of starting a colliding turn.
+    if (this.isBusy(options.chatId)) {
       return { success: false, responseText: '', error: 'Chat is busy with another task' };
     }
+    const release = this.admit(options.chatId);
+    try {
+      return await this.executeApiTaskInner(options);
+    } finally {
+      release();
+    }
+  }
+
+  private async executeApiTaskInner(options: ApiTaskOptions): Promise<ApiTaskResult> {
+    const { prompt, chatId, userId = 'api', sendCards = false } = options;
 
     const { session, engineName } = this.prepareSessionForApiExecution(chatId, options.engine);
     const cwd = session.workingDirectory;
@@ -2783,19 +2865,27 @@ export class MessageBridge {
     // options; persistent executor would need additional plumbing to apply
     // them per-turn — runOneTurn falls back to legacy spawn automatically
     // when those are set.
-    const executionHandle = await this.runOneTurn(chatId, engineName, {
-      prompt: taskPrompt,
-      cwd,
-      abortController,
-      outputsDir,
-      apiContext,
-      maxTurns: options.maxTurns,
-      model: options.model ?? session.model,
-      allowedTools: options.allowedTools,
-      onTeamEvent,
-      // [design-note T] 换新会话时不 resume
-      freshSession: rolledOver,
-    });
+    let executionHandle: ExecutionHandle;
+    try {
+      executionHandle = await this.runOneTurn(chatId, engineName, {
+        prompt: taskPrompt,
+        cwd,
+        abortController,
+        outputsDir,
+        apiContext,
+        maxTurns: options.maxTurns,
+        model: options.model ?? session.model,
+        allowedTools: options.allowedTools,
+        onTeamEvent,
+        // [design-note T] 换新会话时不 resume
+        freshSession: rolledOver,
+      });
+    } catch (err) {
+      const error = await this.failTurnStart({ chatId, userId, prompt, displayPrompt, cardMessageId: messageId, err });
+      options.onUpdate?.({ ...initialState, status: 'error', errorMessage: error }, effectiveMessageId, true);
+      try { this.outputsManager.cleanup(outputsDir); } catch { /* ignore */ }
+      return { success: false, responseText: '', error };
+    }
 
     const startTime = Date.now();
     runningTask = {
@@ -3100,9 +3190,13 @@ export class MessageBridge {
       clearTimeout(timeoutId);
       if (idleTimerId) clearTimeout(idleTimerId);
       try { executionHandle.finish(); } catch (e) { this.logger.warn({ err: e, chatId }, 'Error finishing execution handle'); }
-      this.runningTasks.delete(chatId);
-      metrics.setGauge('luckagent_active_tasks', this.runningTasks.size);
-      this.processQueue(chatId);
+      // Only delete if this is still our task (a /stop may have cleared it and
+      // a newer turn taken the slot) — same guard as executeQuery.
+      if (this.runningTasks.get(chatId) === runningTask) {
+        this.runningTasks.delete(chatId);
+        metrics.setGauge('luckagent_active_tasks', this.runningTasks.size);
+        this.processQueue(chatId);
+      }
       try { this.outputsManager.cleanup(outputsDir); } catch { /* ignore */ }
     }
   }

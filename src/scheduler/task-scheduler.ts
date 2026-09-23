@@ -341,6 +341,18 @@ export class TaskScheduler {
 
   private setTimer(task: ScheduledTask): void {
     const delay = Math.max(0, task.executeAt - Date.now());
+
+    // Same ~24.8-day setTimeout cap as setRecurringTimer: Node clamps any
+    // larger delay to 1 ms, which would fire a "30 days from now" task at once.
+    if (delay > MAX_SETTIMEOUT_MS) {
+      const timer = setTimeout(() => {
+        this.timers.delete(task.id);
+        if (this.tasks.get(task.id)?.status === 'pending') this.setTimer(task);
+      }, MAX_SETTIMEOUT_MS);
+      this.timers.set(task.id, timer);
+      return;
+    }
+
     const timer = setTimeout(() => this.fireTask(task.id), delay);
     this.timers.set(task.id, timer);
   }
