@@ -70,6 +70,7 @@ luckagent logs -n 200          # 先回放最近 200 行
 | `bots_config` | bots.json 可解析、各 bot 工作目录是否存在 |
 | `voice_defaults` | TTS 凭证是否配置 |
 | `lark_cli` | lark-cli 是否安装、是否至少有一个 bot 的 app profile |
+| `image_gen` | 生图后端是否可用：按 `IMAGE_GEN_PROVIDER` > Codex 已登录 > `ARK_API_KEY` 判定生效后端，列出 Codex 版本、登录状态与是否有 Seedream 兜底；检测到个人装的 `~/.claude/skills/codex-image-gen` 会提示与内置技能触发重叠 |
 | `office_media_toolchain` | 办公与媒体工具链是否齐全：ffmpeg / soffice / pdftotext 三个二进制、Noto Sans CJK SC 字体、`~/.luckagent/venv` 及其 11 个基础包能否导入；缺项时重跑 `bash install.sh` 只补缺的 |
 
 ```bash

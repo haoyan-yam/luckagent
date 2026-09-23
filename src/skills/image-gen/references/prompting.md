@@ -1,10 +1,10 @@
 # Prompting best practices
 
-<!-- Vendored from OpenAI Codex imagegen skill (Apache-2.0), adapted for openai-image-gen. -->
+<!-- Vendored from OpenAI Codex imagegen skill (Apache-2.0), adapted for the image-gen skill (Codex / Seedream backends). -->
 
-These prompting principles apply to all image generation and editing done through this skill's `scripts/gen_image.py`.
+These prompting principles apply to all image generation and editing done through this skill's `scripts/gen.py`.
 
-This file is about prompt structure, specificity, and iteration. Execution controls such as `quality`, masks, output format, and output paths live in `SKILL.md` and `references/image-api.md`.
+This file is about prompt structure, specificity, and iteration. Execution controls such as aspect ratio, size, transparency, and output paths live in `SKILL.md`.
 
 ## Contents
 - [Structure](#structure)
@@ -58,7 +58,7 @@ Do not add:
 - Put literal text in quotes or ALL CAPS and specify typography (font style, size, color, placement).
 - Spell uncommon words letter-by-letter if accuracy matters.
 - For in-image copy, require verbatim rendering and no extra characters.
-- Use `medium` or `high` quality for small text, dense infographics, data-heavy slides, multi-font layouts, legends, axes, and footnotes.
+- Small text, dense infographics, legends, axes, and footnotes are the least reliable areas; keep copy short and inspect them closely.
 
 ## Input images and references
 - Do not assume that every provided image is an edit target.
@@ -73,28 +73,22 @@ Do not add:
 - Prefer one targeted follow-up at a time over rewriting the whole prompt.
 
 ## Transparent images
-- `gpt-image-2` does not support `background=transparent`. Two paths, per `SKILL.md`:
-  - Path A (simple subjects, icons): `--model gpt-image-1.5 --background transparent --output-format png` for true native transparency.
-  - Path B (need gpt-image-2 quality/text rendering): generate on a flat chroma-key background, then remove it locally.
-- For Path B, prompt for a perfectly flat solid chroma-key background, usually `#00ff00`; use `#ff00ff` when the subject is green, and avoid key colors that appear in the subject.
-- Explicitly prohibit shadows, gradients, floor planes, reflections, texture, and lighting variation in the background.
-- Ask for crisp edges, generous padding, and no use of the key color inside the subject.
-- After generation, remove the background locally with `python3 scripts/remove_chroma_key.py --input <source> --out <final.png> --auto-key border --soft-matte --transparent-threshold 12 --opaque-threshold 220 --despill` (path relative to this skill's directory) and validate the alpha result before shipping it.
-- Use soft matte and despill for antialiased edges; hard tolerance-only removal is mainly for flat pixel-art or exact-color fixtures.
-- Complex transparent subjects (hair, fur, glass, smoke, liquids, translucent materials, reflective objects, soft shadows) chroma-key poorly; prefer Path A for those.
+- Use the `--transparent` flag; do not describe the transparency mechanics yourself.
+- codex backend: native transparent PNG. Best for complex edges (hair, fur, glass, smoke, liquids, translucent or reflective materials).
+- seedream backend: `gen.py` appends a flat chroma-key background requirement to the prompt and removes it locally with `scripts/remove_chroma_key.py`. Keep the subject free of the key colors (`#00ff00`, or `#ff00ff` for green subjects); complex edges chroma-key poorly.
+- Either way, validate the alpha result before shipping it (RGBA, transparent corners, no colored fringe).
 
 ## Execution controls
-- `quality`, masks, output format, and output paths are `gen_image.py` flags; see `SKILL.md` and `references/image-api.md`.
-- `gpt-image-2` is the default model. It supports `quality=low|medium|high|auto`; use `low` for fast drafts and thumbnails, and move to `medium`, `high`, or `auto` for final assets.
-- `gpt-image-2` always uses high fidelity for image inputs; `input_fidelity` is not a supported parameter for it.
-- If the user asks for 4K-style output with `gpt-image-2`, use `3840x2160` for landscape or `2160x3840` for portrait.
+- Aspect ratio, exact size, reference images, transparency, candidate count, and output paths are `gen.py` flags; see `SKILL.md`.
+- codex controls aspect ratio only (about 1.57 MP output); `--size` is a local resize. For native large output use the seedream backend.
+- Neither backend supports masks; for a local fix, crop the region, regenerate it with the crop as a reference image, and paste it back.
 
 ## Use-case tips
 Generate:
 - photorealistic-natural: Prompt as if a real photo is captured in the moment; use photography language (lens, lighting, framing); call for real texture; avoid over-stylized polish unless requested.
 - product-mockup: Describe the product/packaging and materials; ensure clean silhouette and label clarity; if in-image text is needed, require verbatim rendering and specify typography.
 - ui-mockup: Describe the target fidelity first (shippable mockup or low-fi wireframe), then focus on layout, hierarchy, and practical UI elements; avoid concept-art language.
-- infographic-diagram: Define the audience and layout flow; label parts explicitly; require verbatim text; prefer higher quality for dense labels.
+- infographic-diagram: Define the audience and layout flow; label parts explicitly; require verbatim text; keep dense labels short and check them closely.
 - logo-brand: Keep it simple and scalable; ask for a strong silhouette and balanced negative space; avoid decorative flourishes unless requested.
 - ads-marketing: Write like a creative brief; include brand positioning, audience, desired vibe, scene, and exact tagline if text must appear.
 - productivity-visual: Name the exact artifact (slide, chart, workflow diagram), define the canvas and hierarchy, provide real labels/data, and ask for readable typography and polished spacing.
@@ -108,7 +102,7 @@ Edit:
 - identity-preserve: Lock identity (face, body, pose, hair, expression); change only the specified elements; match lighting and shadows.
 - precise-object-edit: Specify exactly what to remove/replace; preserve surrounding texture and lighting; keep everything else unchanged.
 - lighting-weather: Change only environmental conditions (light, shadows, atmosphere, precipitation); keep geometry, framing, and subject identity.
-- background-extraction: For simple opaque subjects, request a clean cutout on a perfectly flat chroma-key background; crisp silhouette; generous padding; no shadows; no halos; preserve label text exactly; no restyling. Prefer `gpt-image-1.5` native transparency for complex subjects.
+- background-extraction: For simple opaque subjects, request a clean cutout on a perfectly flat chroma-key background; crisp silhouette; generous padding; no shadows; no halos; preserve label text exactly; no restyling. Prefer the codex backend's native transparency for complex subjects.
 - style-transfer: Specify style cues to preserve (palette, texture, brushwork) and what must change; add `no extra elements` to prevent drift.
 - compositing: Reference inputs by index; specify what moves where; match lighting, perspective, and scale; keep the base framing unchanged.
 - sketch-to-render: Preserve layout, proportions, and perspective; choose materials and lighting that support the supplied sketch without adding new elements.

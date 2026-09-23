@@ -182,6 +182,20 @@ if [[ ! -d "$LUCKAGENT_HOME/.git" ]]; then
     fi
   done
 
+  # image-gen 已退役的文件（v0.7.13 去掉 OpenAI API 后端）——cp 不会删目标端多出来的文件
+  rm -f "$SKILLS_DIR/image-gen/scripts/gen_image.py" "$SKILLS_DIR/image-gen/references/image-api.md"
+
+  # Codex CLI（image-gen 的首选后端）：只升级经 npm 全局装的那份（install.sh 的装法），
+  # 用户自己用别的方式装的不动，免得装出第二份。
+  if command -v codex &>/dev/null && npm ls -g --depth=0 @openai/codex &>/dev/null; then
+    info "Updating Codex CLI..."
+    if npm install -g @openai/codex@latest 2>/dev/null; then
+      success "Codex CLI updated ($(codex --version 2>/dev/null || echo 'version unknown'))"
+    else
+      warn "Codex CLI update failed; Luckagent update will continue"
+    fi
+  fi
+
   # Update lark-cli and its AI Agent skills only if previously installed.
   # New installs still opt in via install.sh; updates keep existing setups fresh.
   local has_lark_skills=false
@@ -524,6 +538,52 @@ check("lark_cli", lark_ok,
       "Install: npm i -g @larksuite/cli && npx skills add larksuite/cli --all -y -g; profiles are added automatically when a bot is created via the admin console.",
       False,
       {"binary": lark_bin, "configExists": lark_cfg.exists(), "appProfiles": lark_apps})
+
+# 生图（image-gen 技能）：与 gen.py 同一套判定——IMAGE_GEN_PROVIDER > Codex 已登录 > ARK_API_KEY
+codex_bin = shutil.which(os.environ.get("CODEX_BIN", "codex"))
+codex_version = None
+codex_logged_in = False
+if codex_bin:
+    v = run([codex_bin, "--version"])
+    codex_version = v["stdout"].split()[-1] if v["ok"] and v["stdout"] else None
+    st = run([codex_bin, "login", "status"], timeout=10)
+    st_text = (st["stdout"] + st["stderr"]).lower()
+    codex_logged_in = st["ok"] and "logged in" in st_text and "not logged in" not in st_text
+has_ark = bool(env("ARK_API_KEY"))
+img_cfg = (env("IMAGE_GEN_PROVIDER") or "").lower()
+if img_cfg in ("codex", "seedream"):
+    img_provider = img_cfg
+elif codex_logged_in:
+    img_provider = "codex"
+elif has_ark:
+    img_provider = "seedream"
+else:
+    img_provider = None
+img_ready = (img_provider == "codex" and (codex_logged_in or has_ark)) or (img_provider == "seedream" and has_ark)
+if img_ready:
+    img_code = "ok"
+    img_diag = f"image-gen uses {img_provider}" + (" (Codex not logged in — falling back to Seedream)" if img_provider == "codex" and not codex_logged_in else "") + \
+        ("; Seedream fallback available." if img_provider == "codex" and has_ark else ".")
+elif img_provider == "codex":
+    img_code = "codex_not_logged_in" if codex_bin else "codex_missing"
+    img_diag = "IMAGE_GEN_PROVIDER=codex but Codex is " + ("not logged in" if codex_bin else "not installed") + " and no ARK_API_KEY fallback."
+elif img_provider == "seedream":
+    img_code = "ark_key_missing"
+    img_diag = "IMAGE_GEN_PROVIDER=seedream but ARK_API_KEY is not set."
+else:
+    img_code = "image_gen_unconfigured"
+    img_diag = "No image backend: Codex not logged in and no ARK_API_KEY — bots cannot generate images."
+img_conflict = Path.home() / ".claude/skills/codex-image-gen"
+if img_conflict.exists():
+    img_diag += f" Note: {img_conflict} overlaps image-gen's triggers (it already has the Codex backend) — consider removing it."
+if env("OPENAI_IMAGE_API_KEY") and not img_ready:
+    img_diag += " (OPENAI_IMAGE_API_KEY is no longer used since v0.7.13.)"
+check("image_gen", img_ready, img_code, img_diag,
+      "With a ChatGPT subscription: npm i -g @openai/codex && codex login. Otherwise set ARK_API_KEY in .env (and enable Doubao-Seedream in the Ark console). Or re-run: bash install.sh",
+      False,
+      {"provider": img_provider, "configuredProvider": img_cfg or None, "codexBinary": codex_bin,
+       "codexVersion": codex_version, "codexLoggedIn": codex_logged_in, "hasArkApiKey": has_ark,
+       "conflictingSkill": str(img_conflict) if img_conflict.exists() else None})
 
 # 办公与媒体工具链（install.sh 的「办公与媒体工具链」段装的东西）
 venv_py = Path.home() / ".luckagent" / "venv" / "bin" / "python"

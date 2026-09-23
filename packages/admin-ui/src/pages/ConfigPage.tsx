@@ -54,6 +54,27 @@ function ClaudeAuthHint({ a }: { a?: EffectiveConfig['claudeAuth'] }) {
   );
 }
 
+function ImageGenHint({ g }: { g?: EffectiveConfig['imageGen'] }) {
+  if (!g) return <Tag>—</Tag>;
+  if (!g.provider) return <Tag color="orange">未配置——有 ChatGPT 订阅就 codex login，否则填 ARK_API_KEY</Tag>;
+  const codexState = !g.codexInstalled ? '未装 Codex' : g.codexLoggedIn ? 'Codex 已登录' : 'Codex 未登录';
+  const codexReady = g.codexInstalled && g.codexLoggedIn;
+  return (
+    <span>
+      <Tag color={g.provider === 'codex' && !codexReady ? 'orange' : 'green'}>
+        {g.provider === 'codex' ? 'Codex（ChatGPT 订阅）' : '火山 Seedream'}
+      </Tag>
+      {g.provider === 'codex' && <Tag color={codexReady ? 'green' : 'orange'}>{codexState}</Tag>}
+      {g.provider === 'codex' && g.hasArkApiKey && <Tag>Seedream 兜底</Tag>}
+      {g.configured && (
+        <Typography.Text type="secondary" style={{ fontSize: 12, marginLeft: 6 }}>
+          （IMAGE_GEN_PROVIDER）
+        </Typography.Text>
+      )}
+    </span>
+  );
+}
+
 function fmtUptime(ms: number | null): string {
   if (!ms) return '—';
   const sec = Math.floor(ms / 1000);
@@ -127,8 +148,8 @@ export default function ConfigPage({ onRestart }: { onRestart: () => void }) {
           <Descriptions.Item label="OPENAI_API_KEY">
             <SecretHint v={cfg?.credentials.openaiApiKey} />
           </Descriptions.Item>
-          <Descriptions.Item label="生图 OPENAI_IMAGE_API_KEY">
-            <SecretHint v={cfg?.credentials.openaiImageApiKey} />
+          <Descriptions.Item label="生图后端">
+            <ImageGenHint g={cfg?.imageGen} />
           </Descriptions.Item>
           <Descriptions.Item label="core Token">
             <SecretHint v={cfg?.credentials.coreToken} />

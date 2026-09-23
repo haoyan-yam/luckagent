@@ -2,6 +2,14 @@
 
 版本号 = 根 `package.json`（管理台总览页显示的就是它）。升级：`luckagent update`（git 安装）或重跑一行安装命令（tarball 安装）。git tag 与本文件同步打点。
 
+## v0.7.13 — 2026-09-23
+
+- **生图改为 Codex 优先、火山 Seedream 兜底，去掉 OpenAI API 后端**：`image-gen` 技能新增 codex 后端——调本机 Codex CLI 内置的 image_gen 工具出图，走 ChatGPT 订阅额度，不需要任何 key（原生透明底、参考图、并行候选、跨进程并发上限 `CODEX_IMAGE_MAX_CONCURRENCY`）。统一入口 `gen.py` 的判定顺序：`--provider` > `.env` 的 `IMAGE_GEN_PROVIDER` > Codex 已登录 > `ARK_API_KEY`；走 Codex 时若未登录或撞订阅额度且配了火山 key，自动改用 Seedream 重出（`--provider` 强制时不兜底）。两个后端参数统一为 `--aspect / --size / --image / --n / --transparent`，Seedream 的透明底由 gen.py 在色键背景上生成后本地自动抠图，多张统一命名 `<stem>_1..N`。`gen_image.py`（OpenAI gpt-image-2）与 `references/image-api.md` 删除，SKILL.md 与两份提示词参考同步改写
+- **安装脚本新增「生图」段**（重跑也会走到，已配置则跳过）：先问有没有 ChatGPT 订阅——有就代装 `@openai/codex` 最新版并引导 `codex login`；没有或登录未成功再问火山 ARK key。结果写进 `.env` 的 `IMAGE_GEN_PROVIDER`；想用 Codex 但暂未登录、先填了火山 key 时不锁定后端，登录后自动切回 Codex。`--yes` 只检测不代装。原先生成 `.env` 时的「OpenAI / 火山生图 key」提问移除
+- `luckagent update` 升级经 npm 全局安装的 Codex CLI，并清理旧版同步进 `~/.claude/skills/image-gen` 的已退役文件；`luckagent doctor` 新增 `image_gen` 检查（生效后端、Codex 版本与登录状态、有无 Seedream 兜底、个人装的 `codex-image-gen` 技能触发重叠提示）；管理台配置页「生图 OPENAI_IMAGE_API_KEY」一行换成「生图后端」状态
+- **升级注意**：`OPENAI_IMAGE_API_KEY` 不再使用。只配了它的机器升级后无法生图，需 `npm i -g @openai/codex && codex login`，或在 `.env` 填 `ARK_API_KEY`，然后 `luckagent restart`（doctor 会提示）。已部署的 `~/projects/CLAUDE.md` 不会被覆盖，其中「OpenAI 或火山」的描述可对照 `src/workspace/PROJECTS-CLAUDE.md` 手动更新
+- 测试：`tests/image-gen-dispatch.test.ts` 10 例（假 codex 可执行文件 + 本地 HTTP 冒充方舟接口，真实跑 gen.py：后端判定 5 例、尺寸换算与参数校验 2 例、额度兜底 / 强制不兜底 / 多张命名 3 例）；本机用真实 Codex 端到端出透明底图验证
+
 ## v0.7.12 — 2026-09-23
 
 - **修复：零安装的 DeepSeek / MiniMax 机器在持久会话模式下起不来**：v0.4.1 已把 `executor.ts` 的 claude CLI 查找改为「找不到就返回 undefined、让 Agent SDK 用自带运行时」，但持久执行器（默认路径，DeepSeek / MiniMax 也走它的 SDK 后端）保留了一份旧副本，找不到时回退成猜测路径 `/usr/local/bin/claude` 并总是传给 SDK。现在两处共用同一个 `resolveClaudePath()`：没装 CLI 时 SDK 后端不再传 `pathToClaudeCodeExecutable`；PTY 后端给出「请安装 Claude Code 或设置 `CLAUDE_EXECUTABLE_PATH`」的明确报错

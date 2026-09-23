@@ -3,9 +3,9 @@
 
 Vendored from OpenAI Codex imagegen skill (Apache-2.0); see references/LICENSE-openai-imagegen.txt.
 
-This helper supports the openai-image-gen skill's chroma-key transparent workflow:
-generate an image on a flat key color with gen_image.py, then convert that key
-color to alpha. Requires Pillow.
+This helper supports the image-gen skill's chroma-key transparent workflow for
+backends without native transparency (Seedream): gen.py generates on a flat key
+color, then converts that key color to alpha. Requires Pillow.
 """
 
 from __future__ import annotations

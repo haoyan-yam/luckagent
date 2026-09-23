@@ -91,4 +91,11 @@ export interface EffectiveConfig {
     trialEndsAt?: string;
     profileFetchedAt?: string;
   };
+  imageGen?: {
+    configured: string | null;
+    provider: 'codex' | 'seedream' | null;
+    codexInstalled: boolean;
+    codexLoggedIn: boolean;
+    hasArkApiKey: boolean;
+  };
 }

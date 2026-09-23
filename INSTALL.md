@@ -14,7 +14,7 @@
 | 网络 | 目标机需联网（取代码、下载 Homebrew/node/npm 依赖、连飞书与模型 API），无需下载任何安装包 |
 | 飞书账号 | 有权限在 [飞书开放平台](https://open.feishu.cn/app) 创建企业自建应用 |
 | Claude 认证 | 二选一：[Anthropic API Key](https://console.anthropic.com)，或 Claude Code 订阅账号（安装脚本可代装 CLI，登录需自己跑一次 `claude`） |
-| 生图 key（可选） | 二选一：[OpenAI](https://platform.openai.com) 的 key，或 [火山方舟](https://console.volcengine.com/ark) 的 ARK key（需在控制台开通 Doubao-Seedream 模型） |
+| 生图（可选） | 首选 ChatGPT 订阅（Plus / Pro / Team 等）：安装脚本代装 Codex CLI 并引导 `codex login`，无需 key；没有订阅则用 [火山方舟](https://console.volcengine.com/ark) 的 ARK key（需在控制台开通 Doubao-Seedream 模型） |
 | DeepSeek / MiniMax 引擎（可选） | **无需装任何东西，只要一个 API key**（[DeepSeek](https://platform.deepseek.com) / [MiniMax](https://platform.minimaxi.com)）。详见 [docs/engines.md](docs/engines.md) |
 | 磁盘 | 办公与媒体工具链（LibreOffice、ffmpeg、poppler、Noto CJK 字体、Python 基础包）约 1.5GB |
 | 时间 | 全程约 20–40 分钟（首次装 Xcode 命令行工具与 LibreOffice 下载占大头） |
@@ -56,10 +56,11 @@ bash install.sh
 | 选择默认引擎 | 询问用 Claude Code、DeepSeek 还是 MiniMax | 回车 = Claude；输 2 = DeepSeek；输 3 = MiniMax（之后每个 bot 仍可单独选） |
 | Claude Code CLI | 仅选 Claude 且未装 CLI 时询问是否代装 | 回答 y/n（订阅登录路线就装；纯 API key 路线可跳过） |
 | npm install + 构建 | 下载依赖并本地编译原生模块，几分钟 | 无 |
-| 生成 `.env` | 自动生成随机 `API_SECRET`（管理台登录密钥） | 按所选引擎询问认证——Claude：`ANTHROPIC_API_KEY` 或订阅登录提示；DeepSeek / MiniMax：对应 API key 并自动设为默认引擎——随后询问生图 key（OpenAI `sk-` 或火山 `ark-` 前缀自动识别），均可回车跳过、之后编辑 `.env` 补填 |
+| 生成 `.env` | 自动生成随机 `API_SECRET`（管理台登录密钥） | 按所选引擎询问认证——Claude：`ANTHROPIC_API_KEY` 或订阅登录提示；DeepSeek / MiniMax：对应 API key 并自动设为默认引擎，均可回车跳过、之后编辑 `.env` 补填 |
 | 生成 `bots.json` | 空列表——机器人稍后用管理台向导创建 | 无 |
 | 技能同步 | 内置技能装进全局目录；并从 GitHub 拉取 frontend-slides（HTML 演示文稿生成，第三方 MIT） | 无；拉取失败仅警告不影响安装 |
 | lark-cli（必装） | 自动安装飞书官方 CLI + 19 个 AI 技能（文档/表格/日历操作、群日报拉消息都依赖它） | 无；万一安装失败，结尾会打印待办命令 |
+| 生图 | 先问有没有 ChatGPT 订阅：有就代装 Codex CLI（`@openai/codex` 最新版）并跑 `codex login`（打开浏览器授权）；没有或登录未成功再问火山 ARK key。结果写进 `.env` 的 `IMAGE_GEN_PROVIDER`，重跑时已配置则跳过；`--yes` 只检测不代装 | 回答 y/n、浏览器里授权、或粘贴 ARK key；都可跳过，结尾打印待办 |
 | 办公与媒体工具链（必装） | brew 安装 ffmpeg、poppler、LibreOffice、Noto Sans CJK SC 字体，并用 python@3.13 建 `~/.luckagent/venv` 装入 `requirements.txt`（python-pptx / openpyxl / Pillow / numpy / pandas / python-docx / lxml / matplotlib / xlsxwriter / PyMuPDF / edge-tts）——bot 产出 PPT/Excel/Word/PDF/图片/语音都靠它们 | 无；单项失败只警告，结尾打印待办命令 |
 | PM2 启动 | 启动 `luckagent-bridge` + `luckagent-core` 两个常驻进程 | 无 |
 

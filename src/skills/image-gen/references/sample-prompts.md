@@ -1,8 +1,8 @@
 # Sample prompts (copy/paste)
 
-<!-- Vendored from OpenAI Codex imagegen skill (Apache-2.0), adapted for openai-image-gen. -->
+<!-- Vendored from OpenAI Codex imagegen skill (Apache-2.0), adapted for the image-gen skill (Codex / Seedream backends). -->
 
-These prompt recipes are for use with this skill's `scripts/gen_image.py`.
+These prompt recipes are for use with this skill's `scripts/gen.py`.
 
 Use these as starting points. They are intentionally complete prompt recipes, not the default amount of augmentation to add to every user request.
 
@@ -13,12 +13,10 @@ When adapting a user's prompt:
 
 The labeled lines are prompt scaffolding, not a closed schema. `Asset type` and `Input images` are prompt-only scaffolding; the CLI does not expose them as dedicated flags.
 
-Model notes:
-- `gpt-image-2` is the default model.
-- `gpt-image-2` supports `quality` values `low`, `medium`, `high`, and `auto`.
-- For 4K-style `gpt-image-2` output, use `3840x2160` or `2160x3840`.
-- `gpt-image-2` does not support `background=transparent`. For transparent output, either use `--model gpt-image-1.5 --background transparent --output-format png`, or generate on a flat chroma-key background and remove it locally with `scripts/remove_chroma_key.py` (see `SKILL.md`).
-- `input_fidelity` is not a `gpt-image-2` parameter; image inputs already use high fidelity.
+Backend notes:
+- Pass framing with `--aspect` (or `--size` for exact pixels) instead of writing sizes into the prompt.
+- For transparent output use `--transparent`: native on the codex backend; on seedream `gen.py` generates on a chroma-key background and removes it locally (see `SKILL.md`).
+- The codex backend rewrites your request into a full prompt by default; add `--verbatim` when pasting a finished recipe from this file.
 
 For prompting principles (structure, specificity, invariants, iteration), see `references/prompting.md`.
 
@@ -389,11 +387,10 @@ Constraints: preserve subject identity, geometry, camera angle, and composition;
 Use case: background-extraction
 Input images: Image 1: product photo
 Primary request: isolate the product on a clean transparent background
-Scene/backdrop: perfectly flat solid #00ff00 chroma-key background for local background removal
-Constraints: background must be one uniform color with no shadows, gradients, texture, reflections, floor plane, or lighting variation; crisp silhouette; generous padding; no halos or fringing; preserve label text exactly; no restyling; do not use #00ff00 anywhere in the subject
+Constraints: crisp silhouette; generous padding; no halos or fringing; preserve label text exactly; no restyling
 ```
 
-Post-process note: after generating on the chroma-key background, run `python3 scripts/remove_chroma_key.py --input <source> --out <final.png> --auto-key border --soft-matte --transparent-threshold 12 --opaque-threshold 220 --despill` (path relative to this skill's directory). For true/native transparency, failed chroma-key validation, or complex subjects such as hair, fur, glass, smoke, liquids, translucent materials, reflections, or soft shadows, use `--model gpt-image-1.5 --background transparent --output-format png` instead.
+Run with `--transparent`. On the seedream backend `gen.py` adds the chroma-key background requirement and removes it locally; complex subjects such as hair, fur, glass, smoke, liquids, translucent materials, reflections, or soft shadows key poorly there, so prefer the codex backend (`--provider codex`) for those.
 
 ### style-transfer
 ```

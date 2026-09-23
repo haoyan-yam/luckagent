@@ -53,6 +53,29 @@ _persist_zprofile() {
   grep -qxF "$line" "$f" 2>/dev/null || { echo "$line" >> "$f"; info "已写入 ~/.zprofile: $line"; }
 }
 
+# .env 读写（首次生成与重跑都能用）：_env_get KEY 输出已生效的值（注释行不算）；
+# _env_set KEY VALUE 替换已有的 KEY= 行，否则替换第一处 # KEY= 注释行，都没有就追加。
+_env_get() {
+  sed -n "s/^$1=//p" .env 2>/dev/null | head -1 | sed -e 's/^["'\'']//' -e 's/["'\'']$//'
+}
+_env_set() {
+  ENV_KEY="$1" ENV_VALUE="$2" python3 - <<'PYEOF'
+import os, re
+k, v = os.environ['ENV_KEY'], os.environ['ENV_VALUE']
+p = '.env'
+lines = open(p).read().splitlines()
+line = f'{k}={v}'
+for pat in (rf'^{re.escape(k)}=', rf'^#\s*{re.escape(k)}='):
+    idx = next((i for i, l in enumerate(lines) if re.match(pat, l)), None)
+    if idx is not None:
+        lines[idx] = line
+        break
+else:
+    lines.append(line)
+open(p, 'w').write('\n'.join(lines) + '\n')
+PYEOF
+}
+
 # ============================================================
 # 第一段：系统前置（Homebrew / node 22 / git / pm2）
 # ============================================================
@@ -121,10 +144,10 @@ echo "    DeepSeek          无需装 CLI    （可选引擎；只要 API key，
 echo "  增强工具:"
 echo "    opencli           $(_mark opencli)    （网站自动化；检测到即自动启用其技能，之后安装的话重跑一次 bash install.sh 生效）"
 echo "    lark-cli          $(_mark lark-cli)    （必备，稍后自动安装）"
+echo "    Codex CLI         $(_mark codex)    （生图首选：有 ChatGPT 订阅即可，稍后询问并代装）"
 echo "  需要申请的 key（安装中可粘贴，也可之后编辑 .env）:"
 echo "    Claude API:  https://console.anthropic.com  → ANTHROPIC_API_KEY"
-echo "    生图（二选一）: OpenAI https://platform.openai.com → OPENAI_IMAGE_API_KEY"
-echo "                   火山方舟 https://console.volcengine.com/ark → ARK_API_KEY（需开通 Doubao-Seedream 模型）"
+echo "    生图（没有 ChatGPT 订阅时）: 火山方舟 https://console.volcengine.com/ark → ARK_API_KEY（需开通 Doubao-Seedream 模型）"
 echo "    DeepSeek 引擎（可选）: https://platform.deepseek.com → DEEPSEEK_API_KEY"
 echo "    MiniMax 引擎（可选）: https://platform.minimaxi.com → MINIMAX_API_KEY"
 echo "    语音 TTS（可选）: 火山 VOLCENGINE_TTS_*（不配则用免费 Edge TTS）"
@@ -252,28 +275,6 @@ PYEOF
       fi
       echo "  （想同时用 DeepSeek 引擎：之后编辑 .env 填 DEEPSEEK_API_KEY 即可）"
     fi
-    read -r -p "填入生图 key 吗？OpenAI(sk-…) 或火山(ark-…) 均可，按前缀自动识别（回车跳过） " ikey || ikey=""
-    if [[ -n "$ikey" ]]; then
-      if [[ "$ikey" == ark-* ]]; then
-        IMAGE_KEY_VALUE="$ikey" python3 - <<'PYEOF'
-import os
-p = '.env'
-s = open(p).read()
-s = s.replace('# ARK_API_KEY=', 'ARK_API_KEY=' + os.environ['IMAGE_KEY_VALUE'], 1)
-open(p, 'w').write(s)
-PYEOF
-        success "ARK_API_KEY 已写入（生图走火山 Seedream；记得在方舟控制台开通 Doubao-Seedream 模型）"
-      else
-        IMAGE_KEY_VALUE="$ikey" python3 - <<'PYEOF'
-import os
-p = '.env'
-s = open(p).read()
-s = s.replace('# OPENAI_IMAGE_API_KEY=sk-...', 'OPENAI_IMAGE_API_KEY=' + os.environ['IMAGE_KEY_VALUE'], 1)
-open(p, 'w').write(s)
-PYEOF
-        success "OPENAI_IMAGE_API_KEY 已写入（生图走 gpt-image-2）"
-      fi
-    fi
   fi
 else
   info ".env 已存在，跳过生成"
@@ -325,6 +326,8 @@ for skill in $SYNC_SKILLS; do
   fi
 done
 success "技能已同步（${SYNC_SKILLS}）"
+# image-gen 已退役的文件（v0.7.13 去掉 OpenAI API 后端）——cp 不会删目标端多出来的文件
+rm -f "$HOME/.claude/skills/image-gen/scripts/gen_image.py" "$HOME/.claude/skills/image-gen/references/image-api.md"
 # 清理旧名技能目录（仅限本项目早期版本装出的副本，以脱敏标记识别；个人同名技能不受影响）
 for dst_root in "$HOME/.claude/skills"; do
   old="$dst_root/openai-image-gen"
@@ -436,6 +439,85 @@ elif [[ "$NO_SYSTEM" == "true" ]]; then
   warn "--no-system：跳过办公与媒体工具链（ffmpeg / LibreOffice / poppler / Noto CJK / Python venv）——正式环境请确保已装"
 fi
 
+# ---- 生图（image-gen 技能的后端）----
+# 首选 Codex CLI 内置生图（走 ChatGPT 订阅，无需 key）；没有订阅再用火山 Seedream（ARK_API_KEY）。
+# 选择写进 .env 的 IMAGE_GEN_PROVIDER，重跑时已配置则跳过。不写时 gen.py 自动判定（Codex 已登录优先），
+# 并且在 Codex 未登录或撞额度时自动改走 Seedream。
+IMAGE_GEN_TODO=""
+_codex_logged_in() {
+  command -v codex &>/dev/null || return 1
+  local st; st="$(codex login status 2>&1)" || return 1
+  [[ "$st" == *"Logged in"* || "$st" == *"logged in"* ]] && [[ "$st" != *"Not logged in"* && "$st" != *"not logged in"* ]]
+}
+echo ""
+echo -e "${BOLD}—— 生图 ——${NC}"
+img_provider="$(_env_get IMAGE_GEN_PROVIDER)"
+if [[ -n "$img_provider" ]]; then
+  info "生图已配置：IMAGE_GEN_PROVIDER=${img_provider}（要改就编辑 .env，或删掉这行后重跑 bash install.sh）"
+elif [[ "$YES" == "true" ]]; then
+  # 无人值守：只检测，不代装、不登录
+  if _codex_logged_in; then
+    _env_set IMAGE_GEN_PROVIDER codex; img_provider=codex
+    success "检测到 Codex 已登录——生图走 Codex"
+  elif [[ -n "$(_env_get ARK_API_KEY)" ]]; then
+    _env_set IMAGE_GEN_PROVIDER seedream; img_provider=seedream
+    success "检测到 ARK_API_KEY——生图走火山 Seedream"
+  else
+    IMAGE_GEN_TODO="有 ChatGPT 订阅：npm i -g @openai/codex && codex login；否则在 .env 填 ARK_API_KEY"
+  fi
+else
+  codex_wanted=false
+  if ask_yn "有 ChatGPT 订阅（Plus / Pro / Team 等）、想用它生图吗？（走 Codex CLI，不需要 API key）" y; then
+    codex_wanted=true
+    if ! command -v codex &>/dev/null; then
+      if [[ "$NO_SYSTEM" == "true" ]]; then
+        warn "--no-system：不代装 Codex CLI，手动执行 npm i -g @openai/codex"
+      else
+        info "安装 Codex CLI（@openai/codex 最新版）..."
+        npm install -g @openai/codex@latest \
+          || { npm install -g --prefix "$HOME/.local" @openai/codex@latest && export PATH="$HOME/.local/bin:$PATH"; } \
+          || warn "Codex CLI 安装失败"
+      fi
+    fi
+    if command -v codex &>/dev/null; then
+      success "Codex CLI $(codex --version 2>/dev/null | awk '{print $NF}')"
+      if ! _codex_logged_in; then
+        info "登录 Codex：会打开浏览器，用你的 ChatGPT 账号授权，完成后回到这里 ..."
+        codex login || true
+      fi
+      if _codex_logged_in; then
+        _env_set IMAGE_GEN_PROVIDER codex; img_provider=codex
+        success "Codex 已登录——生图默认走 Codex（ChatGPT 订阅额度，本机所有 bot 共用这一个登录）"
+      else
+        warn "Codex 还没登录——之后在终端执行 codex login 即可启用，无需重装"
+        IMAGE_GEN_TODO="codex login"
+      fi
+    else
+      IMAGE_GEN_TODO="npm i -g @openai/codex && codex login"
+    fi
+  fi
+  if [[ -z "$img_provider" ]]; then
+    read -r -p "有火山方舟 API key 吗？填入可用 Seedream 生图（申请: https://console.volcengine.com/ark；回车跳过） " ark_key || ark_key=""
+    if [[ -n "$ark_key" ]]; then
+      _env_set ARK_API_KEY "$ark_key"
+      if [[ "$codex_wanted" == "true" ]]; then
+        # 想用 Codex 但暂未就绪：不锁定后端，登录后自动切回 Codex，期间用 Seedream
+        success "ARK_API_KEY 已写入——Codex 登录前生图先走火山 Seedream，登录后自动切到 Codex"
+      else
+        _env_set IMAGE_GEN_PROVIDER seedream; img_provider=seedream
+        success "ARK_API_KEY 已写入——生图走火山 Seedream"
+      fi
+      echo "    （记得在方舟控制台「开通管理」开通 Doubao-Seedream 模型）"
+    elif [[ -z "$IMAGE_GEN_TODO" ]]; then
+      IMAGE_GEN_TODO="有 ChatGPT 订阅：npm i -g @openai/codex && codex login；否则在 .env 填 ARK_API_KEY"
+    fi
+  fi
+fi
+# 个人装的同类技能会和 image-gen 抢触发（描述几乎一样，模型随机选），提醒一下，不替用户删
+if [[ -d "$HOME/.claude/skills/codex-image-gen" ]]; then
+  warn "检测到 ~/.claude/skills/codex-image-gen：它和内置 image-gen（已含 Codex 后端）触发词重叠，建议移走或删除"
+fi
+
 # ---- 工作区目录 ----
 BOTS_ROOT="$HOME/projects"
 mkdir -p "$BOTS_ROOT"
@@ -534,8 +616,12 @@ if [[ -n "$DEPS_TODO" ]]; then
   printf '%s' "$DEPS_TODO"
   echo ""
 fi
+if [[ -n "$IMAGE_GEN_TODO" ]]; then
+  echo -e "  ${YELLOW}生图待办${NC}: $IMAGE_GEN_TODO"
+  echo ""
+fi
 echo "  可选能力（编辑 .env 填 key 后 luckagent restart 生效）:"
-echo "     生图: OPENAI_IMAGE_API_KEY 或 火山 ARK_API_KEY（Seedream）   语音TTS: VOLCENGINE_TTS_*（不填则用免费 Edge TTS）"
+echo "     语音TTS: VOLCENGINE_TTS_*（不填则用免费 Edge TTS）"
 echo "  可选增强: 安装 opencli（网站自动化）后重跑一次 bash install.sh，其技能自动启用；"
 echo ""
 if [[ "${PATH_JUST_ADDED:-}" == "1" ]]; then

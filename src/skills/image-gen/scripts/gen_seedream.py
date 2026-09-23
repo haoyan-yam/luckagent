@@ -7,7 +7,7 @@
   python3 gen_seedream.py "同一角色的四格表情包" --max-images 4 -o outdir/
   python3 gen_seedream.py "..." --size 4096x4096 --model doubao-seedream-5-0-pro-260628
 
-API key：环境变量 ARK_API_KEY，或自动从 ~/luckagent/.env 读取，无需 export。
+API key：环境变量 ARK_API_KEY，或自动从 $LUCKAGENT_HOME/.env（默认 ~/luckagent/.env）读取，无需 export。
 注意：直连火山域名，已强制绕过 HTTP(S)_PROXY（代理会劫持国内直连域名）。
 模型 id 会随火山滚版本——报「model 不存在」时用 --model 指定控制台里的当前 id。
 """
@@ -35,7 +35,8 @@ def resolve_api_key() -> str:
     k = os.environ.get("ARK_API_KEY")
     if k:
         return k.strip()
-    for envf in (Path.home() / "luckagent" / ".env", Path.cwd() / ".env"):
+    home = Path(os.environ.get("LUCKAGENT_HOME") or (Path.home() / "luckagent")).expanduser()
+    for envf in (home / ".env", Path.cwd() / ".env"):
         try:
             for line in envf.read_text().splitlines():
                 if line.startswith("ARK_API_KEY="):

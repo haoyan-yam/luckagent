@@ -132,13 +132,14 @@ function pm2Jlist(): Promise<{ available: boolean; apps?: Array<Record<string, u
 
 /** Effective-config view: whitelisted, secrets reduced to set/tail hints. */
 function effectiveConfig(ctx: RouteContext): Record<string, unknown> {
-  const claudeCliInstalled = (): boolean => {
+  const onPath = (bin: string): boolean => {
     for (const dir of (process.env.PATH || '').split(path.delimiter)) {
       if (!dir) continue;
-      try { fs.accessSync(path.join(dir, 'claude'), fs.constants.X_OK); return true; } catch { /* next */ }
+      try { fs.accessSync(path.join(dir, bin), fs.constants.X_OK); return true; } catch { /* next */ }
     }
     return false;
   };
+  const claudeCliInstalled = (): boolean => onPath('claude');
   // Subscription-login state as cached by the Claude CLI in ~/.claude.json
   // (refreshed whenever claude runs — profileFetchedAt tells how fresh).
   const claudeAuthStatus = () => {
@@ -161,6 +162,22 @@ function effectiveConfig(ctx: RouteContext): Record<string, unknown> {
     } catch {
       return { cliInstalled, loggedIn: false };
     }
+  };
+  // image-gen backend (same resolution as scripts/gen.py, minus the live
+  // `codex login status` probe — the panel only checks for the auth file, so a
+  // stale login still reads as logged in; `luckagent doctor` does the real probe).
+  const imageGenStatus = () => {
+    const configured = (process.env.IMAGE_GEN_PROVIDER || diskEnv.IMAGE_GEN_PROVIDER || '').trim().toLowerCase();
+    const codexHome = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
+    const codexInstalled = onPath(process.env.CODEX_BIN || 'codex');
+    const codexLoggedIn = codexInstalled && fs.existsSync(path.join(codexHome, 'auth.json'));
+    const hasArk = !!(process.env.ARK_API_KEY || diskEnv.ARK_API_KEY);
+    const provider =
+      configured === 'codex' || configured === 'seedream' ? configured
+        : codexLoggedIn ? 'codex'
+          : hasArk ? 'seedream'
+            : null;
+    return { configured: configured || null, provider, codexInstalled, codexLoggedIn, hasArkApiKey: hasArk };
   };
   const readCoreTokenFile = (): string | undefined => {
     try {
@@ -218,9 +235,6 @@ function effectiveConfig(ctx: RouteContext): Record<string, unknown> {
       apiSecret: envHint('API_SECRET'),
       anthropicApiKey: envHint('ANTHROPIC_API_KEY'),
       openaiApiKey: envHint('OPENAI_API_KEY'),
-      // image-gen resolves OPENAI_IMAGE_API_KEY first, then OPENAI_API_KEY —
-      // show the dedicated var so the installer-written key is visible.
-      openaiImageApiKey: envHint('OPENAI_IMAGE_API_KEY'),
       // Token resolution is file-first (~/.luckagent-core/token, written by
       // the installer) with the env var as fallback — mirror that so a
       // normally-installed machine doesn't read as 未配置.
@@ -232,6 +246,7 @@ function effectiveConfig(ctx: RouteContext): Record<string, unknown> {
       elevenlabs: envHint('ELEVENLABS_API_KEY'),
     },
     claudeAuth: claudeAuthStatus(),
+    imageGen: imageGenStatus(),
   };
 }
 
