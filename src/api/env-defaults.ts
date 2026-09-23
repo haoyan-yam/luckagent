@@ -14,13 +14,36 @@ export const IMAGE_GEN_VALUES = ['codex', 'seedream'] as const;
 // Model ids like claude-opus-5, claude-fable-5-1[1m], us.anthropic.claude-…:0
 const MODEL_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:/[\]-]{0,99}$/;
 
+// Volcengine credentials / names. Charsets are deliberately narrow: nothing
+// that could break out of a .env line (no whitespace, quotes, '#', newlines).
+const ARK_KEY_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{7,255}$/;
+const TOS_AK_RE = /^[A-Za-z0-9]{8,128}$/;
+const TOS_SK_RE = /^[A-Za-z0-9+/=]{8,256}$/;
+const TOS_BUCKET_RE = /^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/;
+const TOS_REGION_RE = /^[a-z]{2,}(-[a-z0-9]+)+$/;
+
 export const EDITABLE_DEFAULTS: Record<string, (v: string) => boolean> = {
   LUCKAGENT_ENGINE: (v) => (ENGINE_VALUES as readonly string[]).includes(v),
   CLAUDE_MODEL: (v) => MODEL_ID_RE.test(v),
   DEEPSEEK_MODEL: (v) => DEEPSEEK_KNOWN_MODELS.includes(v),
   MINIMAX_MODEL: (v) => COMPAT_PROVIDERS.minimax.models.some((m) => m.id === v),
   IMAGE_GEN_PROVIDER: (v) => (IMAGE_GEN_VALUES as readonly string[]).includes(v),
+  // 视频生成（seedance-video）：方舟 key 与 Seedream 生图共用；TOS 只用于本地参考视频/音频
+  ARK_API_KEY: (v) => ARK_KEY_RE.test(v),
+  TOS_ACCESS_KEY: (v) => TOS_AK_RE.test(v),
+  TOS_SECRET_KEY: (v) => TOS_SK_RE.test(v),
+  TOS_BUCKET: (v) => TOS_BUCKET_RE.test(v),
+  TOS_REGION: (v) => TOS_REGION_RE.test(v),
 };
+
+/** Write-only keys: the console may set or clear them but never reads them back. */
+export const SECRET_DEFAULTS: ReadonlySet<string> = new Set(['ARK_API_KEY', 'TOS_ACCESS_KEY', 'TOS_SECRET_KEY']);
+
+/** What the console may see of a value: secrets reduced to a `••••tail` hint. */
+export function displayDefault(key: string, value: string): string {
+  if (!value || !SECRET_DEFAULTS.has(key)) return value;
+  return `••••${value.slice(-4)}`;
+}
 
 export type DefaultsUpdate = Record<string, string>;
 
@@ -33,7 +56,10 @@ export function validateDefaultsUpdate(body: unknown): { updates: DefaultsUpdate
     if (!check) return { error: `Not editable from the console: ${key}` };
     if (typeof raw !== 'string') return { error: `${key} must be a string` };
     const value = raw.trim();
-    if (value !== '' && !check(value)) return { error: `Invalid value for ${key}: ${value}` };
+    if (value !== '' && !check(value)) {
+      // never echo a rejected secret back
+      return { error: `Invalid value for ${key}${SECRET_DEFAULTS.has(key) ? '' : `: ${value}`}` };
+    }
     updates[key] = value;
   }
   if (Object.keys(updates).length === 0) return { error: 'Nothing to update' };

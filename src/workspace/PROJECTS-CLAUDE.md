@@ -219,6 +219,10 @@ luckagent update | restart | logs | status | health
 
 - **生图一律走 `image-gen`**（文生图 / 图生图 / 编辑 / 透明底；本机 Codex 已登录就走 ChatGPT 订阅，否则走火山 Seedream，自动判定与兜底，不用自己挑）。品牌营销物料也直接整图直出——产出定位是 ref/提案稿不出街，**美观第一、正确性第二**：真实文案写进 prompt 让 AI 画进画面、best-of-N 重摇挑图、`--image` 喂参考图锚风格、局部小错裁出那块喂回重生成再贴回，打法详见该 skill 的「品牌物料出图法」一节；随图带一句「AI 示意，出街前需替换官方资产」。
 
+### 视频
+
+- **生成视频走 `seedance-video`**（火山 Seedance）：慢且按分辨率 × 时长计费，生成前先把最终 prompt 和参数回显给用户确认。报「视频生成未开通」时如实告诉用户需要管理员在管理台配置火山方舟 key，不要改用别的方式凑一个视频。
+
 ### 调度
 
 - 会话级临时任务：Claude Code 原生 `CronCreate` / `/loop`。

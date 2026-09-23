@@ -19,7 +19,7 @@
 - **配置已变更提示**：`bots.json` 在进程启动后被修改过（管理台改的或手改的）会亮黄条，提醒需要重启生效；
 - **定时任务**：一次性/周期任务计数与最近 5 条即将执行的任务；
 - **最近失败**：今天最近 10 条失败任务及错误信息；
-- **密钥状态**：Claude / DeepSeek / MiniMax / 生图 key 各一行，三态显示——已生效、**「已写入 .env——重启桥接后生效」**（面板直读磁盘 `.env`，新增或轮换 key 后不会误显示成未配置，尾号是即将生效的值）、未配置；key 只填在某些 bot 的编辑表单里时，全局行会提示「另有 N 个 bot 单独配置」；
+- **密钥状态**：Claude / DeepSeek / MiniMax / 火山 ARK key 等各一行，三态显示——已生效、**「已写入 .env——重启桥接后生效」**（面板直读磁盘 `.env`，新增或轮换 key 后不会误显示成未配置，尾号是即将生效的值）、未配置；key 只填在某些 bot 的编辑表单里时，全局行会提示「另有 N 个 bot 单独配置」；
 - **Claude 订阅登录状态**：走订阅路线时显示登录邮箱、档位与有效性；**core Token** 是否就位；
 - **生图后端**：当前生效的是 Codex（ChatGPT 订阅）还是火山 Seedream、Codex 是否已装已登录、有没有 Seedream 兜底（登录状态按本机凭据文件判断，精确探测用 `luckagent doctor`）；
 - **开机自启横幅**：检测到 pm2 未配置 launchd 自启时顶部亮黄条（系统更新重启后 bot 不会自动恢复），按提示执行 `pm2 startup` 即可。
@@ -85,9 +85,11 @@ bot 的增删改查（读写 `bots.json`）：
 | Claude 默认模型 | `CLAUDE_MODEL` | 「跟随订阅档位」（推荐，不写）或手填模型 ID |
 | DeepSeek / MiniMax 默认模型 | `DEEPSEEK_MODEL` / `MINIMAX_MODEL` | 下拉，选项与 bot 表单同源；清空 = 各引擎默认 |
 | 生图后端 | `IMAGE_GEN_PROVIDER` | 自动（Codex 优先）/ Codex / 火山 Seedream；旁边显示 Codex 是否已装已登录、有无火山 key，「重新检测」实时跑一次 `codex login status` |
+| 视频生成 · 火山方舟 key | `ARK_API_KEY` | **只写不回显**（只显示末 4 位）；视频生成必需，Seedream 生图也用这把；「清除」= 取消配置 |
+| 视频生成 · TOS | `TOS_ACCESS_KEY` / `TOS_SECRET_KEY`（只写不回显）、`TOS_BUCKET`、`TOS_REGION` | 可选，只在参考本地视频 / 音频时需要；「测试 TOS」用**已保存**的配置上传一个小文件再删除，直接报出密钥 / 桶名 / 权限问题 |
 
 - 保存只改动过的项，然后弹框确认是否**立即重启桥接**（会写明当前有几个任务在跑、重启会中断它们）；选「稍后」则各项显示「已保存，重启桥接后生效（当前运行：…）」。
-- 只能改上表这五个键，值也逐个校验——`API_SECRET`、各类 key、端口等仍只能在终端编辑 `.env`，后台不会变成通用的 `.env` 编辑器。写入是原子替换，保持文件 0600 权限，其余行原样保留；清空一项 = 把该行注释掉。
+- 只能改上表这些键，值也逐个校验（密钥限定字符集，杜绝写出换行、引号等破坏 `.env` 的内容）——`API_SECRET`、Anthropic / DeepSeek / MiniMax 等其他 key、端口等仍只能在终端编辑 `.env`，后台不会变成通用的 `.env` 编辑器。密钥类只写不回显：接口只返回末 4 位，日志只记改了哪些键、不记值。写入是原子替换，保持文件 0600 权限，其余行原样保留；清空一项 = 把该行注释掉。
 - 某项如果在 PM2 启动时的环境变量里就已存在，`.env` 覆盖不了，界面会标红提示。
 - Codex 的安装与登录仍需在这台 Mac 的终端里做（`npm i -g @openai/codex`、`codex login`），后台只显示状态与命令。
 
@@ -130,6 +132,7 @@ bot 的增删改查（读写 `bots.json`）：
 | `GET /admin/api/config/defaults` | 可编辑的全局默认值：每项的 `live`（运行中）/ `disk`（.env 里）值、下拉选项、生图后端状态 |
 | `PUT /admin/api/config/defaults` | 写入默认值（白名单键 + 值校验，`""` = 取消设置），返回 `requiresRestart` 与当前运行任务数 |
 | `GET /admin/api/image-gen/probe` | 实时探测 Codex：是否安装、版本、`codex login status` 结果 |
+| `POST /admin/api/video-gen/tos-probe` | 用已保存的 TOS 配置上传一个小对象再删除，返回是否通过与原因 |
 | `POST /admin/api/feishu/test-connection` | 验证飞书凭证（传 `{appId, appSecret}` 或 `{botName}`） |
 | `POST /admin/api/restart` | 重启桥接（进程自退出 + PM2 拉起） |
 | `GET /admin/api/feishu/chats?bot=<name>` | 列出 bot 所在的群（群名 + chat_id，供群日报页与选人器） |

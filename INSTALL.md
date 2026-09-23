@@ -14,7 +14,7 @@
 | 网络 | 目标机需联网（取代码、下载 Homebrew/node/npm 依赖、连飞书与模型 API），无需下载任何安装包 |
 | 飞书账号 | 有权限在 [飞书开放平台](https://open.feishu.cn/app) 创建企业自建应用 |
 | Claude 认证 | 二选一：[Anthropic API Key](https://console.anthropic.com)，或 Claude Code 订阅账号（安装脚本可代装 CLI，登录需自己跑一次 `claude`） |
-| 生图（可选） | 首选 ChatGPT 订阅（Plus / Pro / Team 等）：安装脚本代装 Codex CLI 并引导 `codex login`，无需 key；没有订阅则用 [火山方舟](https://console.volcengine.com/ark) 的 ARK key（需在控制台开通 Doubao-Seedream 模型） |
+| 生图与视频（可选） | 生图首选 ChatGPT 订阅（Plus / Pro / Team 等）：安装脚本代装 Codex CLI 并引导 `codex login`，无需 key。视频需要 [火山方舟](https://console.volcengine.com/ark) 的 ARK key（在控制台开通 Doubao-Seedance；同一把 key 开通 Doubao-Seedream 后也能生图）。想参考群里发的视频 / 音频，再准备一个火山对象存储 TOS 桶和只授权该桶的子用户 AK/SK |
 | DeepSeek / MiniMax 引擎（可选） | **无需装任何东西，只要一个 API key**（[DeepSeek](https://platform.deepseek.com) / [MiniMax](https://platform.minimaxi.com)）。详见 [docs/engines.md](docs/engines.md) |
 | 磁盘 | 办公与媒体工具链（LibreOffice、ffmpeg、poppler、Noto CJK 字体、Python 基础包）约 1.5GB |
 | 时间 | 全程约 20–40 分钟（首次装 Xcode 命令行工具与 LibreOffice 下载占大头） |
@@ -60,7 +60,7 @@ bash install.sh
 | 生成 `bots.json` | 空列表——机器人稍后用管理台向导创建 | 无 |
 | 技能同步 | 内置技能装进全局目录；并从 GitHub 拉取 frontend-slides（HTML 演示文稿生成，第三方 MIT） | 无；拉取失败仅警告不影响安装 |
 | lark-cli（必装） | 自动安装飞书官方 CLI + 19 个 AI 技能（文档/表格/日历操作、群日报拉消息都依赖它） | 无；万一安装失败，结尾会打印待办命令 |
-| 生图 | 先问有没有 ChatGPT 订阅：有就代装 Codex CLI（`@openai/codex` 最新版）并跑 `codex login`（打开浏览器授权）；没有或登录未成功再问火山 ARK key。结果写进 `.env` 的 `IMAGE_GEN_PROVIDER`，重跑时已配置则跳过；`--yes` 只检测不代装 | 回答 y/n、浏览器里授权、或粘贴 ARK key；都可跳过，结尾打印待办 |
+| 生图与视频 | ① 有没有 ChatGPT 订阅：有就代装 Codex CLI（`@openai/codex` 最新版）并跑 `codex login`（打开浏览器授权）；② 火山方舟 key（视频必需，没用 Codex 时也用它生图；输入不回显）；③ 填了火山 key 再问要不要配 TOS（默认否），配了当场做一次上传 + 删除的连通测试。结果写进 `.env`，重跑时已配置的项跳过；`--yes` 只检测不代装 | 回答 y/n、浏览器里授权、粘贴 key；都可跳过，结尾分别打印生图 / 视频待办 |
 | 办公与媒体工具链（必装） | brew 安装 ffmpeg、poppler、LibreOffice、Noto Sans CJK SC 字体，并用 python@3.13 建 `~/.luckagent/venv` 装入 `requirements.txt`（python-pptx / openpyxl / Pillow / numpy / pandas / python-docx / lxml / matplotlib / xlsxwriter / PyMuPDF / edge-tts）——bot 产出 PPT/Excel/Word/PDF/图片/语音都靠它们 | 无；单项失败只警告，结尾打印待办命令 |
 | bot 工作区根目录 | 询问机器人工作目录放在哪（回车 = `~/projects`，即 `/Users/你/projects`）；之后每个机器人的工作目录建在 `<根目录>/<机器人名>`，并在根目录放一份共用规范 `CLAUDE.md`。写进 `.env` 的 `LUCKAGENT_PROJECTS_DIR`，重跑时沿用；目录不可写时回退默认 | 回车用默认，或输入绝对路径（`~` 与相对路径按家目录展开，可含空格） |
 | PM2 启动 | 启动 `luckagent-bridge` + `luckagent-core` 两个常驻进程 | 无 |
@@ -147,7 +147,7 @@ pm2 save
 ```bash
 luckagent status          # luckagent-bridge / luckagent-core 均 online
 luckagent health          # {"status":"ok",...}
-luckagent doctor --json   # 本机体检（runtime/PM2/core/bots/voice 等检查项）
+luckagent doctor --json   # 本机体检（runtime/PM2/core/bots/voice/生图等检查项）
 ```
 
 - 管理台「系统总览」：桥接与 core 均绿色，机器人显示「运行中」
@@ -189,7 +189,7 @@ bash ~/luckagent/scripts/uninstall.sh
 ```
 
 移除 PM2 进程、安装目录（含 `.env`/`bots.json`）、状态目录、CLI 与随装技能；
-**保留** `~/projects/` 工作区与项目记忆、brew/node/lark-cli/claude 以及 ffmpeg/LibreOffice/poppler/字体等共享工具（脚本结尾会列出保留项与可选清理命令）。
+**保留** bot 工作区根目录（默认 `~/projects/`）与项目记忆、brew/node/lark-cli/claude 以及 ffmpeg/LibreOffice/poppler/字体等共享工具（脚本结尾会列出保留项与可选清理命令）。
 
 ## 9. 常见问题（更多见 docs/troubleshooting.md）
 

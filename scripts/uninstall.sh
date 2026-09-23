@@ -62,7 +62,7 @@ done
 [[ -e "$HOME/.local/bin/luckagent" ]] && rm -f "$HOME/.local/bin/luckagent" && success "已删除 ~/.local/bin/luckagent"
 
 # 4) 随装技能（仅本项目安装的；lark-* 属 lark-cli 生态，单独询问）
-for skill in luckagent voice luckagent-team image-gen opencli frontend-slides; do
+for skill in luckagent voice luckagent-team image-gen seedance-video opencli frontend-slides; do
   for root in "$HOME/.claude/skills" "$HOME/.codex/skills"; do
     [[ -d "${root}/${skill}" ]] && rm -rf "${root}/${skill}" && success "已删除技能 ${root}/${skill}"
   done

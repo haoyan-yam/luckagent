@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { applyEnvUpdates, validateDefaultsUpdate, writeEnvUpdates } from '../src/api/env-defaults.js';
+import { applyEnvUpdates, displayDefault, validateDefaultsUpdate, writeEnvUpdates } from '../src/api/env-defaults.js';
 
 describe('validateDefaultsUpdate', () => {
   it('accepts whitelisted keys with valid values and trims them', () => {
@@ -30,9 +30,30 @@ describe('validateDefaultsUpdate', () => {
     });
   });
 
-  it('rejects keys outside the whitelist (secrets stay terminal-only)', () => {
+  it('rejects keys outside the whitelist', () => {
     expect(validateDefaultsUpdate({ API_SECRET: 'x' })).toEqual({ error: 'Not editable from the console: API_SECRET' });
-    expect(validateDefaultsUpdate({ ARK_API_KEY: 'ark-x' })).toHaveProperty('error');
+    expect(validateDefaultsUpdate({ ANTHROPIC_API_KEY: 'sk-ant-xxxxxxxx' })).toHaveProperty('error');
+    expect(validateDefaultsUpdate({ API_PORT: '9101' })).toHaveProperty('error');
+  });
+
+  it('accepts the video-generation keys (Ark key + TOS) with narrow charsets', () => {
+    expect(
+      validateDefaultsUpdate({
+        ARK_API_KEY: '1f2e3d4c-aaaa-bbbb-cccc-0123456789ab',
+        TOS_ACCESS_KEY: 'AKLTabcdef0123456789',
+        TOS_SECRET_KEY: 'TWpBd01qRTRZV0kxTkRnME5HWQ==',
+        TOS_BUCKET: 'team-seedance-refs',
+        TOS_REGION: 'cn-beijing',
+      }),
+    ).toHaveProperty('updates');
+    expect(validateDefaultsUpdate({ TOS_BUCKET: 'Bad_Bucket' })).toHaveProperty('error');
+    expect(validateDefaultsUpdate({ TOS_REGION: 'beijing' })).toHaveProperty('error');
+    expect(validateDefaultsUpdate({ TOS_SECRET_KEY: 'has space inside' })).toHaveProperty('error');
+  });
+
+  it('never echoes a rejected secret in the error', () => {
+    const r = validateDefaultsUpdate({ ARK_API_KEY: 'bad key\nAPI_SECRET=x' }) as { error: string };
+    expect(r.error).toBe('Invalid value for ARK_API_KEY');
   });
 
   it('rejects invalid values', () => {
@@ -121,5 +142,14 @@ describe('writeEnvUpdates', () => {
     writeEnvUpdates(p, { LUCKAGENT_ENGINE: 'deepseek' });
     expect(fs.readFileSync(p, 'utf-8')).toBe('LUCKAGENT_ENGINE=deepseek\n');
     expect(fs.statSync(p).mode & 0o777).toBe(0o600);
+  });
+});
+
+describe('displayDefault', () => {
+  it('masks secrets to a tail hint and leaves plain values alone', () => {
+    expect(displayDefault('ARK_API_KEY', '1f2e3d4c-aaaa-bbbb-cccc-0123456789ab')).toBe('••••89ab');
+    expect(displayDefault('TOS_SECRET_KEY', 'abcdefgh1234')).toBe('••••1234');
+    expect(displayDefault('TOS_BUCKET', 'team-refs')).toBe('team-refs');
+    expect(displayDefault('ARK_API_KEY', '')).toBe('');
   });
 });

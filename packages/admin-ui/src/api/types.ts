@@ -109,13 +109,30 @@ export interface DefaultValue {
 }
 
 export interface ConfigDefaults {
-  values: Record<'LUCKAGENT_ENGINE' | 'CLAUDE_MODEL' | 'DEEPSEEK_MODEL' | 'MINIMAX_MODEL' | 'IMAGE_GEN_PROVIDER', DefaultValue>;
+  values: Record<
+    | 'LUCKAGENT_ENGINE'
+    | 'CLAUDE_MODEL'
+    | 'DEEPSEEK_MODEL'
+    | 'MINIMAX_MODEL'
+    | 'IMAGE_GEN_PROVIDER'
+    | 'ARK_API_KEY'
+    | 'TOS_ACCESS_KEY'
+    | 'TOS_SECRET_KEY'
+    | 'TOS_BUCKET'
+    | 'TOS_REGION',
+    DefaultValue
+  >;
   options: {
     deepseek: { defaultModel: string; models: Array<{ id: string; note: string }> };
     minimax: { defaultModel: string; models: Array<{ id: string; note: string }> };
   };
   anthropicModel: string | null;
   imageGen: NonNullable<EffectiveConfig['imageGen']>;
+  videoGen: {
+    hasArkApiKey: boolean;
+    tosConfigured: boolean;
+    tos: { accessKey: boolean; secretKey: boolean; bucket: boolean };
+  };
 }
 
 export interface CodexProbe {

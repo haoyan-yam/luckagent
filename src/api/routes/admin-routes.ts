@@ -7,7 +7,7 @@ import type * as http from 'node:http';
 import { readBotsConfig } from '../bots-config-writer.js';
 import { expandUserPath, ORIGINAL_ENV_KEYS, projectsRoot } from '../../config.js';
 import { COMPAT_PROVIDERS, resolveEngineName } from '../../engines/index.js';
-import { EDITABLE_DEFAULTS, validateDefaultsUpdate, writeEnvUpdates } from '../env-defaults.js';
+import { EDITABLE_DEFAULTS, displayDefault, validateDefaultsUpdate, writeEnvUpdates } from '../env-defaults.js';
 import { claudeProjectsDir } from '../../engines/claude/session-lister.js';
 import { jsonResponse, parseJsonBody } from './helpers.js';
 import type { RouteContext } from './types.js';
@@ -166,6 +166,39 @@ function imageGenStatus(diskEnv: Record<string, string>) {
         : hasArk ? 'seedream'
           : null;
   return { configured: configured || null, provider, codexInstalled, codexLoggedIn, hasArkApiKey: hasArk };
+}
+
+/** Video generation (seedance-video): Ark key required; TOS only for local reference media. Saved (.env) values win. */
+function videoGenStatus(diskEnv: Record<string, string>) {
+  const has = (k: string) => !!(diskEnv[k]?.trim() || process.env[k]?.trim());
+  const tos = { accessKey: has('TOS_ACCESS_KEY'), secretKey: has('TOS_SECRET_KEY'), bucket: has('TOS_BUCKET') };
+  return {
+    hasArkApiKey: has('ARK_API_KEY'),
+    tosConfigured: tos.accessKey && tos.secretKey && tos.bucket,
+    tos,
+  };
+}
+
+const TOS_KEYS = ['TOS_ACCESS_KEY', 'TOS_SECRET_KEY', 'TOS_BUCKET', 'TOS_REGION', 'TOS_ENDPOINT'];
+
+/** Run tos_upload.py --probe against the given .env values (disk overrides the live env). */
+function probeTos(diskEnv: Record<string, string>): Promise<{ ok: boolean; message: string }> {
+  const candidates = [
+    path.resolve('src/skills/seedance-video/scripts/tos_upload.py'),
+    path.join(os.homedir(), '.claude', 'skills', 'seedance-video', 'scripts', 'tos_upload.py'),
+  ];
+  const script = candidates.find((p) => fs.existsSync(p));
+  if (!script) return Promise.resolve({ ok: false, message: '找不到 seedance-video 技能脚本（重跑 luckagent update 同步技能）' });
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  for (const k of TOS_KEYS) {
+    if (diskEnv[k]?.trim()) env[k] = diskEnv[k].trim();
+  }
+  return new Promise((resolve) => {
+    execFile('python3', [script, '--probe'], { env, timeout: 45_000 }, (err, stdout, stderr) => {
+      const message = `${stdout ?? ''}${stderr ?? ''}`.trim().split('\n').pop() || (err ? String(err.message) : '');
+      resolve({ ok: !err, message });
+    });
+  });
 }
 
 /** Live `codex login status` probe for the admin console's 「重新检测」 button. */
@@ -702,8 +735,8 @@ export async function handleAdminRoutes(
     const values: Record<string, { live: string; disk: string; lockedByProcessEnv: boolean }> = {};
     for (const key of Object.keys(EDITABLE_DEFAULTS)) {
       values[key] = {
-        live: process.env[key]?.trim() || '',
-        disk: diskEnv[key]?.trim() || '',
+        live: displayDefault(key, process.env[key]?.trim() || ''),
+        disk: displayDefault(key, diskEnv[key]?.trim() || ''),
         lockedByProcessEnv: ORIGINAL_ENV_KEYS.has(key),
       };
     }
@@ -716,7 +749,15 @@ export async function handleAdminRoutes(
       // CLAUDE_MODEL empty falls back to ANTHROPIC_MODEL before "follow the plan"
       anthropicModel: process.env.ANTHROPIC_MODEL?.trim() || null,
       imageGen: imageGenStatus(diskEnv),
+      videoGen: videoGenStatus(diskEnv),
     });
+    return true;
+  }
+
+  // POST /admin/api/video-gen/tos-probe — upload + delete a tiny object with the
+  // TOS settings SAVED in .env (so it can be tested before the restart)
+  if (method === 'POST' && url === '/admin/api/video-gen/tos-probe') {
+    jsonResponse(res, 200, await probeTos(readDiskEnv()));
     return true;
   }
 
@@ -737,7 +778,8 @@ export async function handleAdminRoutes(
     const runningTasks = registry
       .listRegistered()
       .reduce((n, b) => n + (b.bridge.getRunningTasksInfo?.().length ?? 0), 0);
-    logger.info({ updates: result.updates }, 'admin: global defaults written to .env');
+    // keys only — values may be secrets (ARK / TOS keys)
+    logger.info({ keys: Object.keys(result.updates) }, 'admin: global defaults written to .env');
     jsonResponse(res, 200, { saved: Object.keys(result.updates), requiresRestart: true, runningTasks });
     return true;
   }

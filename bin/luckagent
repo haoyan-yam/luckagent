@@ -162,7 +162,7 @@ if [[ ! -d "$LUCKAGENT_HOME/.git" ]]; then
   # Phase 4 consolidation: `metamemory` and `skill-hub` skill bundles are
   # subsumed by the unified `luckagent` skill (which delegates memory/skills/
   # agents to the luckagent-core feature CLI). luckagent-team is the compact
-  local update_skills="luckagent voice luckagent-team image-gen"
+  local update_skills="luckagent voice luckagent-team image-gen seedance-video"
   # opencli 技能与安装器同一条件：检测到二进制才启用
   command -v opencli &>/dev/null && update_skills="$update_skills opencli"
   for skill in $update_skills; do
@@ -171,6 +171,7 @@ if [[ ! -d "$LUCKAGENT_HOME/.git" ]]; then
       voice)        src="$LUCKAGENT_HOME/src/skills/voice" ;;
       luckagent-team) src="$LUCKAGENT_HOME/src/skills/luckagent-team" ;;
       image-gen) src="$LUCKAGENT_HOME/src/skills/image-gen" ;;
+      seedance-video) src="$LUCKAGENT_HOME/src/skills/seedance-video" ;;
       opencli)   src="$LUCKAGENT_HOME/src/skills/opencli" ;;
       *)            src="" ;;
     esac
@@ -591,6 +592,26 @@ check("image_gen", img_ready, img_code, img_diag,
       {"provider": img_provider, "configuredProvider": img_cfg or None, "codexBinary": codex_bin,
        "codexVersion": codex_version, "codexLoggedIn": codex_logged_in, "hasArkApiKey": has_ark,
        "conflictingSkill": str(img_conflict) if img_conflict.exists() else None})
+
+# 视频生成（seedance-video 技能）：火山方舟 key 必需（与 Seedream 生图共用）；
+# TOS 只在用本地视频/音频当参考素材时需要，缺了不算失败。
+tos_keys = {k: bool(env(k)) for k in ("TOS_ACCESS_KEY", "TOS_SECRET_KEY", "TOS_BUCKET")}
+tos_ready = all(tos_keys.values())
+tos_partial = any(tos_keys.values()) and not tos_ready
+video_diag = ("Video generation enabled (Seedance via ARK_API_KEY)." if has_ark
+              else "Video generation disabled: no ARK_API_KEY — the seedance-video skill will tell users to ask an admin.")
+if has_ark:
+    video_diag += (" Local reference video/audio: TOS configured." if tos_ready
+                   else " Local reference video/audio needs TOS (optional; public URLs still work).")
+if tos_partial:
+    video_diag += " TOS is only partially configured: " + ", ".join(k for k, v in tos_keys.items() if not v) + " missing."
+check("video_gen", has_ark and not tos_partial,
+      "ok" if has_ark and not tos_partial else ("tos_partial" if tos_partial else "ark_key_missing"),
+      video_diag,
+      "Set the Volcengine Ark key in the admin console (系统配置 → 默认设置 → 视频生成) or ARK_API_KEY in .env, then luckagent restart. Enable Doubao-Seedance in the Ark console.",
+      False,
+      {"hasArkApiKey": has_ark, "tos": {**tos_keys, "region": env("TOS_REGION") or "cn-beijing"},
+       "seedanceModel": env("SEEDANCE_MODEL")})
 
 # 办公与媒体工具链（install.sh 的「办公与媒体工具链」段装的东西）
 venv_py = Path.home() / ".luckagent" / "venv" / "bin" / "python"

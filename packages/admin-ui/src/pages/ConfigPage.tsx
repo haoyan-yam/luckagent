@@ -115,7 +115,7 @@ export default function ConfigPage({ onRestart }: { onRestart: () => void }) {
           type="info"
           showIcon
           style={{ marginBottom: 16 }}
-          message="以下是当前运行中的配置，从 .env 与环境变量读取、只读。默认引擎 / 模型 / 生图后端在上方「默认设置」修改；其余项请编辑安装目录下的 .env 后点顶栏「重启桥接」。"
+          message="以下是当前运行中的配置，从 .env 与环境变量读取、只读。默认引擎 / 模型 / 生图后端 / 视频生成（火山 key、TOS）在上方「默认设置」修改；其余项请编辑安装目录下的 .env 后点顶栏「重启桥接」。"
         />
         <Descriptions column={2} bordered size="small">
           <Descriptions.Item label="API 端口">{cfg?.ports.apiPort ?? '—'}</Descriptions.Item>

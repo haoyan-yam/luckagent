@@ -6,7 +6,7 @@
 luckagent doctor --json
 ```
 
-它会逐项检查安装目录、PM2 进程、桥接健康、core 服务、bots.json、语音与引擎配置，每个失败项都带修复建议。下面按症状分条。
+它会逐项检查安装目录、PM2 进程、桥接健康、core 服务、bots.json、语音、生图、视频与办公工具链，每个失败项都带修复建议。下面按症状分条。
 
 ## 端口被占（EADDRINUSE / 起不来）
 
@@ -103,6 +103,46 @@ sudo chown -R "$(whoami)" ~/.npm
 ```
 
 然后重跑 `npm install`（或 `luckagent update`）。原则：**不要用 sudo 跑 npm/安装脚本**，Luckagent 全套都装在用户目录，不需要 root。
+
+## 卡片显示「启动任务失败」
+
+回合在真正开始前就失败了，卡片会写明原因（v0.7.15 起；更早的版本卡片会一直停在「思考中」）。常见原因：
+
+- **`PTY backend requires the claude CLI binary…` / `claude CLI resolved to … but it is missing`**：Claude 引擎的 PTY 后端找不到 `claude` CLI。PM2 的 PATH 可能和终端不同——在终端跑 `which claude`，把结果写进 `.env` 的 `CLAUDE_EXECUTABLE_PATH`，然后 `luckagent restart`。只用 DeepSeek / MiniMax 的机器不需要 CLI。
+- **`turn … is in flight`**：同一个群上一轮还没收尾就来了新一轮。桥接会先等最多 10 秒；仍然出现说明上一轮卡住了，发 `/stop` 或 `/reset` 后重试。
+
+其他报错原样出现在卡片里，结合 `logs/error.log` 排查。
+
+## 卡片空白（任务跑了，卡片里没有内容）
+
+多半是 bot 的工作目录路径含 `.`、空格、`_`、`~` 或中文。Claude Code 会把这些字符都换成 `-` 来命名会话目录，v0.7.17 之前桥接只换了 `/`，于是盯着一个不存在的会话文件。`luckagent update` 升级到 v0.7.17 及以后即可，无需迁移数据。
+
+## 生图失败 / bot 说没有生图能力
+
+```bash
+luckagent doctor
+```
+
+看 `image_gen` 一项：
+
+- **Codex 未安装 / 未登录**：有 ChatGPT 订阅的话在这台 Mac 上执行 `npm i -g @openai/codex` 和 `codex login`（本机所有 bot 共用这一个登录），管理台「系统配置」点「重新检测」确认；
+- **没有订阅**：在 `.env` 填火山方舟的 `ARK_API_KEY`，并在方舟控制台「开通管理」开通 Doubao-Seedream 模型，然后 `luckagent restart`；
+- **升级前只配了 `OPENAI_IMAGE_API_KEY`**：v0.7.13 起不再使用，按上面两条之一重新配置；
+- **后端被固定在不想要的那个**：`.env` 的 `IMAGE_GEN_PROVIDER` 改成 `codex` / `seedream`，或删掉这行走自动判定，也可以在管理台「系统配置 → 默认设置」里改；改完都要重启桥接。
+- **撞了 ChatGPT 订阅额度**：配了火山 key 时会自动改用 Seedream 重出；没配就等额度窗口重置。
+
+## 视频生成失败 / bot 说视频未开通
+
+```bash
+luckagent doctor
+```
+
+看 `video_gen` 一项：
+
+- **「视频生成未开通」**：缺火山方舟 key。在管理台「系统配置 → 默认设置 → 视频生成」填写（或 `.env` 写 `ARK_API_KEY`），保存后确认重启；并在方舟控制台「开通管理」开通 Doubao-Seedance 模型。
+- **`HTTP 401/403`**：key 无效，或账号没开通 Seedance。
+- **参考群里发的视频 / 音频时失败**：本地素材要先传到 TOS。没配 TOS 时脚本在提交前就报错，不会扣费；配了还失败就在管理台点「测试 TOS」，按提示检查密钥、桶名、地域和桶权限（需要上传、读取、删除三项）。
+- **TOS 桶里留了 `seedance-refs/` 下的文件**：正常情况下素材在任务结束后自动删除；轮询超时（任务可能还在跑）或加了 `--keep-refs` 时会保留，可在控制台手动清理。
 
 ## `luckagent update` 失败
 

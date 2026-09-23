@@ -17,6 +17,8 @@ Agent Teams、`/goal`、后台任务、记忆体系（CLAUDE.md / auto-memory / 
 | API Key | `.env` 填 `ANTHROPIC_API_KEY`（可配 `ANTHROPIC_BASE_URL` 走中转网关）→ `luckagent restart` |
 | 订阅登录 | 装 Claude Code CLI（`curl -fsSL https://claude.ai/install.sh \| bash`）→ 终端跑 `claude` 完成登录 → `.env` 填 `CLAUDE_EXECUTABLE_PATH=~/.local/bin/claude` |
 
+> Claude 引擎默认用 **PTY 后端**（驱动本机真实的 `claude` CLI），因此需要 PM2 能找到 CLI。找不到时，飞书卡片会直接显示「启动任务失败：PTY backend requires the claude CLI binary…」——装好 CLI，或在 `.env` 用 `CLAUDE_EXECUTABLE_PATH` 指向它，然后 `luckagent restart`。DeepSeek / MiniMax 走 SDK 后端，没装 CLI 也能跑。
+
 模型默认**跟随订阅档位**（不指定时由 Claude 官方按你的计划选：Pro→Opus 5，Max→Fable 5）；
 要固定某个模型才设 `.env` 的 `CLAUDE_MODEL`（指定超出档位的会被静默降级，以回复页脚显示的实际模型为准）。
 其余参数：`CLAUDE_MAX_TURNS` / `CLAUDE_MAX_BUDGET_USD` 是全局默认，
@@ -63,6 +65,18 @@ MiniMax 同样提供 **Anthropic 兼容端点**（`https://api.minimaxi.com/anth
 
 **日常只维护 `CLAUDE.md` 一个文件**即可。如果你曾手工创建过普通文件版的 `AGENTS.md`，系统不会覆盖它。
 
+## 修改全局默认引擎与模型
+
+管理台「系统配置 → 默认设置」可以直接改整机默认值（写入 `.env`，保存后确认即重启桥接生效）：
+
+| 项 | `.env` 键 | 说明 |
+| --- | --- | --- |
+| 默认引擎 | `LUCKAGENT_ENGINE` | 没有单独设引擎的 bot 用它；新建 bot 也默认用它 |
+| Claude 默认模型 | `CLAUDE_MODEL` | 推荐「跟随订阅档位」（不写）；也可手填模型 ID |
+| DeepSeek / MiniMax 默认模型 | `DEEPSEEK_MODEL` / `MINIMAX_MODEL` | 下拉选择，清空 = 各引擎内置默认 |
+
+生效优先级：会话里 `/model` 临时切换 > bot 自己的设置（机器人管理 → 编辑）> 全局默认。机器人列表的「模型」列显示每个 bot 实际生效的模型。
+
 ## 快速核对清单
 
 | 引擎 | 需要终端做的事 | 其余 |
@@ -71,4 +85,4 @@ MiniMax 同样提供 **Anthropic 兼容端点**（`https://api.minimaxi.com/anth
 | DeepSeek | **无**——只要申请个 key | `.env` 或管理台子表单 |
 | MiniMax | **无**——只要申请个 key | `.env` 或管理台子表单 |
 
-`luckagent doctor --json` 可核对运行时、PM2、bots、语音等检查项。
+`luckagent doctor --json` 可核对运行时、PM2、bots、语音、生图等检查项。

@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Button, Card, Form, Input, Modal, Radio, Select, Space, Tag, Typography, message } from 'antd';
+import { Alert, AutoComplete, Button, Card, Divider, Form, Input, Modal, Radio, Select, Space, Tag, Typography, message } from 'antd';
 import { api } from '../api/client';
 import type { CodexProbe, ConfigDefaults, DefaultValue } from '../api/types';
 
 type Key = keyof ConfigDefaults['values'];
+
+/** Write-only on the server too: the form starts empty, only typed values (or an explicit clear) are sent. */
+const SECRET_KEYS = ['ARK_API_KEY', 'TOS_ACCESS_KEY', 'TOS_SECRET_KEY'] as const;
+type SecretKey = (typeof SECRET_KEYS)[number];
+
+const TOS_REGIONS = ['cn-beijing', 'cn-shanghai', 'cn-guangzhou', 'cn-hongkong', 'ap-southeast-1'];
 
 interface FormValues {
   LUCKAGENT_ENGINE: string;
@@ -13,6 +19,11 @@ interface FormValues {
   DEEPSEEK_MODEL?: string;
   MINIMAX_MODEL?: string;
   IMAGE_GEN_PROVIDER: string;
+  TOS_BUCKET?: string;
+  TOS_REGION?: string;
+  ARK_API_KEY?: string;
+  TOS_ACCESS_KEY?: string;
+  TOS_SECRET_KEY?: string;
 }
 
 const ENGINE_LABEL: Record<string, string> = { claude: 'Claude Code', deepseek: 'DeepSeek', minimax: 'MiniMax' };
@@ -27,17 +38,24 @@ function toForm(d: ConfigDefaults): FormValues {
     DEEPSEEK_MODEL: v.DEEPSEEK_MODEL.disk || undefined,
     MINIMAX_MODEL: v.MINIMAX_MODEL.disk || undefined,
     IMAGE_GEN_PROVIDER: v.IMAGE_GEN_PROVIDER.disk,
+    TOS_BUCKET: v.TOS_BUCKET.disk,
+    TOS_REGION: v.TOS_REGION.disk || undefined,
+    ARK_API_KEY: '',
+    TOS_ACCESS_KEY: '',
+    TOS_SECRET_KEY: '',
   };
 }
 
-/** Form → the .env values to write ('' = unset). */
-function toEnv(f: FormValues): Record<Key, string> {
+/** Form → the plain (non-secret) .env values to write ('' = unset). */
+function toEnv(f: FormValues): Partial<Record<Key, string>> {
   return {
     LUCKAGENT_ENGINE: f.LUCKAGENT_ENGINE === 'claude' ? '' : f.LUCKAGENT_ENGINE,
     CLAUDE_MODEL: f.claudeMode === 'follow' ? '' : (f.CLAUDE_MODEL || '').trim(),
     DEEPSEEK_MODEL: f.DEEPSEEK_MODEL || '',
     MINIMAX_MODEL: f.MINIMAX_MODEL || '',
     IMAGE_GEN_PROVIDER: f.IMAGE_GEN_PROVIDER || '',
+    TOS_BUCKET: (f.TOS_BUCKET || '').trim(),
+    TOS_REGION: (f.TOS_REGION || '').trim(),
   };
 }
 
@@ -59,6 +77,9 @@ export default function DefaultsCard({ onRestart }: { onRestart: () => void }) {
   const [saving, setSaving] = useState(false);
   const [probe, setProbe] = useState<CodexProbe | null>(null);
   const [probing, setProbing] = useState(false);
+  const [cleared, setCleared] = useState<Set<SecretKey>>(new Set());
+  const [tosProbe, setTosProbe] = useState<{ ok: boolean; message: string } | null>(null);
+  const [tosProbing, setTosProbing] = useState(false);
   const claudeMode = Form.useWatch('claudeMode', form);
 
   const load = useCallback(async () => {
@@ -66,6 +87,7 @@ export default function DefaultsCard({ onRestart }: { onRestart: () => void }) {
       const d = await api.get<ConfigDefaults>('/admin/api/config/defaults');
       setData(d);
       setLoadError(null);
+      setCleared(new Set());
       form.setFieldsValue(toForm(d));
     } catch (err: any) {
       setLoadError(err?.message || '读取失败');
@@ -87,6 +109,26 @@ export default function DefaultsCard({ onRestart }: { onRestart: () => void }) {
     }
   }, []);
 
+  const runTosProbe = useCallback(async () => {
+    setTosProbing(true);
+    try {
+      setTosProbe(await api.post<{ ok: boolean; message: string }>('/admin/api/video-gen/tos-probe'));
+    } catch (err: any) {
+      message.error(err?.message || '测试失败');
+    } finally {
+      setTosProbing(false);
+    }
+  }, []);
+
+  const toggleClear = useCallback((k: SecretKey) => {
+    setCleared((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
+  }, []);
+
   const onSave = useCallback(async () => {
     if (!data) return;
     const values = await form.validateFields();
@@ -95,7 +137,13 @@ export default function DefaultsCard({ onRestart }: { onRestart: () => void }) {
     // LUCKAGENT_ENGINE: unset and "claude" mean the same thing — don't count it as a change
     const norm = (k: Key, s: string) => (k === 'LUCKAGENT_ENGINE' && s === 'claude' ? '' : s);
     for (const k of Object.keys(next) as Key[]) {
-      if (norm(k, next[k]) !== norm(k, data.values[k].disk)) changed[k] = next[k];
+      if (norm(k, next[k] ?? '') !== norm(k, data.values[k].disk)) changed[k] = next[k] ?? '';
+    }
+    // secrets: send only what was typed, or an explicit clear — never the (masked) current value
+    for (const k of SECRET_KEYS) {
+      const typed = (values[k] || '').trim();
+      if (typed) changed[k] = typed;
+      else if (cleared.has(k)) changed[k] = '';
     }
     if (Object.keys(changed).length === 0) {
       message.info('没有改动');
@@ -121,10 +169,48 @@ export default function DefaultsCard({ onRestart }: { onRestart: () => void }) {
     } finally {
       setSaving(false);
     }
-  }, [data, form, load, onRestart]);
+  }, [cleared, data, form, load, onRestart]);
 
   const v = data?.values;
   const ig = data?.imageGen;
+  const vg = data?.videoGen;
+
+  /** Write-only secret input: empty = keep; typed = replace; 「清除」 = unset. */
+  const secretItem = (k: SecretKey, label: string, hint: string) => {
+    const current = v?.[k];
+    const isCleared = cleared.has(k);
+    const placeholder = isCleared
+      ? '保存后清除'
+      : current?.disk
+        ? `已配置 ${current.disk}（留空 = 不修改）`
+        : '未配置';
+    return (
+      <Form.Item
+        label={label}
+        extra={
+          <Space direction="vertical" size={4}>
+            {hint && (
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                {hint}
+              </Typography.Text>
+            )}
+            <FieldState v={current} fmt={orDefault('未配置')} />
+          </Space>
+        }
+      >
+        <Space.Compact style={{ width: '100%' }}>
+          <Form.Item name={k} noStyle>
+            <Input.Password placeholder={placeholder} autoComplete="new-password" disabled={isCleared} />
+          </Form.Item>
+          {current?.disk && (
+            <Button onClick={() => toggleClear(k)} danger={!isCleared}>
+              {isCleared ? '撤销清除' : '清除'}
+            </Button>
+          )}
+        </Space.Compact>
+      </Form.Item>
+    );
+  };
   const orDefault = (fallback: string) => (s: string) => s || fallback;
   const codexInstalled = probe ? probe.installed : ig?.codexInstalled;
   const codexLoggedIn = probe ? probe.loggedIn : ig?.codexLoggedIn;
@@ -234,6 +320,45 @@ export default function DefaultsCard({ onRestart }: { onRestart: () => void }) {
             <Select options={Object.entries(IMAGE_GEN_LABEL).map(([value, label]) => ({ value, label }))} />
           </Form.Item>
         </Form.Item>
+
+        <Divider orientation="left" plain>
+          视频生成（Seedance）
+        </Divider>
+        <Space size={4} wrap style={{ marginBottom: 12 }}>
+          <Tag color={vg?.hasArkApiKey ? 'green' : 'orange'}>{vg?.hasArkApiKey ? '视频生成已开通' : '视频生成未开通（缺火山方舟 key）'}</Tag>
+          <Tag color={vg?.tosConfigured ? 'green' : 'default'}>
+            {vg?.tosConfigured ? '可参考本地视频 / 音频（TOS 已配置）' : '参考本地视频 / 音频需配 TOS（可选）'}
+          </Tag>
+        </Space>
+        {secretItem('ARK_API_KEY', '火山方舟 key（ARK_API_KEY）', '视频生成必需；火山 Seedream 生图也用这把 key。还需在方舟控制台开通 Doubao-Seedance / Doubao-Seedream 模型。')}
+        <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
+          TOS 只在「用群里发的视频 / 音频当参考素材」时需要：本地文件先传到 TOS 换临时链接，生成结束后自动删除。
+          建议用只授权这个桶读写删的子用户 AK/SK（主账号 AK/SK 权限过大）。
+        </Typography.Paragraph>
+        {secretItem('TOS_ACCESS_KEY', 'TOS Access Key', '')}
+        {secretItem('TOS_SECRET_KEY', 'TOS Secret Key', '')}
+        <Form.Item
+          label="TOS 桶名"
+          extra={<FieldState v={v?.TOS_BUCKET} fmt={orDefault('未配置')} />}
+          name="TOS_BUCKET"
+          rules={[{ pattern: /^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/, message: '桶名为 3–63 位小写字母、数字或 -' }]}
+        >
+          <Input placeholder="例如 team-seedance-refs" />
+        </Form.Item>
+        <Form.Item label="TOS 地域" extra={<FieldState v={v?.TOS_REGION} fmt={orDefault('cn-beijing')} />} name="TOS_REGION">
+          <AutoComplete placeholder="默认 cn-beijing" options={TOS_REGIONS.map((r) => ({ value: r }))} />
+        </Form.Item>
+        <Space direction="vertical" size={4}>
+          <Space size={8} wrap>
+            <Button size="small" loading={tosProbing} disabled={!vg?.tosConfigured} onClick={runTosProbe}>
+              测试 TOS
+            </Button>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              测试的是已保存的配置（上传一个小文件再删除），改完先点「保存」
+            </Typography.Text>
+          </Space>
+          {tosProbe && <Alert type={tosProbe.ok ? 'success' : 'error'} showIcon message={tosProbe.message} />}
+        </Space>
       </Form>
     </Card>
   );

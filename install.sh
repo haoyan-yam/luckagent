@@ -309,7 +309,7 @@ esac
 # ---- 技能同步 ----
 info "同步技能到 ~/.claude/skills ..."
 mkdir -p "$HOME/.claude/skills"
-SYNC_SKILLS="luckagent voice luckagent-team image-gen"
+SYNC_SKILLS="luckagent voice luckagent-team image-gen seedance-video"
 command -v opencli &>/dev/null && SYNC_SKILLS="$SYNC_SKILLS opencli"
 for skill in $SYNC_SKILLS; do
   case "$skill" in
@@ -317,6 +317,7 @@ for skill in $SYNC_SKILLS; do
     voice)          src="$LUCKAGENT_HOME/src/skills/voice" ;;
     luckagent-team) src="$LUCKAGENT_HOME/src/skills/luckagent-team" ;;
     image-gen)      src="$LUCKAGENT_HOME/src/skills/image-gen" ;;
+    seedance-video) src="$LUCKAGENT_HOME/src/skills/seedance-video" ;;
     opencli)        src="$LUCKAGENT_HOME/src/skills/opencli" ;;
   esac
   if [[ -d "$src" ]]; then
@@ -439,34 +440,40 @@ elif [[ "$NO_SYSTEM" == "true" ]]; then
   warn "--no-system：跳过办公与媒体工具链（ffmpeg / LibreOffice / poppler / Noto CJK / Python venv）——正式环境请确保已装"
 fi
 
-# ---- 生图（image-gen 技能的后端）----
-# 首选 Codex CLI 内置生图（走 ChatGPT 订阅，无需 key）；没有订阅再用火山 Seedream（ARK_API_KEY）。
-# 选择写进 .env 的 IMAGE_GEN_PROVIDER，重跑时已配置则跳过。不写时 gen.py 自动判定（Codex 已登录优先），
-# 并且在 Codex 未登录或撞额度时自动改走 Seedream。
+# ---- 生图与视频（image-gen / seedance-video 技能）----
+# 生图：首选 Codex CLI 内置生图（走 ChatGPT 订阅，无需 key），否则火山 Seedream。
+# 视频：火山方舟 Seedance，需要 ARK_API_KEY——与 Seedream 生图共用同一把 key。
+# 本地参考视频/音频（群里发来的视频当参考）还需要火山对象存储 TOS，可选。
+# 都写进 .env，重跑时已配置的项不再问；之后在管理台「系统配置 → 默认设置」修改。
 IMAGE_GEN_TODO=""
+VIDEO_TODO=""
 _codex_logged_in() {
   command -v codex &>/dev/null || return 1
   local st; st="$(codex login status 2>&1)" || return 1
   [[ "$st" == *"Logged in"* || "$st" == *"logged in"* ]] && [[ "$st" != *"Not logged in"* && "$st" != *"not logged in"* ]]
 }
+_trim() {
+  local v="$1"
+  v="${v#"${v%%[![:space:]]*}"}"
+  v="${v%"${v##*[![:space:]]}"}"
+  printf '%s' "$v"
+}
 echo ""
-echo -e "${BOLD}—— 生图 ——${NC}"
+echo -e "${BOLD}—— 生图与视频 ——${NC}"
 img_provider="$(_env_get IMAGE_GEN_PROVIDER)"
+ark_key_now="$(_env_get ARK_API_KEY)"
+codex_wanted=false
+
+# 1) 生图：有 ChatGPT 订阅就走 Codex
 if [[ -n "$img_provider" ]]; then
-  info "生图已配置：IMAGE_GEN_PROVIDER=${img_provider}（要改就编辑 .env，或删掉这行后重跑 bash install.sh）"
+  info "生图已配置：IMAGE_GEN_PROVIDER=${img_provider}（之后可在管理台「系统配置」切换）"
 elif [[ "$YES" == "true" ]]; then
   # 无人值守：只检测，不代装、不登录
   if _codex_logged_in; then
     _env_set IMAGE_GEN_PROVIDER codex; img_provider=codex
     success "检测到 Codex 已登录——生图走 Codex"
-  elif [[ -n "$(_env_get ARK_API_KEY)" ]]; then
-    _env_set IMAGE_GEN_PROVIDER seedream; img_provider=seedream
-    success "检测到 ARK_API_KEY——生图走火山 Seedream"
-  else
-    IMAGE_GEN_TODO="有 ChatGPT 订阅：npm i -g @openai/codex && codex login；否则在 .env 填 ARK_API_KEY"
   fi
 else
-  codex_wanted=false
   if ask_yn "有 ChatGPT 订阅（Plus / Pro / Team 等）、想用它生图吗？（走 Codex CLI，不需要 API key）" y; then
     codex_wanted=true
     if ! command -v codex &>/dev/null; then
@@ -496,20 +503,68 @@ else
       IMAGE_GEN_TODO="npm i -g @openai/codex && codex login"
     fi
   fi
-  if [[ -z "$img_provider" ]]; then
-    read -r -p "有火山方舟 API key 吗？填入可用 Seedream 生图（申请: https://console.volcengine.com/ark；回车跳过） " ark_key || ark_key=""
-    if [[ -n "$ark_key" ]]; then
-      _env_set ARK_API_KEY "$ark_key"
-      if [[ "$codex_wanted" == "true" ]]; then
-        # 想用 Codex 但暂未就绪：不锁定后端，登录后自动切回 Codex，期间用 Seedream
-        success "ARK_API_KEY 已写入——Codex 登录前生图先走火山 Seedream，登录后自动切到 Codex"
+fi
+
+# 2) 火山方舟 key：视频生成必需；没用 Codex 时也用它生图
+if [[ -n "$ark_key_now" ]]; then
+  info "火山方舟 key 已配置（ARK_API_KEY ••••${ark_key_now: -4}）——视频生成已开通"
+elif [[ "$YES" != "true" ]]; then
+  echo "  火山方舟 API key：视频生成（Seedance）必需；没有 ChatGPT 订阅时也用它生图（Seedream）"
+  read -r -s -p "  填入 ARK_API_KEY（申请: https://console.volcengine.com/ark；输入不回显，回车跳过） " ark_key || ark_key=""
+  echo ""
+  ark_key="$(_trim "$ark_key")"
+  if [[ -n "$ark_key" ]]; then
+    _env_set ARK_API_KEY "$ark_key"; ark_key_now="$ark_key"
+    success "ARK_API_KEY 已写入——视频生成已开通"
+    echo "    （记得在方舟控制台「开通管理」开通 Doubao-Seedance（视频）和 Doubao-Seedream（生图）模型）"
+  fi
+fi
+if [[ -z "$ark_key_now" ]]; then
+  VIDEO_TODO="视频生成需要火山方舟 key：管理台「系统配置 → 默认设置 → 视频生成」填写，或在 .env 写 ARK_API_KEY"
+fi
+
+# 生图后端最终落定（上面还没定下来时）
+if [[ -z "$img_provider" ]]; then
+  if [[ -n "$ark_key_now" && "$codex_wanted" != "true" ]]; then
+    _env_set IMAGE_GEN_PROVIDER seedream; img_provider=seedream
+    success "生图走火山 Seedream"
+  elif [[ -n "$ark_key_now" ]]; then
+    # 想用 Codex 但暂未就绪：不锁定后端，登录后自动切回 Codex，期间用 Seedream
+    success "Codex 登录前生图先走火山 Seedream，登录后自动切到 Codex"
+  elif [[ -z "$IMAGE_GEN_TODO" ]]; then
+    IMAGE_GEN_TODO="有 ChatGPT 订阅：npm i -g @openai/codex && codex login；否则填火山方舟 key（见下方视频待办）"
+  fi
+fi
+
+# 3) TOS（可选）：用本地视频/音频当参考素材时要先传到 TOS 换公网链接
+tos_ak_now="$(_env_get TOS_ACCESS_KEY)"
+if [[ -n "$tos_ak_now" ]]; then
+  info "TOS 已配置（桶 $(_env_get TOS_BUCKET)）——可以用本地视频/音频当参考"
+elif [[ -n "$ark_key_now" && "$YES" != "true" ]]; then
+  if ask_yn "要支持「参考群里发的视频 / 音频」生成视频吗？需要火山对象存储 TOS（大多数人用不到）" n; then
+    echo "  建议在火山控制台新建一个子用户，只授权这个桶的上传 / 读取 / 删除，用它的 AK/SK（主账号 AK/SK 权限过大）"
+    read -r -s -p "  TOS Access Key（输入不回显） " tos_ak || tos_ak=""; echo ""
+    read -r -s -p "  TOS Secret Key（输入不回显） " tos_sk || tos_sk=""; echo ""
+    read -r -p "  桶名 " tos_bucket || tos_bucket=""
+    read -r -p "  地域（回车 = cn-beijing） " tos_region || tos_region=""
+    tos_ak="$(_trim "$tos_ak")"; tos_sk="$(_trim "$tos_sk")"
+    tos_bucket="$(_trim "$tos_bucket")"; tos_region="$(_trim "$tos_region")"
+    tos_region="${tos_region:-cn-beijing}"
+    if [[ -n "$tos_ak" && -n "$tos_sk" && -n "$tos_bucket" ]]; then
+      _env_set TOS_ACCESS_KEY "$tos_ak"
+      _env_set TOS_SECRET_KEY "$tos_sk"
+      _env_set TOS_BUCKET "$tos_bucket"
+      _env_set TOS_REGION "$tos_region"
+      info "TOS 连通测试（上传一个小文件再删除）..."
+      if tos_msg="$(TOS_ACCESS_KEY="$tos_ak" TOS_SECRET_KEY="$tos_sk" TOS_BUCKET="$tos_bucket" TOS_REGION="$tos_region" \
+            python3 "$LUCKAGENT_HOME/src/skills/seedance-video/scripts/tos_upload.py" --probe 2>&1)"; then
+        success "TOS ${tos_msg}"
       else
-        _env_set IMAGE_GEN_PROVIDER seedream; img_provider=seedream
-        success "ARK_API_KEY 已写入——生图走火山 Seedream"
+        warn "TOS 连通测试未通过：${tos_msg}"
+        VIDEO_TODO="TOS 连通测试未通过（${tos_msg}）——在管理台「系统配置 → 默认设置 → 视频生成」改好后点「测试 TOS」"
       fi
-      echo "    （记得在方舟控制台「开通管理」开通 Doubao-Seedream 模型）"
-    elif [[ -z "$IMAGE_GEN_TODO" ]]; then
-      IMAGE_GEN_TODO="有 ChatGPT 订阅：npm i -g @openai/codex && codex login；否则在 .env 填 ARK_API_KEY"
+    else
+      warn "TOS 信息不全，已跳过（之后可在管理台补填）"
     fi
   fi
 fi
@@ -662,6 +717,10 @@ if [[ -n "$DEPS_TODO" ]]; then
 fi
 if [[ -n "$IMAGE_GEN_TODO" ]]; then
   echo -e "  ${YELLOW}生图待办${NC}: $IMAGE_GEN_TODO"
+  echo ""
+fi
+if [[ -n "$VIDEO_TODO" ]]; then
+  echo -e "  ${YELLOW}视频待办${NC}: $VIDEO_TODO"
   echo ""
 fi
 echo "  可选能力（编辑 .env 填 key 后 luckagent restart 生效）:"
