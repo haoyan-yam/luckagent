@@ -10,6 +10,7 @@ import {
   Typography,
   message,
 } from 'antd';
+import { useProjectsRoot } from '../hooks/useProjectsRoot';
 import { api } from '../api/client';
 
 const { Paragraph, Text, Link } = Typography;
@@ -40,6 +41,7 @@ export default function FeishuWizard({
   const [testing, setTesting] = useState(false);
   const [testPassed, setTestPassed] = useState(false);
   const [creating, setCreating] = useState(false);
+  const projectsRoot = useProjectsRoot();
 
   const reset = () => {
     setStep(0);
@@ -221,7 +223,7 @@ export default function FeishuWizard({
           </Form.Item>
           <Form.Item label="工作目录">
             <Typography.Text type="secondary">
-              自动创建 ~/projects/机器人名称（含 inputs/ 附件目录与说明模板；技能走全局层）；引擎用安装时选定的全局默认
+              自动创建 {projectsRoot}/机器人名称（含 inputs/ 附件目录与说明模板；技能走全局层）；引擎用安装时选定的全局默认
             </Typography.Text>
           </Form.Item>
           <Alert

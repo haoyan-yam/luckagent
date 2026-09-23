@@ -5,9 +5,10 @@ import * as dotenv from 'dotenv';
 import { execFile } from 'node:child_process';
 import type * as http from 'node:http';
 import { readBotsConfig } from '../bots-config-writer.js';
-import { expandUserPath, ORIGINAL_ENV_KEYS } from '../../config.js';
+import { expandUserPath, ORIGINAL_ENV_KEYS, projectsRoot } from '../../config.js';
 import { COMPAT_PROVIDERS, resolveEngineName } from '../../engines/index.js';
 import { EDITABLE_DEFAULTS, validateDefaultsUpdate, writeEnvUpdates } from '../env-defaults.js';
+import { claudeProjectsDir } from '../../engines/claude/session-lister.js';
 import { jsonResponse, parseJsonBody } from './helpers.js';
 import type { RouteContext } from './types.js';
 
@@ -252,6 +253,8 @@ function effectiveConfig(ctx: RouteContext): Record<string, unknown> {
     paths: {
       home: process.cwd(),
       botsConfig: ctx.botsConfigPath || null,
+      // Where new bots get their workspace (<root>/<name>) and the shared CLAUDE.md
+      projectsRoot: expandUserPath(projectsRoot()),
       stateDir,
       logsDir: path.resolve(process.cwd(), 'logs'),
       outputsBaseDir: process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `luckagent-outputs-${os.userInfo().username}`),
@@ -338,14 +341,14 @@ export function scanSkillsDir(dir: string): SkillInfo[] {
   return out;
 }
 
-/** Claude Code keys per-project data dirs by the workdir path with separators
- *  munged to '-'. Two candidates cover the known variants. Exported for tests. */
+/** Claude Code keys per-project data dirs by the sanitized workdir path
+ *  (claudeProjectsDir — the exact rule). The two older guesses stay as
+ *  fallbacks for dirs written by earlier Claude Code versions. Exported for tests. */
 export function memoryDirCandidates(workDir: string): string[] {
   const root = path.join(os.homedir(), '.claude', 'projects');
-  const c1 = workDir.replaceAll('/', '-');
-  const c2 = workDir.replace(/[/.]/g, '-');
-  const cands = [...new Set([c1, c2])];
-  return cands.map((c) => path.join(root, c, 'memory'));
+  const exact = path.join(claudeProjectsDir(workDir), 'memory');
+  const legacy = [workDir.replaceAll('/', '-'), workDir.replace(/[/.]/g, '-')].map((c) => path.join(root, c, 'memory'));
+  return [...new Set([exact, ...legacy])];
 }
 
 export interface MemoryIndexEntry { title: string; file: string; hook: string; }

@@ -4,7 +4,7 @@ import type * as http from 'node:http';
 import { addBot, removeBot, updateBot, getBotEntry, addPeer, removePeer } from '../bots-config-writer.js';
 import { installSkillsToWorkDir } from '../skills-installer.js';
 import { resolveEngineName } from '../../engines/index.js';
-import { expandUserPath } from '../../config.js';
+import { defaultWorkDirFor, expandUserPath } from '../../config.js';
 import { jsonResponse, parseJsonBody } from './helpers.js';
 import type { RouteContext } from './types.js';
 
@@ -146,9 +146,10 @@ export async function handleBotRoutes(
 
     const appId = body.feishuAppId as string;
     const appSecret = body.feishuAppSecret as string;
-    // Working directory defaults to ~/projects/<name> — the create form no
-    // longer asks for it (edit mode can still relocate explicitly).
-    const workDirInput = (body.defaultWorkingDirectory as string) || `~/projects/${name}`;
+    // Working directory defaults to <projects root>/<name> (LUCKAGENT_PROJECTS_DIR,
+    // default ~/projects) — the create form no longer asks for it (edit mode
+    // can still relocate explicitly).
+    const workDirInput = (body.defaultWorkingDirectory as string) || defaultWorkDirFor(name);
     if (!appId || !appSecret) {
       jsonResponse(res, 400, { error: 'Feishu bot requires: feishuAppId, feishuAppSecret' });
       return true;

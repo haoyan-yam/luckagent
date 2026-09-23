@@ -12,6 +12,7 @@ import {
   Typography,
   message,
 } from 'antd';
+import { useProjectsRoot } from '../hooks/useProjectsRoot';
 import { api } from '../api/client';
 import type { BotEntry } from '../api/types';
 import MemberPicker from '../components/MemberPicker';
@@ -42,6 +43,7 @@ export default function BotFormDrawer({
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [testing, setTesting] = useState(false);
+  const projectsRoot = useProjectsRoot();
 
   useEffect(() => {
     if (!open) return;
@@ -198,7 +200,7 @@ export default function BotFormDrawer({
         ) : (
           <Form.Item label="工作目录">
             <Typography.Text type="secondary">
-              自动创建：~/projects/{botName || '<名称>'}（含 inputs/ 附件目录与说明模板；技能走全局层）
+              自动创建：{projectsRoot}/{botName || '<名称>'}（含 inputs/ 附件目录与说明模板；技能走全局层）
             </Typography.Text>
           </Form.Item>
         )}

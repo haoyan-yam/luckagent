@@ -128,6 +128,7 @@ export default function ConfigPage({ onRestart }: { onRestart: () => void }) {
           <Descriptions.Item label="core 地址">{cfg?.ports.coreUrl ?? '—'}</Descriptions.Item>
           <Descriptions.Item label="安装目录">{cfg?.paths.home ?? '—'}</Descriptions.Item>
           <Descriptions.Item label="bots.json">{cfg?.paths.botsConfig ?? '未设置'}</Descriptions.Item>
+          <Descriptions.Item label="Bot 工作区根目录">{cfg?.paths.projectsRoot ?? '—'}</Descriptions.Item>
           <Descriptions.Item label="状态目录">{cfg?.paths.stateDir ?? '—'}</Descriptions.Item>
           <Descriptions.Item label="日志目录">{cfg?.paths.logsDir ?? '—'}</Descriptions.Item>
           <Descriptions.Item label="发送暂存目录">{cfg?.paths.outputsBaseDir ?? '—'}</Descriptions.Item>

@@ -9,7 +9,7 @@
  * mutation — safe to call from a command handler on every `/resume`.
  */
 
-import { openSync, readSync, statSync, closeSync, readdirSync } from 'node:fs';
+import { openSync, readSync, statSync, closeSync, readdirSync, realpathSync } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
@@ -24,16 +24,51 @@ export interface SessionSummary {
   isCurrent: boolean;
 }
 
+/** Claude Code cuts project dir names at this length and appends a hash. */
+const MAX_PROJECT_DIR_NAME = 200;
+
+/** 32-bit string hash (`h = h*31 + code`), identical to Claude Code's. */
+function stringHash(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  return h;
+}
+
 /**
- * Directory where `claude` stores this cwd's session transcripts.
- *
- * MUST match `pty-session.ts` exactly: every '/' in the absolute cwd becomes
- * '-' (leading slash → leading dash). Exported so tests share one source of
- * truth with the path derivation under test.
+ * Claude Code's own project-dir naming (claude-agent-sdk `sanitizePath`):
+ * EVERY non-alphanumeric UTF-16 unit becomes '-' — not just '/', but also '.',
+ * spaces, '_', '~' and CJK characters — and names longer than 200 chars are cut
+ * and suffixed with the base36 hash of the full path. Must match exactly, or the
+ * PTY scanner tails a transcript that never exists and the Feishu card renders
+ * blank. (No `u` flag on purpose: Claude Code replaces per UTF-16 unit.)
+ */
+export function sanitizeProjectPath(p: string): string {
+  const name = p.replace(/[^a-zA-Z0-9]/g, '-');
+  if (name.length <= MAX_PROJECT_DIR_NAME) return name;
+  return `${name.slice(0, MAX_PROJECT_DIR_NAME)}-${Math.abs(stringHash(p)).toString(36)}`;
+}
+
+/**
+ * The cwd as `claude` itself sees it: absolute and symlink-resolved
+ * (process.cwd() reports the physical path, e.g. /tmp → /private/tmp on macOS).
+ * Falls back to the plain absolute path when it doesn't exist yet.
+ */
+export function physicalCwd(cwd: string): string {
+  const abs = path.resolve(cwd);
+  try {
+    return realpathSync.native(abs);
+  } catch {
+    return abs;
+  }
+}
+
+/**
+ * Directory where `claude` stores this cwd's session transcripts (and its
+ * auto-memory under `memory/`). The single source of truth — pty-session,
+ * session rollover, /resume and the admin memory view all derive it here.
  */
 export function claudeProjectsDir(cwd: string, homeDir: string = os.homedir()): string {
-  const escaped = path.resolve(cwd).replace(/\//g, '-');
-  return path.join(homeDir, '.claude', 'projects', escaped);
+  return path.join(homeDir, '.claude', 'projects', sanitizeProjectPath(physicalCwd(cwd)));
 }
 
 /** Read just enough of a .jsonl to extract the first real user prompt. */

@@ -211,6 +211,25 @@ function required(name: string): string {
   return value;
 }
 
+/** Default root for bot workspaces (`<root>/<botName>`), kept unexpanded so bots.json stays portable. */
+export const DEFAULT_PROJECTS_DIR = '~/projects';
+
+/**
+ * Root under which new bot workspaces and the shared workspace CLAUDE.md live.
+ * Set by install.sh as LUCKAGENT_PROJECTS_DIR (default ~/projects). Returned as
+ * configured (possibly `~`-prefixed); callers that touch the disk expand it.
+ */
+export function projectsRoot(env: NodeJS.ProcessEnv = process.env): string {
+  const raw = env.LUCKAGENT_PROJECTS_DIR?.trim() ?? '';
+  const trimmed = raw.length > 1 ? raw.replace(/\/+$/, '') : raw;
+  return trimmed || DEFAULT_PROJECTS_DIR;
+}
+
+/** Default working directory for a new bot: `<projectsRoot>/<name>`. */
+export function defaultWorkDirFor(name: string, env: NodeJS.ProcessEnv = process.env): string {
+  return `${projectsRoot(env)}/${name}`;
+}
+
 export function expandUserPath(value: string): string {
   if (value === '~') return os.homedir();
   if (value.startsWith('~/') || value.startsWith('~\\')) {

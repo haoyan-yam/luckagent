@@ -518,9 +518,52 @@ if [[ -d "$HOME/.claude/skills/codex-image-gen" ]]; then
   warn "检测到 ~/.claude/skills/codex-image-gen：它和内置 image-gen（已含 Codex 后端）触发词重叠，建议移走或删除"
 fi
 
-# ---- 工作区目录 ----
-BOTS_ROOT="$HOME/projects"
-mkdir -p "$BOTS_ROOT"
+# ---- bot 工作区根目录（默认 ~/projects，可自定义）----
+# 每个 bot 的工作目录建在 <根目录>/<bot名>，根目录下放一份共用规范 CLAUDE.md。
+# 选择写进 .env 的 LUCKAGENT_PROJECTS_DIR；重跑时已配置则沿用，不再询问。
+_expand_path() {  # ~ 展开；相对路径按 $HOME 补全；去掉末尾的 /
+  local p="$1"
+  case "$p" in
+    "~") p="$HOME" ;;
+    "~/"*) p="$HOME/${p#\~/}" ;;
+    /*) ;;
+    *) p="$HOME/$p" ;;
+  esac
+  [[ "$p" != "/" ]] && p="${p%/}"
+  printf '%s' "$p"
+}
+projects_cfg="$(_env_get LUCKAGENT_PROJECTS_DIR)"
+projects_configured=true
+if [[ -z "$projects_cfg" ]]; then
+  projects_configured=false
+  projects_cfg="~/projects"
+  if [[ "$YES" != "true" ]]; then
+    echo ""
+    echo -e "${BOLD}—— bot 工作区根目录 ——${NC}"
+    echo "  每个机器人的工作目录会建在 <根目录>/<机器人名>，根目录下放一份所有机器人共用的规范 CLAUDE.md。"
+    read -r -p "工作区根目录（回车 = ~/projects，即 $HOME/projects） " projects_in || projects_in=""
+    projects_in="${projects_in#"${projects_in%%[![:space:]]*}"}"   # 去首尾空白
+    projects_in="${projects_in%"${projects_in##*[![:space:]]}"}"
+    [[ -n "$projects_in" ]] && projects_cfg="$projects_in"
+  fi
+fi
+BOTS_ROOT="$(_expand_path "$projects_cfg")"
+if ! mkdir -p "$BOTS_ROOT" 2>/dev/null || [[ ! -w "$BOTS_ROOT" ]]; then
+  warn "无法创建或写入 ${BOTS_ROOT}，改用默认 ~/projects"
+  projects_cfg="~/projects"
+  BOTS_ROOT="$HOME/projects"
+  projects_configured=false
+  mkdir -p "$BOTS_ROOT"
+fi
+if [[ "$projects_configured" != "true" ]]; then
+  # 默认值保留 ~ 写法（换用户名/换机器照样可用），自定义值写展开后的绝对路径
+  if [[ "$projects_cfg" == "~/projects" ]]; then
+    _env_set LUCKAGENT_PROJECTS_DIR "~/projects"
+  else
+    _env_set LUCKAGENT_PROJECTS_DIR "$BOTS_ROOT"
+  fi
+fi
+success "bot 工作区根目录: ${BOTS_ROOT}（.env 的 LUCKAGENT_PROJECTS_DIR；只影响之后新建的机器人）"
 if [[ ! -f "$BOTS_ROOT/CLAUDE.md" && -f "$LUCKAGENT_HOME/src/workspace/PROJECTS-CLAUDE.md" ]]; then
   cp "$LUCKAGENT_HOME/src/workspace/PROJECTS-CLAUDE.md" "$BOTS_ROOT/CLAUDE.md"
   success "工作区共用规范已部署: $BOTS_ROOT/CLAUDE.md"
@@ -578,6 +621,7 @@ echo ""
 echo "  1. 打开管理台:  http://localhost:${api_port:-9100}/admin"
 echo "     登录密钥（API_SECRET）: ${api_secret:-<见 .env>}"
 echo "  2. 在管理台点「飞书接入向导」，创建并保存第一个机器人，然后点「重启桥接」"
+echo "     （机器人工作目录建在 ${BOTS_ROOT}/<机器人名>）"
 if [[ "${ENGINE_CHOICE:-claude}" == "minimax" ]]; then
   if grep -q "^MINIMAX_API_KEY=" .env 2>/dev/null; then
     echo "  3. 默认引擎 MiniMax 已就绪（key 已配置），建 bot 即可干活"

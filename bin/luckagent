@@ -258,8 +258,15 @@ if [[ ! -d "$LUCKAGENT_HOME/.git" ]]; then
   # 与工作目录 .claude/skills（保留给各 bot 的定制技能），无需逐目录同步。
 
   # 父目录共用规范：仅缺失时部署（存在即用户已有/已定制，绝不覆盖——
-  # 想换新版：删掉 ~/projects/CLAUDE.md 再跑本命令）。
-  local bots_root="$HOME/projects"
+  # 想换新版：删掉 <工作区根目录>/CLAUDE.md 再跑本命令）。
+  # 根目录取 .env 的 LUCKAGENT_PROJECTS_DIR（install.sh 写入），默认 ~/projects。
+  local bots_root
+  bots_root="$(_env_val LUCKAGENT_PROJECTS_DIR "$LUCKAGENT_HOME/.env" || true)"
+  [[ -n "$bots_root" ]] || bots_root="~/projects"
+  case "$bots_root" in
+    "~") bots_root="$HOME" ;;
+    "~/"*) bots_root="$HOME/${bots_root#\~/}" ;;
+  esac
   if [[ ! -f "$bots_root/CLAUDE.md" && -f "$LUCKAGENT_HOME/src/workspace/PROJECTS-CLAUDE.md" ]]; then
     mkdir -p "$bots_root"
     cp "$LUCKAGENT_HOME/src/workspace/PROJECTS-CLAUDE.md" "$bots_root/CLAUDE.md"

@@ -62,6 +62,7 @@ bash install.sh
 | lark-cli（必装） | 自动安装飞书官方 CLI + 19 个 AI 技能（文档/表格/日历操作、群日报拉消息都依赖它） | 无；万一安装失败，结尾会打印待办命令 |
 | 生图 | 先问有没有 ChatGPT 订阅：有就代装 Codex CLI（`@openai/codex` 最新版）并跑 `codex login`（打开浏览器授权）；没有或登录未成功再问火山 ARK key。结果写进 `.env` 的 `IMAGE_GEN_PROVIDER`，重跑时已配置则跳过；`--yes` 只检测不代装 | 回答 y/n、浏览器里授权、或粘贴 ARK key；都可跳过，结尾打印待办 |
 | 办公与媒体工具链（必装） | brew 安装 ffmpeg、poppler、LibreOffice、Noto Sans CJK SC 字体，并用 python@3.13 建 `~/.luckagent/venv` 装入 `requirements.txt`（python-pptx / openpyxl / Pillow / numpy / pandas / python-docx / lxml / matplotlib / xlsxwriter / PyMuPDF / edge-tts）——bot 产出 PPT/Excel/Word/PDF/图片/语音都靠它们 | 无；单项失败只警告，结尾打印待办命令 |
+| bot 工作区根目录 | 询问机器人工作目录放在哪（回车 = `~/projects`，即 `/Users/你/projects`）；之后每个机器人的工作目录建在 `<根目录>/<机器人名>`，并在根目录放一份共用规范 `CLAUDE.md`。写进 `.env` 的 `LUCKAGENT_PROJECTS_DIR`，重跑时沿用；目录不可写时回退默认 | 回车用默认，或输入绝对路径（`~` 与相对路径按家目录展开，可含空格） |
 | PM2 启动 | 启动 `luckagent-bridge` + `luckagent-core` 两个常驻进程 | 无 |
 
 结尾会打印：**管理台地址、API_SECRET、下一步指引**。把 API_SECRET 复制下来。
@@ -111,7 +112,7 @@ CLAUDE_EXECUTABLE_PATH=~/.local/bin/claude
    - 开通权限：`im:message`、`im:message:readonly`、`im:resource`、`im:chat:readonly`
    - 事件订阅选 **「长连接」**，添加事件 `im.message.receive_v1`
    - 创建版本并发布
-   - 填机器人名称和工作目录（如 `/Users/你/projects/my-bot`），保存
+   - 填机器人名称，保存（工作目录自动建在 `<工作区根目录>/<机器人名>`，默认 `~/projects/my-bot`）
 3. 点顶栏 **「重启桥接」**——约 5–10 秒后机器人上线
 4. 回到飞书：把机器人加进一个群（或直接私聊），**@它说句话**，收到回复即接入成功 🎉
 
@@ -160,7 +161,7 @@ luckagent doctor --json   # 本机体检（runtime/PM2/core/bots/voice 等检查
 | 位置 | 内容 |
 | --- | --- |
 | `~/luckagent/` | 程序本体（代码、`.env`、`bots.json`、`logs/`） |
-| `~/projects/` | 各机器人的工作目录（`<bot>/inputs\|outputs\|work` + 共用规范 `CLAUDE.md`） |
+| `~/projects/`（安装时可改，见 `.env` 的 `LUCKAGENT_PROJECTS_DIR`） | 各机器人的工作目录（`<bot>/inputs\|outputs\|work` + 共用规范 `CLAUDE.md`） |
 | `~/.luckagent/` | 运行状态（定时任务、会话、活动记录数据库）+ `venv/`（bot 用的 Python 与基础包） |
 | `~/.luckagent-core/` | core 数据（`token`、`data/central.db` 共享记忆库） |
 | `~/.claude/skills/` | 随装技能（luckagent / voice / lark-* / frontend-slides 等） |

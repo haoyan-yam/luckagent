@@ -32,7 +32,7 @@ Luckagent 涉及四类目录：安装目录、每个 bot 的工作目录、两�
 
 ## 每个 bot 的工作目录
 
-每个 bot 在 `bots.json` 里配 `defaultWorkingDirectory`（如 `~/projects/<bot名>`），agent 的所有文件操作都发生在这里。约定的子目录：
+每个 bot 在 `bots.json` 里配 `defaultWorkingDirectory`（如 `~/projects/<bot名>`），agent 的所有文件操作都发生在这里。管理台新建 bot 时默认建在 **bot 工作区根目录**下：`.env` 的 `LUCKAGENT_PROJECTS_DIR`（安装时询问，默认 `~/projects`）。改这个值只影响之后新建的 bot——已有 bot 的工作目录记在 `bots.json` 里，不会移动。约定的子目录：
 
 ```
 ~/projects/<bot名>/
@@ -44,7 +44,7 @@ Luckagent 涉及四类目录：安装目录、每个 bot 的工作目录、两�
 └── .claude/skills/   # 引擎发现的技能
 ```
 
-另外，工作目录的**父目录**（如 `~/projects/`）会部署一份共用规范 `CLAUDE.md`（模板 `src/workspace/PROJECTS-CLAUDE.md`），对该目录下所有 bot 工作区生效。两级模板的分工见[技能体系](claude-code-skills.md#工作区指令文件两级模板)。
+另外，工作目录的**父目录**（即工作区根目录，如 `~/projects/`）会部署一份共用规范 `CLAUDE.md`（模板 `src/workspace/PROJECTS-CLAUDE.md`），对该目录下所有 bot 工作区生效。两级模板的分工见[技能体系](claude-code-skills.md#工作区指令文件两级模板)。
 
 > 聊天附件的实际下载位置由 bot 的 `downloadsDir` 决定，**默认就是 `<工作目录>/inputs`**（管理台创建 bot 时会显式写入 bots.json；手写配置省略该字段时也回退到同一位置），文件持久保留、任务结束不清理。设置 `DOWNLOADS_DIR` 环境变量或该 bot 的 `downloadsDir` 可整体/单独改位置。
 

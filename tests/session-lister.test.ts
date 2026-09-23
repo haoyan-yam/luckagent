@@ -5,6 +5,8 @@ import * as path from 'node:path';
 import {
   claudeProjectsDir,
   listClaudeSessions,
+  physicalCwd,
+  sanitizeProjectPath,
 } from '../src/engines/claude/session-lister.js';
 
 /**
@@ -64,7 +66,11 @@ describe('listClaudeSessions', () => {
 
   it('sorts newest-first and extracts the first string user prompt as preview', () => {
     writeSession('aaaaaaaa-1111-1111-1111-111111111111', [userLine('older session prompt'), assistantLine('hi')], 1000);
-    writeSession('bbbbbbbb-2222-2222-2222-222222222222', [userLine('newest session prompt'), assistantLine('yo')], 3000);
+    writeSession(
+      'bbbbbbbb-2222-2222-2222-222222222222',
+      [userLine('newest session prompt'), assistantLine('yo')],
+      3000,
+    );
     writeSession('cccccccc-3333-3333-3333-333333333333', [userLine('middle session prompt')], 2000);
 
     const out = listClaudeSessions({ workingDirectory: CWD, homeDir: home });
@@ -74,11 +80,11 @@ describe('listClaudeSessions', () => {
   });
 
   it('skips tool_result (array-content) user records and finds the real prompt', () => {
-    writeSession('dddddddd-4444-4444-4444-444444444444', [
-      toolResultUserLine(),
-      assistantLine('thinking'),
-      userLine('the actual question'),
-    ], 5000);
+    writeSession(
+      'dddddddd-4444-4444-4444-444444444444',
+      [toolResultUserLine(), assistantLine('thinking'), userLine('the actual question')],
+      5000,
+    );
     const out = listClaudeSessions({ workingDirectory: CWD, homeDir: home });
     expect(out[0].preview).toBe('the actual question');
   });
@@ -126,5 +132,58 @@ describe('listClaudeSessions', () => {
     // newest two: index 4 then 3
     expect(out[0].preview).toBe('prompt 4');
     expect(out[1].preview).toBe('prompt 3');
+  });
+});
+
+/**
+ * Claude Code names ~/.claude/projects/<dir> by replacing EVERY non-alphanumeric
+ * char with '-' (not only '/'), cutting at 200 chars + a hash. The expected
+ * names below follow directories Claude Code actually created (user and
+ * project names anonymized). The old '/'-only rule
+ * pointed the PTY scanner at a missing transcript for any workspace path with
+ * '.', spaces, '_', '~' or CJK — the Feishu card rendered blank.
+ */
+describe('sanitizeProjectPath (Claude Code project dir naming)', () => {
+  it('matches real Claude Code dir names for dots, spaces and tildes', () => {
+    expect(sanitizeProjectPath('/Users/alice/.codex/skills/.system/imagegen')).toBe(
+      '-Users-alice--codex-skills--system-imagegen',
+    );
+    expect(
+      sanitizeProjectPath('/Users/alice/Library/Mobile Documents/com~apple~CloudDocs/Works/Projects/client-demo'),
+    ).toBe('-Users-alice-Library-Mobile-Documents-com-apple-CloudDocs-Works-Projects-client-demo');
+  });
+
+  it('replaces underscores and CJK characters too', () => {
+    expect(sanitizeProjectPath('/Users/a/projects/sales_bot')).toBe('-Users-a-projects-sales-bot');
+    expect(sanitizeProjectPath('/Users/a/项目/bot')).toBe('-Users-a----bot');
+  });
+
+  it('cuts names over 200 chars and appends a base36 hash of the full path', () => {
+    const long = '/Volumes/data/' + 'x'.repeat(300);
+    const name = sanitizeProjectPath(long);
+    expect(name.startsWith(long.replace(/[^a-zA-Z0-9]/g, '-').slice(0, 200) + '-')).toBe(true);
+    expect(name.slice(201)).toMatch(/^[0-9a-z]+$/);
+    // deterministic, and different paths with the same 200-char prefix differ
+    expect(sanitizeProjectPath(long)).toBe(name);
+    expect(sanitizeProjectPath(long + 'y')).not.toBe(name);
+  });
+});
+
+describe('physicalCwd', () => {
+  it('resolves symlinks the way process.cwd() reports them', () => {
+    const real = fs.mkdtempSync(path.join(os.tmpdir(), 'luckagent-real-'));
+    const link = path.join(os.tmpdir(), `luckagent-link-${process.pid}-${Date.now()}`);
+    fs.symlinkSync(real, link);
+    try {
+      expect(physicalCwd(link)).toBe(fs.realpathSync.native(real));
+      expect(claudeProjectsDir(link, '/h')).toBe(claudeProjectsDir(real, '/h'));
+    } finally {
+      fs.unlinkSync(link);
+      fs.rmSync(real, { recursive: true, force: true });
+    }
+  });
+
+  it('falls back to the absolute path when the directory does not exist yet', () => {
+    expect(physicalCwd('/no/such/dir/for/test')).toBe('/no/such/dir/for/test');
   });
 });

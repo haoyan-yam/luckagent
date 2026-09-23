@@ -6,7 +6,7 @@
 #
 # 卸载范围：PM2 进程、安装目录、状态目录、CLI、随装技能。
 # 刻意保留（含你的数据，需要时自行删除）：
-#   ~/projects/ 各 bot 工作区与共用规范    —— 你的项目文件
+#   bot 工作区根目录（默认 ~/projects/，见 .env 的 LUCKAGENT_PROJECTS_DIR）—— 你的项目文件
 #   ~/.claude/projects/*/memory           —— bot 的记忆
 #   brew / node / pm2 / lark-cli / claude —— 共享工具
 set -euo pipefail
@@ -29,6 +29,11 @@ ask() {
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)" || SELF_DIR=""
 LUCKAGENT_HOME="${LUCKAGENT_HOME:-${SELF_DIR:-$HOME/luckagent}}"
 [[ -f "${LUCKAGENT_HOME}/package.json" ]] || LUCKAGENT_HOME="$HOME/luckagent"
+
+# bot 工作区根目录：安装目录删掉之前先从 .env 读出来，卸载结尾提示保留位置用
+PROJECTS_ROOT="$(grep -E '^LUCKAGENT_PROJECTS_DIR=' "${LUCKAGENT_HOME}/.env" 2>/dev/null | tail -1 | cut -d= -f2- \
+  | sed -e "s/^[\"']//" -e "s/[\"']$//")" || true
+PROJECTS_ROOT="${PROJECTS_ROOT:-~/projects}"
 
 echo ""
 info "将从本机移除 Luckagent（安装目录: ${LUCKAGENT_HOME}）"
@@ -79,7 +84,7 @@ fi
 
 echo ""
 success "卸载完成。以下为刻意保留项，需要时自行处理："
-warn "~/projects/ —— bot 工作区与共用规范 CLAUDE.md（你的项目数据）"
+warn "${PROJECTS_ROOT}/ —— bot 工作区与共用规范 CLAUDE.md（你的项目数据）"
 warn "~/.claude/projects/ 下各工作区的会话与记忆"
 warn "~/.lark-cli/config.json —— 内含各 bot 应用凭证 profile，不再用请手动清理"
 warn "~/.zprofile 里的 PATH 行（brew / node / ~/.local/bin）—— 无害，可留"
