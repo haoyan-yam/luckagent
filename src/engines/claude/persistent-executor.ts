@@ -25,7 +25,7 @@
  *   - Multi-turn overlap (still one in-flight turn at a time)
  */
 
-import { execSync, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -35,7 +35,7 @@ import type { SDKUserMessage, SpawnOptions, SpawnedProcess, Query } from '@anthr
 import type { Logger } from '../../utils/logger.js';
 import { AsyncQueue } from '../../utils/async-queue.js';
 import type { SDKMessage, TeamEvent, ApiContext } from './executor.js';
-import { apply1MContextSettings } from './executor.js';
+import { apply1MContextSettings, resolveClaudePath } from './executor.js';
 import { makeCanUseTool } from './exit-plan-mode.js';
 import { createMemoryGuardHook } from '../../utils/memory-export-guard.js';
 import { ptyQuery } from './pty/pty-query.js';
@@ -46,18 +46,9 @@ import type {
   PtyInteractiveResponse,
 } from './pty/contract.js';
 
-const isWindows = process.platform === 'win32';
-
-function resolveClaudePath(): string {
-  if (process.env.CLAUDE_EXECUTABLE_PATH) return process.env.CLAUDE_EXECUTABLE_PATH;
-  try {
-    const cmd = isWindows ? 'where claude' : 'which claude';
-    return execSync(cmd, { encoding: 'utf-8' }).trim().split(/\r?\n/)[0];
-  } catch {
-    return isWindows ? 'claude' : '/usr/local/bin/claude';
-  }
-}
-
+// Shared with the legacy executor: undefined when no binary is found, so the
+// SDK backend falls back to its bundled runtime (zero-install DeepSeek /
+// MiniMax machines) and the PTY backend fails with an actionable error.
 const CLAUDE_EXECUTABLE = resolveClaudePath();
 
 const ALWAYS_FILTERED_PREFIXES = ['CLAUDE'];

@@ -17,7 +17,7 @@ const isWindows = process.platform === 'win32';
  *  Returns undefined when no binary is found — the Agent SDK BUNDLES its own
  *  claude runtime, so forcing a guessed path (the old /usr/local/bin/claude
  *  fallback) breaks zero-install setups (e.g. DeepSeek-only machines). */
-function resolveClaudePath(): string | undefined {
+export function resolveClaudePath(): string | undefined {
   if (process.env.CLAUDE_EXECUTABLE_PATH) return process.env.CLAUDE_EXECUTABLE_PATH;
   try {
     const cmd = isWindows ? 'where claude' : 'which claude';

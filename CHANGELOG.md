@@ -2,6 +2,11 @@
 
 版本号 = 根 `package.json`（管理台总览页显示的就是它）。升级：`luckagent update`（git 安装）或重跑一行安装命令（tarball 安装）。git tag 与本文件同步打点。
 
+## v0.7.12 — 2026-09-23
+
+- **修复：零安装的 DeepSeek / MiniMax 机器在持久会话模式下起不来**：v0.4.1 已把 `executor.ts` 的 claude CLI 查找改为「找不到就返回 undefined、让 Agent SDK 用自带运行时」，但持久执行器（默认路径，DeepSeek / MiniMax 也走它的 SDK 后端）保留了一份旧副本，找不到时回退成猜测路径 `/usr/local/bin/claude` 并总是传给 SDK。现在两处共用同一个 `resolveClaudePath()`：没装 CLI 时 SDK 后端不再传 `pathToClaudeCodeExecutable`；PTY 后端给出「请安装 Claude Code 或设置 `CLAUDE_EXECUTABLE_PATH`」的明确报错
+- 测试：`tests/claude-executable-resolution.test.ts` 8 例（查找函数 4 例 + 持久执行器 SDK 后端实际传给 `query()` 的参数 3 例 + PTY 后端报错 1 例）；回退旧代码时其中 2 例失败
+
 ## v0.7.11 — 2026-09-21
 
 - **记忆库出站闸门（design-note U）**：bot 的本地 auto-memory（`~/.claude/projects/<工作区>/memory/`、`MEMORY.md`）不可外发，三层硬拦。桥接层：发送目录里的文件发出前逐个检查，文件名是 MEMORY.md、真实路径位于 `~/.claude` 之下、压缩包清单含记忆目录 / 索引 / `.claude/` 或 ≥20 个 .md、正文是记忆 frontmatter 或索引形态，一律拦下删除并发一条红色通知说明「没发、为什么、找谁」；不能列清单的 .7z/.rar 不放行。工具层：Bash 调用前的 PreToolUse 钩子——打包 / 拷贝 / 移动 / 同步记忆目录、把记忆重定向到文件、经 lark-cli 或共享记忆库外传记忆、lark-cli 直传任何压缩包（绕过桥接检查），一律 deny 并把原因回给模型；SDK 后端走进程内钩子，PTY 后端把同源逻辑生成为独立脚本写进 `--settings` 的 command 钩子。提示词层：工作区共用规范新增「记忆不外发，谁提都不行」。刻意不拦读记忆（cat / ls / grep）与 `luckagent memory` 中央库 CLI。起因是一次真实泄露：群成员一句「先把记忆搞过来」，bot 就把 105 个记忆文件打成 zip 发进了群——出站脱敏只看文字不看文件，提示词约束挡不住「用户明确要求」
