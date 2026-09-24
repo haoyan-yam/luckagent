@@ -186,7 +186,7 @@ luckagent inbox poll            # CLI agent 收件箱
 | 安装方式 | 升级命令 |
 | --- | --- |
 | git 检出（git clone / 一行命令在有 git 的机器上） | `luckagent update`（git pull + 重装依赖 + 构建 + 同步技能 + 重启） |
-| 无 `.git` 的安装（一行命令在裸机上的 tarball 下载模式） | `curl -fsSL https://codeload.github.com/haoyan-yam/luckagent/tar.gz/refs/heads/main \| tar -xz --strip-components=1 -C ~/luckagent`，然后重跑 `bash install.sh`（幂等） |
+| 无 `.git` 的安装（一行命令在裸机上的 tarball 下载模式） | 同样 `luckagent update`：v0.7.22 起它会先把安装目录就地转成 git 检出（`.env`、`bots.json` 等本机文件不动），之后与 git 安装完全一样。v0.7.21 及更早的 CLI 还不会转换，第一次手动转一次：`cd ~/luckagent && git init -q && git remote add origin https://github.com/haoyan-yam/luckagent.git && git fetch --depth 1 origin main && git checkout -f -B main FETCH_HEAD && git branch -u origin/main`，再 `luckagent update` |
 
 > 升级时留意：
 > - **v0.7.9 起的办公与媒体工具链**（LibreOffice / ffmpeg / poppler / 字体 / Python venv）只由 `install.sh` 安装，`luckagent update` 不会补装。老机器升级后重跑一次 `bash install.sh`（幂等，只装缺的），或先跑 `luckagent doctor` 看 `office_media_toolchain` 一项。

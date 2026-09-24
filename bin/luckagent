@@ -64,14 +64,46 @@ _json() {
   printf '%s' "$body" | python3 -m json.tool 2>/dev/null || printf '%s\n' "$body"
 }
 
+# 一行命令安装在还没有 git 的新机器上会下载 tarball，装出来的目录没有 .git。
+# 之后机器上有了 git（install.sh 装 Homebrew 时会带出 Xcode 命令行工具），
+# update 就地把它转成跟踪 origin/main 的浅克隆：tracked 文件换成最新版，
+# .env / bots.json / node_modules 等被 .gitignore 忽略的文件原样保留。
+_adopt_git_checkout() {
+  local repo="${LUCKAGENT_REPO:-https://github.com/haoyan-yam/luckagent.git}"
+  local git_ok=true
+  command -v git &>/dev/null || git_ok=false
+  # 新 Mac 的 /usr/bin/git 是触发 Xcode CLT 安装弹窗的桩：CLT 真装了才算有 git
+  if [[ "$(uname -s)" == "Darwin" ]] && ! xcode-select -p &>/dev/null; then git_ok=false; fi
+  if [[ "$git_ok" != "true" ]]; then
+    error "${LUCKAGENT_HOME} 不是 git 检出（无 .git），本机也还没有可用的 git。"
+    echo "  升级方法（用最新代码覆盖后重跑安装，幂等）："
+    echo "    curl -fsSL https://codeload.github.com/haoyan-yam/luckagent/tar.gz/refs/heads/main | tar -xz --strip-components=1 -C ${LUCKAGENT_HOME}"
+    echo "    cd ${LUCKAGENT_HOME} && bash install.sh"
+    exit 1
+  fi
+
+  info "${LUCKAGENT_HOME} 是 tarball 安装（无 .git），转成 git 检出以便之后直接升级 ..."
+  export GIT_HTTP_LOW_SPEED_LIMIT="${GIT_HTTP_LOW_SPEED_LIMIT:-1000}"
+  export GIT_HTTP_LOW_SPEED_TIME="${GIT_HTTP_LOW_SPEED_TIME:-60}"
+  if ! { git -C "$LUCKAGENT_HOME" init -q \
+      && git -C "$LUCKAGENT_HOME" remote add origin "$repo" \
+      && git -C "$LUCKAGENT_HOME" fetch -q --depth 1 origin main \
+      && git -C "$LUCKAGENT_HOME" checkout -q -f -B main FETCH_HEAD \
+      && git -C "$LUCKAGENT_HOME" branch -q -u origin/main; }; then
+    rm -rf "$LUCKAGENT_HOME/.git"   # 只删本次新建的 .git，下次 update 重新转换
+    error "转换失败（多为连不上 GitHub：开启梯子并切到虚拟网卡 TUN 模式后重跑 luckagent update）。"
+    echo "  也可以用 tarball 覆盖升级："
+    echo "    curl -fsSL https://codeload.github.com/haoyan-yam/luckagent/tar.gz/refs/heads/main | tar -xz --strip-components=1 -C ${LUCKAGENT_HOME}"
+    echo "    cd ${LUCKAGENT_HOME} && bash install.sh"
+    exit 1
+  fi
+  success "已转成 git 检出（main，跟踪 origin/main）；.env、bots.json 等本机文件未改动"
+}
+
 cmd_update() {
   # Single update path: git pull + rebuild + skill sync + pm2 restart.
-if [[ ! -d "$LUCKAGENT_HOME/.git" ]]; then
-    error "$LUCKAGENT_HOME 不是 git 检出（无 .git，无法 git pull）。"
-    echo "  升级方法（用最新代码覆盖后重跑安装，幂等）："
-    echo "    curl -fsSL https://codeload.github.com/haoyan-yam/luckagent/tar.gz/refs/heads/main | tar -xz --strip-components=1 -C $LUCKAGENT_HOME"
-    echo "    cd $LUCKAGENT_HOME && bash install.sh"
-    exit 1
+  if [[ ! -d "$LUCKAGENT_HOME/.git" ]]; then
+    _adopt_git_checkout
   fi
 
   # Always re-exec from the repo copy before doing anything.

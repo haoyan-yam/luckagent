@@ -180,7 +180,14 @@ luckagent doctor
 ## `luckagent update` 失败
 
 - `git pull --ff-only` 拒绝合并：本地改过源码导致无法快进。先 `git stash`（或提交到自己的分支）再 update；
-- 安装目录不是 git 检出（get.sh 在无 git 机器上的 tarball 下载模式）：update 的拉码步骤不可用，改用 `curl -fsSL https://codeload.github.com/haoyan-yam/luckagent/tar.gz/refs/heads/main | tar -xz --strip-components=1 -C ~/luckagent` 覆盖最新代码后重跑 `bash install.sh`（幂等，含依赖/构建/重启）。
+- 报「不是 git 检出（无 .git，无法 git pull）」：一行命令在无 git 的新机器上用的是 tarball 下载。v0.7.22 起 update 会自动转成 git 检出；报这句说明 CLI 还是旧版，手动转一次（`.env`、`bots.json` 等不受影响）再 `luckagent update`：
+
+```bash
+cd ~/luckagent && git init -q && git remote add origin https://github.com/haoyan-yam/luckagent.git && git fetch --depth 1 origin main && git checkout -f -B main FETCH_HEAD && git branch -u origin/main
+```
+
+- 报「转换失败」：多为连不上 GitHub，开梯子的虚拟网卡（TUN）模式后重跑 `luckagent update`（`luckagent netcheck` 可先测网络）；半截的 `.git` 已自动清掉。
+- 报「本机也还没有可用的 git」：还没装 Xcode 命令行工具。`xcode-select --install` 装好后再 update，或按提示用 tarball 覆盖后重跑 `bash install.sh`。
 
 ## 做 PPT / Excel / PDF 时报缺包，或找不到 soffice / ffmpeg
 

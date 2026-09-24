@@ -174,12 +174,13 @@ luckagent doctor --json   # 本机体检（runtime/PM2/core/bots/voice/生图等
 > **网站自动化**：安装时默认装好 opencli；当时跳过的话，之后 `npm i -g @jackwener/opencli` 再重跑一次 `bash install.sh`
 >（幂等，几十秒）即启用其技能。用浏览器自动化前请先装好 Google Chrome 并登录 bot 要访问的网站。添加自定义技能见 [docs/claude-code-skills.md](docs/claude-code-skills.md)。
 >
-> **升级 Luckagent**：git 安装（含一行命令在有 git 机器上的安装）执行 `luckagent update`；
-> 无 `.git` 的安装（一行命令在裸机上的 tarball 下载模式）执行：
+> **升级 Luckagent**：执行 `luckagent update`。一行命令在裸机上是 tarball 下载模式，装出来没有 `.git`；
+> v0.7.22 起 update 发现没有 `.git`、而机器上已有 git（装 Homebrew 时带出的 Xcode 命令行工具）时，会先就地转成 git 检出
+>（tracked 文件换成最新版，`.env`、`bots.json`、`node_modules` 不动），再照常升级。
+> v0.7.21 及更早版本的 CLI 还不会转换，第一次手动转一次，之后 `luckagent update` 即可：
 >
 > ```bash
-> curl -fsSL https://codeload.github.com/haoyan-yam/luckagent/tar.gz/refs/heads/main | tar -xz --strip-components=1 -C ~/luckagent
-> cd ~/luckagent && bash install.sh
+> cd ~/luckagent && git init -q && git remote add origin https://github.com/haoyan-yam/luckagent.git && git fetch --depth 1 origin main && git checkout -f -B main FETCH_HEAD && git branch -u origin/main
 > ```
 
 ---

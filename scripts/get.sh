@@ -37,12 +37,7 @@ main() {
   # 已经装过：不重复取码，给升级路径。
   if [[ -f "$target/package.json" && -x "$target/bin/luckagent" ]]; then
     success "${target} 已经是一份 Luckagent 安装。"
-    if [[ -d "$target/.git" ]]; then
-      echo "  升级: luckagent update"
-    else
-      echo "  升级: curl -fsSL https://codeload.github.com/haoyan-yam/luckagent/tar.gz/refs/heads/main | tar -xz --strip-components=1 -C ${target}"
-      echo "        cd ${target} && bash install.sh"
-    fi
+    echo "  升级: luckagent update（没有 .git 的安装会先自动转成 git 检出）"
     echo "  重跑安装(幂等): cd ${target} && bash install.sh"
     return 0
   fi

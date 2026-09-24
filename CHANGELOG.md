@@ -2,6 +2,13 @@
 
 版本号 = 根 `package.json`（管理台总览页显示的就是它）。升级：`luckagent update`（git 安装）或重跑一行安装命令（tarball 安装）。git tag 与本文件同步打点。
 
+## v0.7.22 — 2026-09-24
+
+- **`luckagent update` 支持 tarball 安装**：一行命令在还没有 git 的新机器上会下载 tarball，装出来没有 `.git`，以前 update 直接报错、只能手动 tarball 覆盖再重跑安装。现在 update 发现没有 `.git`、而机器上已有可用的 git（macOS 上以 Xcode 命令行工具已装为准）时，先就地转成跟踪 `origin/main` 的浅克隆：tracked 文件换成最新版，`.env`、`bots.json`、`node_modules` 等被忽略的文件不动，然后用新版 CLI 照常升级。拉取失败时清掉半截的 `.git`、提示开梯子 TUN 模式或用 tarball 覆盖；还没有 git 时给出原来的 tarball 升级方法。`LUCKAGENT_REPO` 可覆盖拉取源
+- `get.sh` 对已有安装统一提示 `luckagent update`
+- 文档：README 升级表、INSTALL 升级说明（v0.7.21 及更早的 CLI 手动转换一次的命令）、常见问题排查、CLI 参考、技能体系
+- 测试：`tests/update-adopt-git.test.ts` 2 例（本地 file:// 仓库当上游：转换后文件与跟踪分支正确、本机文件保留、交给新版 CLI；拉取失败时清理并提示）
+
 ## v0.7.21 — 2026-09-24
 
 - **安装前先检查网络**：`install.sh` 开头并行测一遍 GitHub（代码仓库 / 文件下载）、Homebrew（软件索引 / 软件包）、npm、PyPI 的连通与速度（约 10 秒；下载最多 1 MB，低于 100 KB/s 标慢），Claude 安装包与 API 单独列出、只影响 Claude 引擎（API 返回 403 时提示出口地区不受支持）。有必需源连不上或很慢时停下来，提示开梯子并切到**虚拟网卡（TUN）模式**、推荐 Clash Verge——「系统代理」模式对终端里的 curl / git / npm / brew 不生效；检测到系统代理已开或终端设了代理变量时额外点明。可回车重测、输 s 忽略继续、q 退出；`--yes` 下不通过直接退出，`--skip-net-check` 跳过。代理地址里的账号密码不打印

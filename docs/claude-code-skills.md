@@ -58,7 +58,7 @@ npx skills add larksuite/cli --all -y -g   # 拉取 19 个官方技能到全局
 
 ## `luckagent update` 的技能同步
 
-`luckagent update`（仅 git 检出可用；无 `.git` 安装的等价操作是用 codeload tarball 覆盖后重跑 `bash install.sh`，见 INSTALL.md 升级一节）在拉代码、重建之后会做一轮技能同步：
+`luckagent update`（无 `.git` 的 tarball 安装会先自动转成 git 检出，见 INSTALL.md 升级一节）在拉代码、重建之后会做一轮技能同步：
 
 1. 仓库内置技能（`luckagent`、`voice`、`luckagent-team`、`image-gen`、`seedance-video`，检测到 opencli 二进制时还有 `opencli`）刷新到 `~/.claude/skills`，并清理旧版遗留的已退役文件；第三方 `frontend-slides` 若为 git 检出则拉取上游最新；
 2. 若本机装过 lark-cli：升级 `@larksuite/cli` 并刷新 19 个 `lark-*` 技能，再镜像进全局技能目录；
