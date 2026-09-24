@@ -197,6 +197,16 @@ if [[ ! -d "$LUCKAGENT_HOME/.git" ]]; then
     fi
   fi
 
+  # opencli（网站自动化）：同样只升级经 npm 全局安装的那份（install.sh 的装法）
+  if command -v opencli &>/dev/null && npm ls -g --depth=0 @jackwener/opencli &>/dev/null; then
+    info "Updating opencli..."
+    if npm install -g @jackwener/opencli@latest 2>/dev/null; then
+      success "opencli updated ($(opencli --version 2>/dev/null | head -1 || echo 'version unknown'))"
+    else
+      warn "opencli update failed; Luckagent update will continue"
+    fi
+  fi
+
   # Update lark-cli and its AI Agent skills only if previously installed.
   # New installs still opt in via install.sh; updates keep existing setups fresh.
   local has_lark_skills=false
@@ -612,6 +622,34 @@ check("video_gen", has_ark and not tos_partial,
       False,
       {"hasArkApiKey": has_ark, "tos": {**tos_keys, "region": env("TOS_REGION") or "cn-beijing"},
        "seedanceModel": env("SEEDANCE_MODEL")})
+
+# 网站自动化（opencli 技能）：opencli 驱动本机已登录的 Google Chrome
+opencli_bin = shutil.which("opencli")
+opencli_version = None
+if opencli_bin:
+    v = run([opencli_bin, "--version"], timeout=10)
+    opencli_version = (v["stdout"].splitlines() or [None])[0] if v["ok"] else None
+chrome_paths = [Path("/Applications/Google Chrome.app"), Path.home() / "Applications/Google Chrome.app"]
+chrome_found = next((str(p) for p in chrome_paths if p.exists()), None) or shutil.which("google-chrome") or shutil.which("google-chrome-stable")
+opencli_skill = (Path.home() / ".claude/skills/opencli/SKILL.md").exists()
+if not opencli_bin:
+    oc_ok, oc_code = False, "opencli_missing"
+    oc_diag = "opencli not installed — bots cannot scrape / search websites or drive the browser."
+    oc_action = "npm i -g @jackwener/opencli, then re-run bash install.sh (or luckagent update) to enable its skill."
+elif not chrome_found:
+    oc_ok, oc_code = False, "chrome_missing"
+    oc_diag = f"opencli {opencli_version or ''} installed, but Google Chrome was not found — browser automation and logged-in site commands will fail."
+    oc_action = "Install Google Chrome (https://www.google.com/chrome/), log in to the sites the bots use, then run: opencli doctor"
+elif not opencli_skill:
+    oc_ok, oc_code = False, "opencli_skill_missing"
+    oc_diag = "opencli and Chrome are present, but the opencli skill is not synced to ~/.claude/skills."
+    oc_action = "Run luckagent update (or re-run bash install.sh) to sync the skill."
+else:
+    oc_ok, oc_code = True, "ok"
+    oc_diag = f"opencli {opencli_version or ''} with Google Chrome; skill enabled."
+    oc_action = "If browser commands hang, run: opencli doctor"
+check("opencli", oc_ok, oc_code, oc_diag, oc_action, False,
+      {"binary": opencli_bin, "version": opencli_version, "chrome": chrome_found, "skillSynced": opencli_skill})
 
 # 办公与媒体工具链（install.sh 的「办公与媒体工具链」段装的东西）
 venv_py = Path.home() / ".luckagent" / "venv" / "bin" / "python"

@@ -54,7 +54,7 @@ luckagent logs -n 200          # 先回放最近 200 行
 1. `git pull --ff-only`（要求安装目录是 git 检出；CLI 自身被更新时会自动用新版重跑）；
 2. `npm install` + `npm run build`，并把 `requirements.txt` 同步进 `~/.luckagent/venv`（venv 不存在则跳过；brew 侧的 LibreOffice / ffmpeg 等只由 `install.sh` 安装）；
 3. 复制 CLI 到 `~/.local/bin`；
-4. 同步技能（详见[技能体系](claude-code-skills.md#luckagent-update-的技能同步)），并清理旧版遗留的已退役技能文件；若 Codex CLI 是经 npm 全局安装的（`install.sh` 的装法），顺带升级到最新版；工作区根目录缺共用规范 `CLAUDE.md` 时补部署；
+4. 同步技能（详见[技能体系](claude-code-skills.md#luckagent-update-的技能同步)），并清理旧版遗留的已退役技能文件；若 Codex CLI、opencli 是经 npm 全局安装的（`install.sh` 的装法），顺带升级到最新版；工作区根目录缺共用规范 `CLAUDE.md` 时补部署；
 5. `pm2 restart` 两个进程 + `pm2 save`。
 
 ### `luckagent doctor [--json]`
@@ -70,6 +70,7 @@ luckagent logs -n 200          # 先回放最近 200 行
 | `bots_config` | bots.json 可解析、各 bot 工作目录是否存在 |
 | `voice_defaults` | TTS 凭证是否配置 |
 | `lark_cli` | lark-cli 是否安装、是否至少有一个 bot 的 app profile |
+| `opencli` | 网站自动化是否可用：opencli 是否安装（及版本）、Google Chrome 是否存在、opencli 技能是否已同步；装了 opencli 却没有 Chrome 会报 `chrome_missing` |
 | `video_gen` | 视频生成是否开通：有没有 `ARK_API_KEY`；TOS 是否配齐（缺 TOS 不算失败，只提示本地参考视频 / 音频不可用；只配了一半会报 `tos_partial`） |
 | `image_gen` | 生图后端是否可用：按 `IMAGE_GEN_PROVIDER` > Codex 已登录 > `ARK_API_KEY` 判定生效后端，列出 Codex 版本、登录状态与是否有 Seedream 兜底；检测到个人装的 `~/.claude/skills/codex-image-gen` 会提示与内置技能触发重叠 |
 | `office_media_toolchain` | 办公与媒体工具链是否齐全：ffmpeg / soffice / pdftotext 三个二进制、Noto Sans CJK SC 字体、`~/.luckagent/venv` 及其 11 个基础包能否导入；缺项时重跑 `bash install.sh` 只补缺的 |

@@ -103,6 +103,7 @@
 - **跨 bot 协作**：共享记忆沉淀知识、技能中心复用方法、agent 总线让 bot 之间互相委托任务，也支持跨主机 peers 联邦。
 - **办公与媒体工具链**：安装脚本一次装齐 bot 产出所需的 Python 基础包（python-pptx / openpyxl / Pillow / pandas / PyMuPDF 等，独立 venv 不碰系统 Python）、LibreOffice、ffmpeg、poppler 与 Noto CJK 字体；`luckagent doctor` 可检查是否齐全。
 - **生图与视频**：生图有 ChatGPT 订阅就走本机 Codex CLI 内置的生图（不需要 API key），没有订阅用火山 Seedream，Codex 未登录或撞订阅额度时自动改用 Seedream；视频用火山 Seedance（文生视频、首帧图生视频、参考图 / 视频 / 音频），与 Seedream 共用一把火山方舟 key。用群里发来的视频 / 音频当参考素材时需要可选的火山 TOS，素材用完自动删除。安装脚本会代装 Codex 并引导登录、询问火山 key，之后在管理台随时切换或补填。
+- **网站自动化**：安装时默认装好 opencli，bot 能抓取、搜索 155+ 个网站（社媒、电商、资讯等），并驱动本机已登录的 Chrome 操作网页。
 - **语音**：文本转语音（豆包 / OpenAI / ElevenLabs / Edge TTS），可配置语音回复。
 
 ## 系统要求
@@ -110,6 +111,7 @@
 - **macOS**（目标机型 Mac mini / MacBook，Apple Silicon）；安装脚本会自动补齐 Homebrew、node 22、PM2、lark-cli，以及办公与媒体工具链（ffmpeg / LibreOffice / poppler / Noto CJK 字体 / Python 基础包）
 - 一个**飞书企业自建应用**（安装后管理台的「接入向导」会手把手带你创建，或先看[配置指南](docs/feishu-app-setup.md)）
 - 至少一种**引擎认证**：Claude 订阅登录或 `ANTHROPIC_API_KEY`；或 DeepSeek / MiniMax 的 API key（`DEEPSEEK_API_KEY` / `MINIMAX_API_KEY`，零 CLI 安装）。详见[引擎配置](docs/engines.md)
+- 网站自动化（可选）：Google Chrome，并登录 bot 要访问的网站（opencli 由安装脚本代装）
 - 生图 / 视频（可选）：生图用 ChatGPT 订阅（走 Codex CLI，安装脚本代装）或火山方舟 `ARK_API_KEY`；视频需要火山方舟 `ARK_API_KEY`；参考本地视频 / 音频再加火山 TOS
 
 ## 安装

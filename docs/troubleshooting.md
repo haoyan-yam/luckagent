@@ -144,6 +144,19 @@ luckagent doctor
 - **参考群里发的视频 / 音频时失败**：本地素材要先传到 TOS。没配 TOS 时脚本在提交前就报错，不会扣费；配了还失败就在管理台点「测试 TOS」，按提示检查密钥、桶名、地域和桶权限（需要上传、读取、删除三项）。
 - **TOS 桶里留了 `seedance-refs/` 下的文件**：正常情况下素材在任务结束后自动删除；轮询超时（任务可能还在跑）或加了 `--keep-refs` 时会保留，可在控制台手动清理。
 
+## 网站抓取 / 浏览器自动化失败
+
+```bash
+luckagent doctor
+```
+
+看 `opencli` 一项：
+
+- **`opencli_missing`**：没装 opencli。执行 `npm i -g @jackwener/opencli`，再重跑 `bash install.sh`（或 `luckagent update`）启用技能。
+- **`chrome_missing`**：装了 opencli 但本机没有 Google Chrome。装好 Chrome，登录 bot 要访问的网站。
+- **命令卡住或报浏览器连接失败**：在终端跑 `opencli doctor` 检查浏览器桥接，必要时 `opencli daemon restart`。
+- **需要登录的站点报错**：登录要人来做——在这台 Mac 的 Chrome 里登录对应网站（或按 `opencli <站点> login` 的提示操作），bot 不会替你输入账号密码。
+
 ## `luckagent update` 失败
 
 - `git pull --ff-only` 拒绝合并：本地改过源码导致无法快进。先 `git stash`（或提交到自己的分支）再 update；

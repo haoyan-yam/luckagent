@@ -59,6 +59,7 @@ bash install.sh
 | 生成 `.env` | 自动生成随机 `API_SECRET`（管理台登录密钥） | 按所选引擎询问认证——Claude：`ANTHROPIC_API_KEY` 或订阅登录提示；DeepSeek / MiniMax：对应 API key 并自动设为默认引擎，均可回车跳过、之后编辑 `.env` 补填 |
 | 生成 `bots.json` | 空列表——机器人稍后用管理台向导创建 | 无 |
 | 技能同步 | 内置技能装进全局目录；并从 GitHub 拉取 frontend-slides（HTML 演示文稿生成，第三方 MIT） | 无；拉取失败仅警告不影响安装 |
+| opencli（默认安装） | 询问是否安装网站自动化工具 opencli（回车 = 装，`npm i -g @jackwener/opencli` 最新版），装好即启用 opencli 技能；同时检查 Google Chrome——opencli 要驱动本机已登录的 Chrome，没装会提醒并列入结尾待办。`--yes` 按默认安装，`--no-system` 跳过 | 回车安装，或输 n 跳过 |
 | lark-cli（必装） | 自动安装飞书官方 CLI + 19 个 AI 技能（文档/表格/日历操作、群日报拉消息都依赖它） | 无；万一安装失败，结尾会打印待办命令 |
 | 生图与视频 | ① 有没有 ChatGPT 订阅：有就代装 Codex CLI（`@openai/codex` 最新版）并跑 `codex login`（打开浏览器授权）；② 火山方舟 key（视频必需，没用 Codex 时也用它生图；输入不回显）；③ 填了火山 key 再问要不要配 TOS（默认否），配了当场做一次上传 + 删除的连通测试。结果写进 `.env`，重跑时已配置的项跳过；`--yes` 只检测不代装 | 回答 y/n、浏览器里授权、粘贴 key；都可跳过，结尾分别打印生图 / 视频待办 |
 | 办公与媒体工具链（必装） | brew 安装 ffmpeg、poppler、LibreOffice、Noto Sans CJK SC 字体，并用 python@3.13 建 `~/.luckagent/venv` 装入 `requirements.txt`（python-pptx / openpyxl / Pillow / numpy / pandas / python-docx / lxml / matplotlib / xlsxwriter / PyMuPDF / edge-tts）——bot 产出 PPT/Excel/Word/PDF/图片/语音都靠它们 | 无；单项失败只警告，结尾打印待办命令 |
@@ -169,8 +170,8 @@ luckagent doctor --json   # 本机体检（runtime/PM2/core/bots/voice/生图等
 
 详细说明见 [docs/directory-layout.md](docs/directory-layout.md)。
 
-> **可选增强**：安装 opencli（网站自动化工具）等第三方二进制后，重跑一次 `bash install.sh`
->（幂等，几十秒），对应技能会自动启用；添加自定义技能见 [docs/claude-code-skills.md](docs/claude-code-skills.md)。
+> **网站自动化**：安装时默认装好 opencli；当时跳过的话，之后 `npm i -g @jackwener/opencli` 再重跑一次 `bash install.sh`
+>（幂等，几十秒）即启用其技能。用浏览器自动化前请先装好 Google Chrome 并登录 bot 要访问的网站。添加自定义技能见 [docs/claude-code-skills.md](docs/claude-code-skills.md)。
 >
 > **升级 Luckagent**：git 安装（含一行命令在有 git 机器上的安装）执行 `luckagent update`；
 > 无 `.git` 的安装（一行命令在裸机上的 tarball 下载模式）执行：

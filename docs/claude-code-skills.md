@@ -21,7 +21,7 @@
 | --- | --- | --- |
 | `luckagent` | **CLI 参考技能**：教 agent 用 `luckagent memory / skills / agents / inbox / teams / schedule / talk / voice` 等全部命令，是 bot 融入协作体系的说明书 | `packages/skills/luckagent/` |
 | `voice` | 文本转语音：`luckagent voice tts` 的用法（生成 MP3、发语音） | `src/skills/voice/` |
-| `opencli`（条件启用） | 把 155+ 网站变成 CLI、驱动本机已登录的 Chrome 做浏览器自动化。**仅当检测到 `opencli` 二进制时才安装**——之后装了二进制，重跑一次 `bash install.sh`（非 git 检出）或 `luckagent update`（git 检出）即启用；还需本机装 Chrome 并登录目标网站 | `src/skills/opencli/` |
+| `opencli`（默认安装） | 把 155+ 网站变成 CLI、驱动本机已登录的 Chrome 做浏览器自动化。安装脚本**默认代装** opencli 二进制（可拒绝），**检测到二进制才启用本技能**——当时跳过的，之后装好再重跑一次 `bash install.sh` 或 `luckagent update` 即启用。还需本机装 **Google Chrome** 并登录目标网站（安装脚本与 `luckagent doctor` 会检查） | `src/skills/opencli/` |
 | `frontend-slides`（第三方 · MIT） | 生成零依赖、动画丰富的单文件 HTML 演示文稿，或把 PPT/PPTX 转成网页（转换用的 `python-pptx` 已随安装脚本预装在 `~/.luckagent/venv`）。安装时从上游 [zarazhangrui/frontend-slides](https://github.com/zarazhangrui/frontend-slides) 拉取到 `~/.claude/skills/`，`install.sh` / `luckagent update` 都会跟进上游更新 | 上游仓库（不入本仓） |
 | `seedance-video` | 生成视频（火山方舟 Seedance）：文生视频、首帧图生视频、多模态参考（参考图 / 视频 / 音频），可带原生音频。生成前先向用户确认最终 prompt 与参数（慢、按分辨率 × 时长计费），默认时长上限 5 秒。需要 `ARK_API_KEY`（与 image-gen 的 Seedream 共用）；没配时**照样安装**，脚本会报「视频生成未开通」、bot 如实转告。本地参考视频 / 音频需要可选的 TOS，素材在任务结束后自动删除 | `src/skills/seedance-video/` |
 | `image-gen` | 文生图 / 图生图 / 改图 / 透明底，**统一入口 `gen.py`，两个后端**：本机 Codex CLI 已登录就走它内置的 image_gen（ChatGPT 订阅额度，无需 key，默认首选）；否则配了 `ARK_API_KEY` 走火山 Seedream（4K、组图，需在方舟控制台开通模型）。`.env` 的 `IMAGE_GEN_PROVIDER` 可固定后端；Codex 未登录或撞额度时有火山 key 就自动兜底。含提示词打法参考与绿幕抠图 | `src/skills/image-gen/` |
@@ -62,7 +62,7 @@ npx skills add larksuite/cli --all -y -g   # 拉取 19 个官方技能到全局
 
 1. 仓库内置技能（`luckagent`、`voice`、`luckagent-team`、`image-gen`、`seedance-video`，检测到 opencli 二进制时还有 `opencli`）刷新到 `~/.claude/skills`，并清理旧版遗留的已退役文件；第三方 `frontend-slides` 若为 git 检出则拉取上游最新；
 2. 若本机装过 lark-cli：升级 `@larksuite/cli` 并刷新 19 个 `lark-*` 技能，再镜像进全局技能目录；
-3. 若 Codex CLI 是经 npm 全局安装的（`install.sh` 的装法），升级到最新版；
+3. 若 Codex CLI、opencli 是经 npm 全局安装的（`install.sh` 的装法），升级到最新版；
 4. 工作区根目录（`.env` 的 `LUCKAGENT_PROJECTS_DIR`，默认 `~/projects`）缺共用规范 `CLAUDE.md` 时补部署——已有的**不会覆盖**，想换新版就删掉它再跑一次。
 
 各 bot 工作目录**不再**镜像共享技能（bot 会话直接加载全局 `~/.claude/skills`），各 bot 自己的 `CLAUDE.md` / `AGENTS.md` 也不会被 update 改动。

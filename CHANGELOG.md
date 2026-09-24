@@ -2,6 +2,13 @@
 
 版本号 = 根 `package.json`（管理台总览页显示的就是它）。升级：`luckagent update`（git 安装）或重跑一行安装命令（tarball 安装）。git tag 与本文件同步打点。
 
+## v0.7.20 — 2026-09-24
+
+- **安装脚本默认代装 opencli，并检查 Google Chrome**：盘点新增 Chrome 一行；新增 opencli 一步——已装则显示版本，未装则询问「安装 opencli 吗？」（默认是，`npm i -g @jackwener/opencli` 最新版），装好即在同一次安装里启用 opencli 技能。opencli 要驱动本机已登录的 Chrome，装了 opencli 却没有 Chrome 时给出提醒并列入结尾「网站自动化待办」；Chrome 只检测不代装。`--yes` 按默认安装，`--no-system` 跳过
+- `luckagent update` 升级经 npm 全局安装的 opencli；`luckagent doctor` 新增 `opencli` 检查（未安装 / 缺 Chrome / 技能未同步，各附修复命令）
+- 文档：README 特性新增「网站自动化」、系统要求加 Chrome（可选）；INSTALL 安装步骤、技能体系、CLI 参考、常见问题排查（网站抓取 / 浏览器自动化失败）同步更新
+- 验证：安装脚本该段按 6 种情况（安装 / 拒绝 / 无人值守 / npm 失败 / 缺 Chrome / --no-system）模拟；doctor 本机与去掉 opencli 两种情况实测
+
 ## v0.7.19 — 2026-09-23
 
 - **新 logo：七巧板拼成的小机器人**：按标准七巧板几何重绘为 SVG（中三角天线、两块大三角头部、两块小三角耳朵、正方形与平行四边形嘴巴，外加两只眼睛），浅色 / 深色两版；`scripts/make-logo.py` 可重新生成（`docs/images/logo*.svg|png`）。管理台加网站图标，侧边栏与登录页的 🍀 换成新 logo

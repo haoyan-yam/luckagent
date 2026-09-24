@@ -136,13 +136,20 @@ fi
 # 第二段：工具与引擎盘点（信息 + 可选代装，全部可跳过）
 # ============================================================
 _mark(){ command -v "$1" &>/dev/null && echo "✓ 已安装" || echo "✗ 未安装"; }
+# Google Chrome：opencli 的浏览器自动化与需登录站点的命令要驱动本机已登录的 Chrome
+_chrome_installed() {
+  [[ -d "/Applications/Google Chrome.app" || -d "$HOME/Applications/Google Chrome.app" ]] \
+    || command -v google-chrome &>/dev/null || command -v google-chrome-stable &>/dev/null
+}
+_chrome_mark(){ _chrome_installed && echo "✓ 已安装" || echo "✗ 未安装"; }
 echo ""
 echo -e "${BOLD}—— 工具与引擎盘点 ——${NC}"
 echo "  引擎（bot 按 bots.json 选择，至少配一种认证即可干活）:"
 echo "    Claude Code CLI   $(_mark claude)    （订阅登录路线；或稍后在 .env 填 ANTHROPIC_API_KEY 走 API 路线）"
 echo "    DeepSeek          无需装 CLI    （可选引擎；只要 API key，见下方申请入口）"
 echo "  增强工具:"
-echo "    opencli           $(_mark opencli)    （网站自动化；检测到即自动启用其技能，之后安装的话重跑一次 bash install.sh 生效）"
+echo "    opencli           $(_mark opencli)    （网站自动化：抓取 / 搜索 155+ 网站、驱动浏览器；稍后询问并代装）"
+echo "    Google Chrome     $(_chrome_mark)    （opencli 驱动已登录的 Chrome 做浏览器自动化；需自行安装）"
 echo "    lark-cli          $(_mark lark-cli)    （必备，稍后自动安装）"
 echo "    Codex CLI         $(_mark codex)    （生图首选：有 ChatGPT 订阅即可，稍后询问并代装）"
 echo "  需要申请的 key（安装中可粘贴，也可之后编辑 .env）:"
@@ -305,6 +312,25 @@ case ":$PATH:" in
     PATH_JUST_ADDED=1
     ;;
 esac
+
+# ---- opencli（网站自动化；默认代装）----
+# 把 155+ 网站变成 CLI、驱动本机已登录的 Chrome 做浏览器自动化。装了才同步 opencli 技能。
+OPENCLI_TODO=""
+if command -v opencli &>/dev/null; then
+  success "opencli $(opencli --version 2>/dev/null | head -1)"
+elif [[ "$NO_SYSTEM" == "true" ]]; then
+  info "--no-system：不代装 opencli（需要时手动 npm i -g @jackwener/opencli 后重跑本脚本）"
+elif ask_yn "安装 opencli 吗？（网站自动化：让 bot 抓取 / 搜索网站、操作浏览器）" y; then
+  info "安装 opencli（@jackwener/opencli 最新版）..."
+  npm install -g @jackwener/opencli@latest \
+    || { npm install -g --prefix "$HOME/.local" @jackwener/opencli@latest && export PATH="$HOME/.local/bin:$PATH"; } \
+    || { warn "opencli 安装失败"; OPENCLI_TODO="npm i -g @jackwener/opencli，然后重跑 bash install.sh 启用其技能"; }
+  if command -v opencli &>/dev/null; then success "opencli $(opencli --version 2>/dev/null | head -1) 已安装"; fi
+fi
+if command -v opencli &>/dev/null && ! _chrome_installed; then
+  warn "opencli 的浏览器自动化需要 Google Chrome，本机没检测到"
+  OPENCLI_TODO="安装 Google Chrome（https://www.google.com/chrome/），并登录 bot 要访问的网站；之后可跑 opencli doctor 检查浏览器连接"
+fi
 
 # ---- 技能同步 ----
 info "同步技能到 ~/.claude/skills ..."
@@ -723,9 +749,12 @@ if [[ -n "$VIDEO_TODO" ]]; then
   echo -e "  ${YELLOW}视频待办${NC}: $VIDEO_TODO"
   echo ""
 fi
+if [[ -n "$OPENCLI_TODO" ]]; then
+  echo -e "  ${YELLOW}网站自动化待办${NC}: $OPENCLI_TODO"
+  echo ""
+fi
 echo "  可选能力（编辑 .env 填 key 后 luckagent restart 生效）:"
 echo "     语音TTS: VOLCENGINE_TTS_*（不填则用免费 Edge TTS）"
-echo "  可选增强: 安装 opencli（网站自动化）后重跑一次 bash install.sh，其技能自动启用；"
 echo ""
 if [[ "${PATH_JUST_ADDED:-}" == "1" ]]; then
   echo "  ⚠️  当前终端还找不到 luckagent 命令的话，先执行:  source ~/.zprofile  （或新开终端）"
