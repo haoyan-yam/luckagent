@@ -2,6 +2,14 @@
 
 版本号 = 根 `package.json`（管理台总览页显示的就是它）。升级：`luckagent update`（git 安装）或重跑一行安装命令（tarball 安装）。git tag 与本文件同步打点。
 
+## v0.7.21 — 2026-09-24
+
+- **安装前先检查网络**：`install.sh` 开头并行测一遍 GitHub（代码仓库 / 文件下载）、Homebrew（软件索引 / 软件包）、npm、PyPI 的连通与速度（约 10 秒；下载最多 1 MB，低于 100 KB/s 标慢），Claude 安装包与 API 单独列出、只影响 Claude 引擎（API 返回 403 时提示出口地区不受支持）。有必需源连不上或很慢时停下来，提示开梯子并切到**虚拟网卡（TUN）模式**、推荐 Clash Verge——「系统代理」模式对终端里的 curl / git / npm / brew 不生效；检测到系统代理已开或终端设了代理变量时额外点明。可回车重测、输 s 忽略继续、q 退出；`--yes` 下不通过直接退出，`--skip-net-check` 跳过。代理地址里的账号密码不打印
+- **下载不再无限挂住**：安装中的 git（含 Homebrew 官方安装器）与 curl 低于 1 KB/s 持续 60 秒即失败退出，报错提示开 TUN 后重跑；一行命令 `get.sh` 同样处理，tarball 下载失败时清掉解压了一半的目录，避免重跑被误判为「已安装」
+- 新增 `luckagent netcheck`（别名 `net`），装好后随时复测
+- 文档：README 系统要求与安装说明、INSTALL（网络要求、阶段表、常见问题）、常见问题排查（安装卡住不动）、CLI 参考
+- 测试：`tests/net-check.test.ts` 4 例（经不可达代理离线跑真实脚本：不通时的提示与退出码、代理密码不外露、交互的重测 / 继续 / 退出）
+
 ## v0.7.20 — 2026-09-24
 
 - **安装脚本默认代装 opencli，并检查 Google Chrome**：盘点新增 Chrome 一行；新增 opencli 一步——已装则显示版本，未装则询问「安装 opencli 吗？」（默认是，`npm i -g @jackwener/opencli` 最新版），装好即在同一次安装里启用 opencli 技能。opencli 要驱动本机已登录的 Chrome，装了 opencli 却没有 Chrome 时给出提醒并列入结尾「网站自动化待办」；Chrome 只检测不代装。`--yes` 按默认安装，`--no-system` 跳过

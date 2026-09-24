@@ -80,6 +80,14 @@ luckagent doctor           # 人类可读
 luckagent doctor --json    # agent 可读
 ```
 
+### `luckagent netcheck`（别名 `net`）
+
+并行测一遍安装与升级要用的海外源：GitHub 代码仓库与文件下载、Homebrew 软件索引与软件包、npm、PyPI（测连通与下载速度，低于 100 KB/s 标 ⚠），以及 Claude 安装包与 API（只影响 Claude 引擎；API 返回 403 表示当前出口地区不受支持）。有问题时提示开梯子的虚拟网卡（TUN）模式。退出码 0 = 必需源正常，1 = 有问题。与 `install.sh` 开头的网络检查是同一个脚本（`scripts/net-check.sh`，不带 `--report` 时可交互重测）。
+
+```bash
+luckagent netcheck
+```
+
 ---
 
 ## 二、桥接 API（localhost:9100）

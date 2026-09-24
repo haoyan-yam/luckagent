@@ -1419,6 +1419,7 @@ print_help() {
   echo "    luckagent logs       View live logs (--core for core; pass -n 100 etc.)"
   echo "    luckagent status     Show PM2 process status"
   echo "    luckagent doctor     Agent-readable runtime diagnostics (--json)"
+  echo "    luckagent netcheck   Test GitHub / Homebrew / npm / PyPI / Claude reachability & speed"
   echo ""
   echo "  Bridge daemon API (localhost:9100):"
   echo "    luckagent bots                       List all bots (local + peer)"
@@ -1444,6 +1445,7 @@ case "${1:-}" in
   logs|log)     shift; cmd_logs "$@" ;;
   status|st)    cmd_status ;;
   doctor)       shift; cmd_doctor "$@" ;;
+  netcheck|net) bash "$LUCKAGENT_HOME/scripts/net-check.sh" --report ;;
   bots|b|bot|talk|t|schedule|sched|sc|peers|p|stats|metrics|m|voice|v|teams|team|health|h)
                 cmd_bridge_api "$@" ;;
   ""|help|--help|-h) print_help ;;

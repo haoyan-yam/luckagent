@@ -23,6 +23,11 @@ main() {
   success() { echo -e "${GREEN}[luckagent]${NC} $*"; }
   fail()    { echo -e "${RED}[luckagent]${NC} $*" >&2; exit 1; }
 
+  # 网络不通时 git / curl 默认会一直挂着：低于 1 KB/s 持续 60 秒就失败退出，给出提示。
+  export GIT_HTTP_LOW_SPEED_LIMIT="${GIT_HTTP_LOW_SPEED_LIMIT:-1000}"
+  export GIT_HTTP_LOW_SPEED_TIME="${GIT_HTTP_LOW_SPEED_TIME:-60}"
+  local net_hint="多为连不上 GitHub：开启梯子并切到「虚拟网卡模式（TUN）」（推荐 Clash Verge）后重跑本命令。"
+
   [[ "$(uname -s)" == "Darwin" ]] || fail "Luckagent 目前只支持 macOS（目标机型 Mac mini / MacBook）。"
 
   local target="${LUCKAGENT_DIR:-${LUCKAGENT_HOME:-$HOME/luckagent}}"
@@ -51,7 +56,7 @@ main() {
   mkdir -p "$(dirname "$target")"
   if xcode-select -p &>/dev/null && command -v git &>/dev/null; then
     git clone --depth 1 --branch "$ref" "$repo" "$target" \
-      || fail "git clone 失败。检查网络后重跑本命令即可。"
+      || fail "git clone 失败。${net_hint}"
   else
     local slug tarball
     slug="${repo#https://github.com/}"; slug="${slug%.git}"
@@ -60,8 +65,8 @@ main() {
       *)       tarball="https://codeload.github.com/$slug/tar.gz/refs/heads/$ref" ;;
     esac
     mkdir -p "$target"
-    curl -fsSL "$tarball" | tar -xz --strip-components=1 -C "$target" \
-      || fail "下载失败（${tarball}）。检查网络后重试。"
+    curl -fsSL --connect-timeout 15 --speed-limit 1000 --speed-time 60 "$tarball" | tar -xz --strip-components=1 -C "$target" \
+      || { rm -rf "$target"; fail "下载失败（${tarball}）。${net_hint}"; }
   fi
   success "代码就绪: ${target}"
 

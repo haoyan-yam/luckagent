@@ -5,6 +5,7 @@
 #   bash install.sh --yes        # 全部用默认值，不提问
 #   bash install.sh --no-system  # 跳过系统级步骤（Homebrew/node/pm2/全局 npm/办公媒体工具链），
 #                                # 只装项目本体——用于沙箱测试或已备齐环境的机器
+#   bash install.sh --skip-net-check  # 跳过开头的网络检查（确认网络没问题时）
 #
 # 安装完成后：浏览器打开 http://localhost:9100/admin，用打印出的 API_SECRET 登录，
 # 走「飞书接入向导」创建第一个机器人。
@@ -13,12 +14,14 @@ set -euo pipefail
 
 YES=false
 NO_SYSTEM=false
+SKIP_NET_CHECK=false
 for arg in "$@"; do
   case "$arg" in
     --yes|-y)      YES=true ;;
     --no-system)   NO_SYSTEM=true ;;
+    --skip-net-check) SKIP_NET_CHECK=true ;;
     --help|-h)
-      sed -n '2,11p' "$0"; exit 0 ;;
+      sed -n '2,12p' "$0"; exit 0 ;;
     *) echo "未知参数: ${arg}（--help 查看用法）"; exit 1 ;;
   esac
 done
@@ -76,6 +79,25 @@ open(p, 'w').write('\n'.join(lines) + '\n')
 PYEOF
 }
 
+# ---- 网络检查 ----
+# 安装要从 GitHub / Homebrew / npm / PyPI 下载；网络不通时这些下载不报错、只是挂住不动。
+# 先把这些源测一遍，有问题就停下来提示开梯子的 TUN 模式，别装到一半卡死。
+if [[ "$SKIP_NET_CHECK" != "true" ]]; then
+  if [[ "$YES" == "true" ]]; then
+    bash scripts/net-check.sh --report \
+      || { error "网络检查未通过（见上）。开好梯子 TUN 模式后重跑；确认网络没问题可加 --skip-net-check"; exit 1; }
+  else
+    bash scripts/net-check.sh || { info "已退出。开好梯子 TUN 模式后重跑: bash install.sh"; exit 1; }
+  fi
+  echo ""
+fi
+
+# 下载兜底：网络在安装中途变差时，git / curl 低于 1 KB/s 持续 60 秒就失败退出，而不是永远挂着
+# （env 会传给 Homebrew 官方安装器里的 git）。安装可重复执行，失败后开好网络重跑即可。
+export GIT_HTTP_LOW_SPEED_LIMIT="${GIT_HTTP_LOW_SPEED_LIMIT:-1000}"
+export GIT_HTTP_LOW_SPEED_TIME="${GIT_HTTP_LOW_SPEED_TIME:-60}"
+CURL_GUARD=(--connect-timeout 15 --speed-limit 1000 --speed-time 60)
+
 # ============================================================
 # 第一段：系统前置（Homebrew / node 22 / git / pm2）
 # ============================================================
@@ -89,11 +111,11 @@ if [[ "$NO_SYSTEM" != "true" ]]; then
   if ! command -v brew &>/dev/null && [[ "$(uname -s)" == "Darwin" ]]; then
     info "未检测到 Homebrew，开始安装（会提示输入开机密码）..."
     if [[ "$YES" == "true" ]]; then
-      NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" \
-        || { error "Homebrew 安装失败。手动安装后重跑：https://brew.sh"; exit 1; }
+      NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL "${CURL_GUARD[@]}" https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" \
+        || { error "Homebrew 安装失败。多为网络问题：开好梯子 TUN 模式后重跑 bash install.sh（可重复执行）"; exit 1; }
     else
-      /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" \
-        || { error "Homebrew 安装失败。手动安装后重跑：https://brew.sh"; exit 1; }
+      /bin/bash -c "$(curl -fsSL "${CURL_GUARD[@]}" https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" \
+        || { error "Homebrew 安装失败。多为网络问题：开好梯子 TUN 模式后重跑 bash install.sh（可重复执行）"; exit 1; }
     fi
     # Apple Silicon 默认装在 /opt/homebrew，本 shell 里先接上
     if [[ -x /opt/homebrew/bin/brew ]]; then eval "$(/opt/homebrew/bin/brew shellenv)"; fi
@@ -174,7 +196,7 @@ fi
 
 if [[ "$ENGINE_CHOICE" == "claude" ]] && [[ "$NO_SYSTEM" != "true" ]] && ! command -v claude &>/dev/null; then
   if ask_yn "现在安装 Claude Code CLI（订阅登录路线需要它；纯 API key 路线可跳过）？" y; then
-    curl -fsSL https://claude.ai/install.sh | bash \
+    curl -fsSL "${CURL_GUARD[@]}" https://claude.ai/install.sh | bash \
       && success "Claude Code CLI 已安装——稍后在终端跑一次 claude 完成登录（走 API key 路线则无需登录）" \
       || warn "Claude Code CLI 安装失败，可稍后手动: curl -fsSL https://claude.ai/install.sh | bash"
   fi

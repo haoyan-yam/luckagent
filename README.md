@@ -109,6 +109,7 @@
 ## 系统要求
 
 - **macOS**（目标机型 Mac mini / MacBook，Apple Silicon）；安装脚本会自动补齐 Homebrew、node 22、PM2、lark-cli，以及办公与媒体工具链（ffmpeg / LibreOffice / poppler / Noto CJK 字体 / Python 基础包）
+- **能访问海外源的网络**：安装要从 GitHub、Homebrew、npm、PyPI 下载，国内网络请开梯子并切到**虚拟网卡（TUN）模式**（推荐 Clash Verge）——普通「系统代理」模式对终端里的下载不生效。安装脚本开头会先测一遍，有问题会停下来提示
 - 一个**飞书企业自建应用**（安装后管理台的「接入向导」会手把手带你创建，或先看[配置指南](docs/feishu-app-setup.md)）
 - 至少一种**引擎认证**：Claude 订阅登录或 `ANTHROPIC_API_KEY`；或 DeepSeek / MiniMax 的 API key（`DEEPSEEK_API_KEY` / `MINIMAX_API_KEY`，零 CLI 安装）。详见[引擎配置](docs/engines.md)
 - 网站自动化（可选）：Google Chrome，并登录 bot 要访问的网站（opencli 由安装脚本代装）
@@ -136,6 +137,8 @@ cd ~/luckagent && bash install.sh
 ```
 
 git 检出天然支持 `luckagent update` 一键升级。
+
+安装开始前会先做**网络检查**：把 GitHub / Homebrew / npm / PyPI / Claude 这些源并行测一遍连通与速度，连不上或很慢时停下来，提示开梯子的 TUN 模式后回车重测（也可以选择忽略继续）。之后随时可以用 `luckagent netcheck` 再测。
 
 安装过程中会依次询问：**默认引擎与认证**、**生图与视频**（有 ChatGPT 订阅就代装 Codex 并登录；火山方舟 key 用于视频和 Seedream 生图；可选配 TOS）、**bot 工作区根目录**（默认 `~/projects`）。都可以直接回车用默认值，之后在 `.env` 或管理台里改。
 

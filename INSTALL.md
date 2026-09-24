@@ -11,7 +11,7 @@
 
 | 东西 | 说明 |
 | --- | --- |
-| 网络 | 目标机需联网（取代码、下载 Homebrew/node/npm 依赖、连飞书与模型 API），无需下载任何安装包 |
+| 网络 | 目标机需联网（取代码、下载 Homebrew/node/npm 依赖、连飞书与模型 API），无需下载任何安装包。**国内网络必须开梯子，并切到虚拟网卡（TUN）模式**（推荐 Clash Verge）：普通「系统代理」模式只对浏览器生效，终端里的 curl / git / npm / brew 不走它，会卡在 Homebrew 下载上一直不动。安装脚本开头会先检查网络 |
 | 飞书账号 | 有权限在 [飞书开放平台](https://open.feishu.cn/app) 创建企业自建应用 |
 | Claude 认证 | 二选一：[Anthropic API Key](https://console.anthropic.com)，或 Claude Code 订阅账号（安装脚本可代装 CLI，登录需自己跑一次 `claude`） |
 | 生图与视频（可选） | 生图首选 ChatGPT 订阅（Plus / Pro / Team 等）：安装脚本代装 Codex CLI 并引导 `codex login`，无需 key。视频需要 [火山方舟](https://console.volcengine.com/ark) 的 ARK key（在控制台开通 Doubao-Seedance；同一把 key 开通 Doubao-Seedream 后也能生图）。想参考群里发的视频 / 音频，再准备一个火山对象存储 TOS 桶和只授权该桶的子用户 AK/SK |
@@ -51,6 +51,7 @@ bash install.sh
 
 | 阶段 | 会发生什么 | 需要你做什么 |
 | --- | --- | --- |
+| 网络检查 | 并行测 GitHub / Homebrew / npm / PyPI 能否连通、速度够不够（约 10 秒）；Claude 下载与 API 单独列出，只影响 Claude 引擎。有问题时停下来提示开梯子的 TUN 模式。`--yes` 下不通过直接退出；`--skip-net-check` 跳过 | 全部 ✓ 则无需操作；有 ✗ / ⚠ 时开好 TUN 后回车重测，或输 s 忽略继续、q 退出 |
 | Homebrew | 全新机器会先装 Homebrew，并自动带出 **Xcode 命令行工具**下载 | 弹窗点「安装」、终端里**输入开机密码**；CLT 下载约 5–15 分钟，耐心等 |
 | node@22 / git / pm2 | 自动安装 | 无 |
 | 选择默认引擎 | 询问用 Claude Code、DeepSeek 还是 MiniMax | 回车 = Claude；输 2 = DeepSeek；输 3 = MiniMax（之后每个 bot 仍可单独选） |
@@ -193,6 +194,9 @@ bash ~/luckagent/scripts/uninstall.sh
 **保留** bot 工作区根目录（默认 `~/projects/`）与项目记忆、brew/node/lark-cli/claude 以及 ffmpeg/LibreOffice/poppler/字体等共享工具（脚本结尾会列出保留项与可选清理命令）。
 
 ## 9. 常见问题（更多见 docs/troubleshooting.md）
+
+**安装卡在「Downloading and installing Homebrew」或某个下载步骤不动**
+连不上 GitHub 等海外源。`Ctrl+C` 中断，开启梯子并切到**虚拟网卡（TUN）模式**（推荐 Clash Verge），`luckagent netcheck` 或 `bash scripts/net-check.sh` 确认全部 ✓ 后，重新 `bash install.sh`（可重复执行，已完成的步骤跳过；中断留下的半个 `/opt/homebrew` 不用删）。v0.7.21 起下载低于 1 KB/s 持续 60 秒会自动失败退出，不再无限挂住。
 
 **装 Homebrew 卡在 Xcode 命令行工具**
 下载慢是常态（Apple 服务器）；也可先手动 `xcode-select --install` 装完再重跑 `install.sh`。

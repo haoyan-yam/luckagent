@@ -8,6 +8,26 @@ luckagent doctor --json
 
 它会逐项检查安装目录、PM2 进程、桥接健康、core 服务、bots.json、语音、生图、视频与办公工具链，每个失败项都带修复建议。下面按症状分条。
 
+## 安装卡住不动（网络）
+
+**症状**：`install.sh` 停在「Downloading and installing Homebrew...」（`remote: Compressing objects: 100%` 之后没下文）、`npm install`、拉取技能等步骤，长时间没有输出也不报错。
+
+**原因**：安装要从 GitHub / Homebrew / npm / PyPI 下载，连不上时这些下载会一直挂住。常见的坑是梯子开的是「系统代理」模式——它只对浏览器生效，终端里的 curl / git / npm / brew 不走系统代理，于是「浏览器能打开 GitHub，安装却卡住」。
+
+**处置**：
+
+1. `Ctrl+C` 中断；
+2. 开启梯子并切到**虚拟网卡（TUN）模式**（推荐 Clash Verge：设置 → 虚拟网卡模式，首次要安装服务模式并输入开机密码）；要用 Claude 引擎的话，节点选美国 / 日本 / 新加坡等地区（Claude 不支持中国大陆和香港出口）；
+3. 测网络，全部 ✓ 再继续：
+
+```bash
+bash ~/luckagent/scripts/net-check.sh
+```
+
+4. 重新 `cd ~/luckagent && bash install.sh`——可重复执行，已完成的步骤跳过，中断留下的半个 `/opt/homebrew` 不用删。
+
+安装脚本开头会自动做同样的检查（`--skip-net-check` 可跳过）；装好后用 `luckagent netcheck` 随时再测。v0.7.21 起安装中的 git / curl 下载低于 1 KB/s 持续 60 秒会失败退出并提示，不再无限挂住。
+
 ## 端口被占（EADDRINUSE / 起不来）
 
 ```bash
