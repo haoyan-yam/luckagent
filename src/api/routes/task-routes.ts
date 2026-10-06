@@ -134,9 +134,7 @@ export async function handleTaskRoutes(
             } else {
               circuitBreaker.recordFailure(botName);
             }
-            if (result.costUsd) {
-              budgetManager.recordCost(botName, result.costUsd);
-            }
+            // Cost is charged to the budget via the bridge's activity event (http-server).
 
             // Send callback if configured
             if (callbackChatId && callbackBotName) {
@@ -183,9 +181,7 @@ export async function handleTaskRoutes(
       } else {
         circuitBreaker.recordFailure(botName);
       }
-      if (result.costUsd) {
-        budgetManager.recordCost(botName, result.costUsd);
-      }
+      // Cost is charged to the budget via the bridge's activity event (http-server).
 
       jsonResponse(res, result.success ? 200 : 500, result);
       return true;

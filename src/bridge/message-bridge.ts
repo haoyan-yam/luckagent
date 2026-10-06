@@ -3141,12 +3141,21 @@ export class MessageBridge {
             if (outputFiles.length > 0) options.onOutputFiles(outputFiles);
           }
 
+          const retryDurationMs = Date.now() - startTime;
+          this.emitActivity({
+            type: lastState.status === 'complete' ? 'task_completed' : 'task_failed',
+            botName: this.config.name, chatId, userId, prompt: prompt?.slice(0, 200),
+            responsePreview: lastState.responseText?.slice(0, 200),
+            costUsd: lastState.costUsd, durationMs: retryDurationMs, errorMessage: lastState.errorMessage,
+            timestamp: Date.now(),
+          });
+
           return {
             success: lastState.status === 'complete',
             responseText: lastState.responseText,
             sessionId: processor.getSessionId(),
             costUsd: lastState.costUsd,
-            durationMs: Date.now() - startTime,
+            durationMs: retryDurationMs,
             error: lastState.errorMessage,
           };
         } catch (retryErr: any) {

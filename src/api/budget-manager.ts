@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import type { Logger } from '../utils/logger.js';
+import { localDay } from './cost-stats.js';
 
 interface BudgetRecord {
   date: string;  // YYYY-MM-DD
@@ -12,6 +13,8 @@ interface BudgetRecord {
 interface BotBudget {
   botName: string;
   dailyLimitUsd: number;
+  /** Local day (YYYY-MM-DD) that todaySpent/todayTasks belong to. Absent in pre-fix files. */
+  day: string;
   todaySpent: number;
   todayTasks: number;
   history: BudgetRecord[];
@@ -24,9 +27,9 @@ export class BudgetManager {
   private dataPath: string;
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(logger: Logger) {
+  constructor(logger: Logger, opts: { dataPath?: string } = {}) {
     this.logger = logger.child({ module: 'budget' });
-    this.dataPath = path.join(os.homedir(), '.luckagent', 'budgets.json');
+    this.dataPath = opts.dataPath ?? path.join(os.homedir(), '.luckagent', 'budgets.json');
     this.load();
   }
 
@@ -63,6 +66,12 @@ export class BudgetManager {
     this.scheduleSave();
   }
 
+  /** Record a bridge activity event — every finished task (completed or failed) counts. */
+  recordTaskEvent(event: { type: string; botName: string; costUsd?: number }): void {
+    if (event.type !== 'task_completed' && event.type !== 'task_failed') return;
+    this.recordCost(event.botName, event.costUsd ?? 0);
+  }
+
   /** Get budget info for a bot. */
   getBudget(botName: string): BotBudget | undefined {
     const budget = this.budgets.get(botName);
@@ -88,7 +97,6 @@ export class BudgetManager {
   /** Get cost report. */
   getReport(period: 'daily' | 'weekly' | 'monthly' = 'daily'): Record<string, { spent: number; tasks: number; limit: number }> {
     const report: Record<string, { spent: number; tasks: number; limit: number }> = {};
-    const now = new Date();
 
     for (const [name, budget] of this.budgets) {
       this.rolloverIfNeeded(budget);
@@ -96,10 +104,11 @@ export class BudgetManager {
       let tasks = budget.todayTasks;
 
       if (period !== 'daily' && budget.history.length > 0) {
+        // Last N local days including today (today's spend is already in `spent`).
         const days = period === 'weekly' ? 7 : 30;
-        const cutoff = new Date(now);
-        cutoff.setDate(cutoff.getDate() - days);
-        const cutoffStr = cutoff.toISOString().split('T')[0];
+        const cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - (days - 1));
+        const cutoffStr = localDay(cutoff.getTime());
 
         for (const record of budget.history) {
           if (record.date >= cutoffStr) {
@@ -120,6 +129,7 @@ export class BudgetManager {
       budget = {
         botName,
         dailyLimitUsd: 0,
+        day: localDay(Date.now()),
         todaySpent: 0,
         todayTasks: 0,
         history: [],
@@ -131,18 +141,13 @@ export class BudgetManager {
   }
 
   private rolloverIfNeeded(budget: BotBudget): void {
-    const today = new Date().toISOString().split('T')[0];
-    if (budget.history.length > 0) {
-      const lastDate = budget.history[budget.history.length - 1]?.date;
-      if (lastDate === today) return; // already current
-    }
+    const today = localDay(Date.now());
+    if (budget.day === today) return;
 
-    // If there was spending, record it
+    // Archive the finished day's spend under the day it actually happened
     if (budget.todaySpent > 0 || budget.todayTasks > 0) {
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
       budget.history.push({
-        date: yesterday.toISOString().split('T')[0],
+        date: budget.day,
         costUsd: budget.todaySpent,
         taskCount: budget.todayTasks,
       });
@@ -152,15 +157,21 @@ export class BudgetManager {
       }
     }
 
+    budget.day = today;
     budget.todaySpent = 0;
     budget.todayTasks = 0;
+    this.scheduleSave();
   }
 
   private load(): void {
     try {
       if (fs.existsSync(this.dataPath)) {
         const data = JSON.parse(fs.readFileSync(this.dataPath, 'utf-8'));
+        // Pre-`day` files: the pending counters were last touched when the file was last written.
+        const legacyDay = localDay(fs.statSync(this.dataPath).mtimeMs);
         for (const b of data.budgets || []) {
+          if (typeof b.day !== 'string') b.day = legacyDay;
+          if (!Array.isArray(b.history)) b.history = [];
           this.budgets.set(b.botName, b);
         }
         this.logger.info({ count: this.budgets.size }, 'Budgets loaded');
