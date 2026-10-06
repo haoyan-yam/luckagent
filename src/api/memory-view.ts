@@ -47,6 +47,8 @@ export interface MemoryFileView {
   exists: boolean;
   sizeBytes: number | null;
   mtime: string | null;
+  /** File birth time where the filesystem records it (macOS/APFS does); null otherwise. */
+  createdAt: string | null;
   frontmatter: MemoryFrontmatter | null;
 }
 
@@ -152,6 +154,7 @@ export function readBotMemory(memDir: string | null): BotMemoryView {
     exists: !!st,
     sizeBytes: st?.size ?? null,
     mtime: st?.mtime.toISOString() ?? null,
+    createdAt: st && st.birthtimeMs > 0 ? st.birthtime.toISOString() : null,
     frontmatter: st ? parseMemoryFrontmatter(readHead(path.join(memDir, file))) : null,
   });
 

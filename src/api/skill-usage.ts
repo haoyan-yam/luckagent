@@ -344,6 +344,17 @@ export class SkillUsageTracker {
     return this.refreshing;
   }
 
+  /** Individual uses since `since`, attributed to bots (for windowed views like the dashboard). */
+  usesSince(bots: Array<{ name: string; workdir: string }>, since: number): Array<{ bot: string; skill: string; ts: number }> {
+    const out: Array<{ bot: string; skill: string; ts: number }> = [];
+    for (const u of Object.values(this.load().uses)) {
+      if (u.ts < since) continue;
+      const bot = botForCwd(u.cwd, bots);
+      if (bot) out.push({ bot, skill: u.skill, ts: u.ts });
+    }
+    return out;
+  }
+
   snapshot(bots: Array<{ name: string; workdir: string }>): SkillUsageSnapshot {
     const cache = this.load();
     if (!this.refreshing && (this.lastScanAt === null || Date.now() - this.lastScanAt > this.minIntervalMs)) {

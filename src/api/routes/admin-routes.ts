@@ -10,8 +10,8 @@ import { COMPAT_PROVIDERS, resolveEngineName } from '../../engines/index.js';
 import { EDITABLE_DEFAULTS, displayDefault, validateDefaultsUpdate, writeEnvUpdates } from '../env-defaults.js';
 import { claudeProjectsDir, physicalCwd } from '../../engines/claude/session-lister.js';
 import { SkillUsageTracker } from '../skill-usage.js';
-import { buildCostTrend } from '../cost-stats.js';
-import { buildAttention, costSpikes, unsetGroupSummaries } from '../attention.js';
+import { buildAttention, unsetGroupSummaries } from '../attention.js';
+import { memoryActivity, skillActivity, taskBreakdown } from '../dashboard.js';
 import { MEMORY_INDEX_LIMITS, parseMemoryFrontmatter, readBotMemory, searchMemories, stripFrontmatter } from '../memory-view.js';
 
 export { parseMemoryIndex, type MemoryIndexEntry } from '../memory-view.js';
@@ -557,15 +557,35 @@ export async function handleAdminRoutes(
     return true;
   }
 
-  // GET /admin/api/costs?days=7|30 — per-bot daily tasks/cost + today vs. yesterday-so-far
-  if (method === 'GET' && (url === '/admin/api/costs' || url.startsWith('/admin/api/costs?'))) {
-    const q = new URL(url, 'http://x').searchParams;
-    const days = Math.min(35, Math.max(1, Number(q.get('days')) || 7));
-    const since = new Date();
-    since.setHours(0, 0, 0, 0);
-    since.setDate(since.getDate() - days);
-    const events = activityStore?.taskEventsSince(since.getTime()) ?? [];
-    jsonResponse(res, 200, buildCostTrend(events, days, Date.now(), activityStore?.earliestTimestamp() ?? null));
+  // GET /admin/api/dashboard — running-state aggregates: tasks by source, skill use, memory growth
+  if (method === 'GET' && url === '/admin/api/dashboard') {
+    let cfgBots: Array<{ name: string; workdir: string }> = [];
+    try {
+      const cfg = botsConfigPath ? readBotsConfig(botsConfigPath) : { feishuBots: [] };
+      cfgBots = (cfg.feishuBots || [])
+        .filter((b) => b.defaultWorkingDirectory)
+        .map((b) => ({ name: b.name, workdir: expandUserPath(b.defaultWorkingDirectory!) }));
+    } catch { /* bots.json unreadable */ }
+
+    const todayEvents = activityStore?.list({ since: todayStartMs(), limit: 5000 }) ?? [];
+    const physical = cfgBots.map((b) => ({ name: b.name, workdir: physicalCwd(b.workdir) }));
+    const tracker = skillUsageTracker();
+    tracker.snapshot(physical); // kicks a background rescan when stale
+    const memory = cfgBots.map((b) => {
+      const v = readBotMemory(memoryDirCandidates(b.workdir).find((d) => fs.existsSync(d)) ?? null);
+      return {
+        bot: b.name,
+        files: v.files,
+        ratio: Math.max(v.index.lines / MEMORY_INDEX_LIMITS.lines, v.index.chars / MEMORY_INDEX_LIMITS.chars),
+      };
+    });
+
+    jsonResponse(res, 200, {
+      generatedAt: new Date().toISOString(),
+      tasks: taskBreakdown(todayEvents),
+      skills: skillActivity(tracker.usesSince(physical, Date.now() - 15 * 24 * 60 * 60 * 1000)),
+      memory: memoryActivity(memory),
+    });
     return true;
   }
 
@@ -610,13 +630,9 @@ export async function handleAdminRoutes(
       return { bot: b.name, ratio: Math.max(v.index.lines / MEMORY_INDEX_LIMITS.lines, v.index.chars / MEMORY_INDEX_LIMITS.chars) };
     });
 
-    const since = new Date();
-    since.setHours(0, 0, 0, 0);
-    since.setDate(since.getDate() - 7);
-    const events = activityStore?.taskEventsSince(since.getTime()) ?? [];
-    const trend = buildCostTrend(events, 8);
-    const todayStart = todayStartMs();
-    const failuresToday = events.filter((e) => e.type === 'task_failed' && e.timestamp >= todayStart).map((e) => ({ bot: e.botName }));
+    const failuresToday = (activityStore?.list({ since: todayStartMs(), limit: 2000 }) ?? [])
+      .filter((e) => e.type === 'task_failed')
+      .map((e) => ({ bot: e.botName }));
 
     jsonResponse(res, 200, {
       generatedAt: new Date().toISOString(),
@@ -626,7 +642,6 @@ export async function handleAdminRoutes(
         neverUsedSkills,
         memoryIndex,
         failuresToday,
-        spikes: costSpikes(trend.byBot),
       }),
     });
     return true;

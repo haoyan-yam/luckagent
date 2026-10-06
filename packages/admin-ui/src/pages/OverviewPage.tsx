@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react';
-import { Alert, Badge, Button, Card, Col, Empty, Row, Space, Table, Tag, Tooltip, Typography } from 'antd';
+import { Alert, Badge, Button, Card, Col, Empty, Progress, Row, Space, Table, Tag, Tooltip, Typography } from 'antd';
 import { ArrowDownOutlined, ArrowUpOutlined, CheckCircleFilled, CloseCircleFilled, ExclamationCircleFilled } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { Link } from 'react-router-dom';
@@ -7,22 +7,25 @@ import { api } from '../api/client';
 import { usePoll } from '../hooks/usePoll';
 import type { Overview, BotOverview } from '../api/types';
 import { Sparkline } from '../components/Sparkline';
-import { CostTrendChart } from '../components/CostTrendChart';
-
-interface BotDaily { tasks: number[]; failed: number[]; cost: number[]; }
-interface CostTrend {
-  days: string[];
-  byBot: Record<string, BotDaily>;
-  today: { tasks: number; failed: number; costUsd: number };
-  yesterdaySoFar: { tasks: number; failed: number; costUsd: number };
-  dataSince: string | null;
-}
 
 interface AttentionItem { key: string; level: 'error' | 'warning'; title: string; detail?: string; link?: string; }
 interface AttentionPayload { generatedAt: string; items: AttentionItem[]; }
+interface DashboardPayload {
+  generatedAt: string;
+  tasks: {
+    total: number;
+    members: number;
+    scheduled: number;
+    failed: number;
+    failedScheduled: number;
+    people: number;
+    perBot: Record<string, { members: number; scheduled: number; failed: number }>;
+  };
+  skills: { days: string[]; daily: number[]; uses7d: number; usesPrev7d: number; perBot: Record<string, number> };
+  memory: { total: number; created7d: number; updated7d: number; perBot: Record<string, { count: number; ratio: number }> };
+}
 
-const UP_BAD = '#cf1322';
-const DOWN_GOOD = '#389e0d';
+const MEMORY_WARN = 0.7;
 
 function fmtUptime(sec?: number): string {
   if (sec === undefined) return '-';
@@ -32,7 +35,6 @@ function fmtUptime(sec?: number): string {
 }
 
 const usd = (v: number) => `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 
 /** 定时任务的批次名：label 前缀 → 人话 */
 const batchName = (label: string | null) => {
@@ -48,32 +50,30 @@ function whenText(iso: string) {
   return `${prefix} ${t.format('HH:mm')}`;
 }
 
-/** stat tile 的对比行：带方向箭头 + 文字，颜色 = 方向 × 涨是不是坏事 */
-function Delta({ now, before, upIsBad, unit, label }: { now: number; before: number; upIsBad?: boolean; unit: 'pct' | 'count'; label: string }) {
-  if (before === 0 && now === 0) return <Typography.Text type="secondary" style={{ fontSize: 12 }}>{label}持平</Typography.Text>;
-  if (before === 0) return <Typography.Text type="secondary" style={{ fontSize: 12 }}>{label}无数据</Typography.Text>;
+/** 与上一周期对比：只标方向和幅度，不做好坏着色（用量多少没有对错） */
+function Delta({ now, before, label }: { now: number; before: number; label: string }) {
+  if (before === 0) return <Typography.Text type="secondary" style={{ fontSize: 12 }}>{label}{now === 0 ? '持平' : '无数据'}</Typography.Text>;
   const diff = now - before;
-  if (Math.abs(diff) < 1e-9) return <Typography.Text type="secondary" style={{ fontSize: 12 }}>{label}持平</Typography.Text>;
-  const up = diff > 0;
-  const color = upIsBad === undefined ? undefined : up === upIsBad ? UP_BAD : DOWN_GOOD;
-  const text = unit === 'pct' ? `${Math.round(Math.abs(diff / before) * 100)}%` : String(Math.abs(Math.round(diff)));
+  if (diff === 0) return <Typography.Text type="secondary" style={{ fontSize: 12 }}>{label}持平</Typography.Text>;
   return (
-    <span style={{ fontSize: 12, color: color ?? 'rgba(0,0,0,0.45)' }}>
-      {up ? <ArrowUpOutlined /> : <ArrowDownOutlined />} {text}
-      <Typography.Text type="secondary" style={{ fontSize: 12, marginLeft: 4 }}>{label}</Typography.Text>
-    </span>
+    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+      {diff > 0 ? <ArrowUpOutlined /> : <ArrowDownOutlined />} {Math.round(Math.abs(diff / before) * 100)}% {label}
+    </Typography.Text>
   );
 }
 
-function StatTile({ label, value, delta, extra }: { label: string; value: React.ReactNode; delta?: React.ReactNode; extra?: React.ReactNode }) {
+function StatTile({ label, value, sub, extra, link }: { label: string; value: React.ReactNode; sub?: React.ReactNode; extra?: React.ReactNode; link?: string }) {
   return (
-    <Card size="small" styles={{ body: { padding: '12px 16px' } }}>
-      <Typography.Text type="secondary" style={{ fontSize: 13 }}>{label}</Typography.Text>
+    <Card size="small" styles={{ body: { padding: '12px 16px' } }} style={{ height: '100%' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+        <Typography.Text type="secondary" style={{ fontSize: 13 }}>{label}</Typography.Text>
+        {link && <Link to={link} style={{ fontSize: 12 }}>查看 →</Link>}
+      </div>
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 8, marginTop: 4 }}>
         <div style={{ fontSize: 26, fontWeight: 600, lineHeight: 1.2 }}>{value}</div>
         {extra}
       </div>
-      <div style={{ minHeight: 20, marginTop: 2 }}>{delta}</div>
+      <div style={{ minHeight: 20, marginTop: 2 }}>{sub}</div>
     </Card>
   );
 }
@@ -89,10 +89,8 @@ export default function OverviewPage({
   onRestart: () => void;
 }) {
   const { data, error, failCount } = usePoll<Overview>(() => api.get('/admin/api/overview'), 5000);
-  const { data: costs } = usePoll<CostTrend>(() => api.get('/admin/api/costs?days=7'), 60000);
+  const { data: dash } = usePoll<DashboardPayload>(() => api.get('/admin/api/dashboard'), 60000);
   // 待处理：飞书群列表在后端缓存 5 分钟，这里每分钟拉一次，失败数等即时项最多晚 1 分钟
-  // 趋势图固定按 30 天取数：颜色按 30 天排名分配，切 7 天只截取，不会重新上色
-  const { data: trend30 } = usePoll<CostTrend>(() => api.get('/admin/api/costs?days=30'), 60000);
   const { data: attention, error: attentionError } = usePoll<AttentionPayload>(() => api.get('/admin/api/attention'), 60000);
 
   useEffect(() => {
@@ -168,57 +166,64 @@ export default function OverviewPage({
     </Card>
   );
 
-  // ---------------- 成本卡片 ----------------
-  const dailyTotals = useMemo(() => {
-    if (!costs) return null;
-    const n = costs.days.length;
-    const cost = Array(n).fill(0) as number[];
-    const tasks = Array(n).fill(0) as number[];
-    for (const b of Object.values(costs.byBot)) {
-      b.cost.forEach((v, i) => (cost[i] += v));
-      b.tasks.forEach((v, i) => (tasks[i] += v));
+  // ---------------- 定时任务：同一时刻、同一 bot、同类任务合并 ----------------
+  const batches = useMemo(() => {
+    const m = new Map<string, { when: string; botName: string; name: string; count: number }>();
+    for (const t of data?.schedule.upcoming || []) {
+      const name = batchName(t.label);
+      const key = `${t.nextExecuteAt.slice(0, 16)}|${t.botName}|${name}`;
+      const cur = m.get(key);
+      if (cur) cur.count++;
+      else m.set(key, { when: t.nextExecuteAt, botName: t.botName, name, count: 1 });
     }
-    return { cost, tasks };
-  }, [costs]);
+    return [...m.values()].slice(0, 6);
+  }, [data]);
 
-  const today = costs?.today;
-  const ySoFar = costs?.yesterdaySoFar;
-  const weekCost = dailyTotals ? sum(dailyTotals.cost) : 0;
-  const weekTasks = dailyTotals ? sum(dailyTotals.tasks) : 0;
-  const avgToday = today && today.tasks ? today.costUsd / today.tasks : 0;
-  const avgWeek = weekTasks ? weekCost / weekTasks : 0;
-  const dayLabels = (costs?.days || []).map((d) => dayjs(d).format('M/D'));
+  // ---------------- 运行状态卡片 ----------------
+  const t = dash?.tasks;
+  const sk = dash?.skills;
+  const mem = dash?.memory;
+  const skillDayLabels = (sk?.days || []).map((d) => dayjs(d).format('M/D'));
+  const nextRun = data?.schedule.upcoming[0];
 
   const tiles = (
     <Row gutter={[16, 16]}>
       <Col xs={12} lg={6}>
         <StatTile
           label="今日任务"
-          value={today?.tasks ?? '-'}
-          extra={today && today.failed > 0 ? <Tag color="red">{today.failed} 失败</Tag> : undefined}
-          delta={today && ySoFar ? <Delta now={today.tasks} before={ySoFar.tasks} unit="count" label="比昨天同一时段" /> : undefined}
+          value={t?.total ?? '-'}
+          extra={t && t.failed > 0 ? <Tag color="red">{t.failed} 失败</Tag> : undefined}
+          sub={t && <Typography.Text type="secondary" style={{ fontSize: 12 }}>成员发起 {t.members}（{t.people} 人）· 定时 {t.scheduled}</Typography.Text>}
         />
       </Col>
       <Col xs={12} lg={6}>
         <StatTile
-          label="今日成本"
-          value={today ? usd(today.costUsd) : '-'}
-          delta={today && ySoFar ? <Delta now={today.costUsd} before={ySoFar.costUsd} upIsBad unit="pct" label="比昨天同一时段" /> : undefined}
+          label="技能调用（近 7 天）"
+          link="/skills"
+          value={sk ? <>{sk.uses7d}<span style={{ fontSize: 14, fontWeight: 400, marginLeft: 4 }}>次</span></> : '-'}
+          extra={sk ? <Sparkline values={sk.daily} labels={skillDayLabels} format={(v) => `${v} 次`} /> : undefined}
+          sub={sk && <Delta now={sk.uses7d} before={sk.usesPrev7d} label="比上周" />}
         />
       </Col>
       <Col xs={12} lg={6}>
         <StatTile
-          label="近 7 天成本"
-          value={costs ? usd(weekCost) : '-'}
-          extra={dailyTotals ? <Sparkline values={dailyTotals.cost} labels={dayLabels} format={usd} /> : undefined}
-          delta={costs ? <Typography.Text type="secondary" style={{ fontSize: 12 }}>日均 {usd(weekCost / costs.days.length)} · {weekTasks} 个任务</Typography.Text> : undefined}
+          label="记忆沉淀（近 7 天）"
+          link="/memory"
+          value={mem ? <>{mem.created7d}<span style={{ fontSize: 14, fontWeight: 400, marginLeft: 4 }}>条新增</span></> : '-'}
+          sub={mem && <Typography.Text type="secondary" style={{ fontSize: 12 }}>另有 {mem.updated7d} 条更新 · 共 {mem.total} 条</Typography.Text>}
         />
       </Col>
       <Col xs={12} lg={6}>
         <StatTile
-          label="今日平均每个任务"
-          value={today ? (today.tasks ? usd(avgToday) : '—') : '-'}
-          delta={today && today.tasks && avgWeek ? <Delta now={avgToday} before={avgWeek} upIsBad unit="pct" label="比近 7 天平均" /> : undefined}
+          label="定时任务（今日）"
+          link="/schedule"
+          value={t ? <>{t.scheduled}<span style={{ fontSize: 14, fontWeight: 400, marginLeft: 4 }}>次已运行</span></> : '-'}
+          extra={t && t.failedScheduled > 0 ? <Tag color="red">{t.failedScheduled} 失败</Tag> : undefined}
+          sub={
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {nextRun ? `下一个 ${whenText(nextRun.nextExecuteAt)} · ` : ''}共 {data?.schedule.recurring ?? '-'} 个周期任务
+            </Typography.Text>
+          }
         />
       </Col>
     </Row>
@@ -258,14 +263,6 @@ export default function OverviewPage({
                 )}
               </div>
               {it.link && <Link to={it.link} style={{ whiteSpace: 'nowrap' }}>去处理 →</Link>}
-              {!it.link && it.key === 'cost-spike' && (
-                <Typography.Link
-                  style={{ whiteSpace: 'nowrap' }}
-                  onClick={() => document.getElementById('cost-trend')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
-                >
-                  看趋势 →
-                </Typography.Link>
-              )}
             </div>
           ))}
         </Space>
@@ -274,93 +271,124 @@ export default function OverviewPage({
   );
 
   // ---------------- 机器人表格 ----------------
-  type BotRow = BotOverview & { week: number; weekDaily: number[]; anomaly: boolean };
+  type BotRow = BotOverview & {
+    members: number;
+    scheduled: number;
+    skills7d: number;
+    memCount: number;
+    memRatio: number;
+    anomaly: boolean;
+  };
   const botRows: BotRow[] = useMemo(() => {
     const rows = (data?.bots || []).map((b) => {
-      const daily = costs?.byBot[b.name]?.cost ?? (costs ? Array(costs.days.length).fill(0) : []);
-      return { ...b, week: sum(daily), weekDaily: daily, anomaly: !b.running || b.today.failed > 0 };
+      const tb = dash?.tasks.perBot[b.name];
+      const m = dash?.memory.perBot[b.name];
+      return {
+        ...b,
+        members: tb?.members ?? 0,
+        scheduled: tb?.scheduled ?? 0,
+        skills7d: dash?.skills.perBot[b.name] ?? 0,
+        memCount: m?.count ?? 0,
+        memRatio: m?.ratio ?? 0,
+        anomaly: !b.running || b.today.failed > 0,
+      };
     });
-    // 有异常的置顶，其余按今日成本、近 7 天成本排
+    // 有异常的置顶，其余按最近活动排
     return rows.sort(
-      (a, b) => Number(b.anomaly) - Number(a.anomaly) || b.today.costUsd - a.today.costUsd || b.week - a.week || a.name.localeCompare(b.name),
+      (a, b) => Number(b.anomaly) - Number(a.anomaly) || (b.lastActivityAt ?? 0) - (a.lastActivityAt ?? 0) || a.name.localeCompare(b.name),
     );
-  }, [data, costs]);
+  }, [data, dash]);
+
+  const muted = (v: React.ReactNode) => <Typography.Text type="secondary">{v}</Typography.Text>;
 
   const botColumns = [
     {
       title: 'Bot',
       dataIndex: 'name',
       key: 'name',
-      render: (v: string, b: BotRow) => (
-        <span>
-          <strong>{v}</strong>
-          {!b.running && <Tag color="red" style={{ marginLeft: 8 }}>离线</Tag>}
-        </span>
-      ),
-    },
-    {
-      title: '今日任务',
-      key: 'tasks',
-      align: 'right' as const,
-      sorter: (a: BotRow, b: BotRow) => a.today.tasks - b.today.tasks,
-      render: (_: unknown, b: BotRow) => (
-        <span>
-          {b.today.failed > 0 && <Tag color="red">{b.today.failed} 失败</Tag>}
-          {b.today.tasks || <Typography.Text type="secondary">0</Typography.Text>}
-        </span>
-      ),
-    },
-    {
-      title: '今日成本',
-      key: 'cost',
-      align: 'right' as const,
-      sorter: (a: BotRow, b: BotRow) => a.today.costUsd - b.today.costUsd,
-      render: (_: unknown, b: BotRow) => (b.today.costUsd ? usd(b.today.costUsd) : <Typography.Text type="secondary">$0.00</Typography.Text>),
-    },
-    {
-      title: '近 7 天成本',
-      key: 'week',
-      sorter: (a: BotRow, b: BotRow) => a.week - b.week,
-      render: (_: unknown, b: BotRow) => (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10 }}>
-          <span style={{ fontVariantNumeric: 'tabular-nums' }}>{usd(b.week)}</span>
-          <Sparkline values={b.weekDaily} labels={dayLabels} format={usd} width={70} height={20} />
-        </div>
-      ),
+      render: (v: string) => <strong>{v}</strong>,
     },
     {
       title: '状态',
       key: 'state',
       render: (_: unknown, b: BotRow) =>
         !b.running ? (
-          <Typography.Text type="danger">离线</Typography.Text>
+          <Badge status="error" text="离线" />
         ) : b.executors.active > 0 ? (
           <Badge status="processing" text={`执行中 ${b.executors.active}`} />
         ) : (
-          <Typography.Text type="secondary">空闲</Typography.Text>
+          <Badge status="default" text={muted('空闲')} />
+        ),
+    },
+    {
+      title: '今日任务',
+      key: 'tasks',
+      sorter: (a: BotRow, b: BotRow) => a.today.tasks - b.today.tasks,
+      render: (_: unknown, b: BotRow) =>
+        b.today.tasks === 0 ? (
+          muted('—')
+        ) : (
+          <span>
+            {b.today.tasks}
+            <Typography.Text type="secondary" style={{ fontSize: 12, marginLeft: 6 }}>
+              {[b.members && `成员 ${b.members}`, b.scheduled && `定时 ${b.scheduled}`].filter(Boolean).join(' · ')}
+            </Typography.Text>
+            {b.today.failed > 0 && <Tag color="red" style={{ marginLeft: 6 }}>{b.today.failed} 失败</Tag>}
+          </span>
+        ),
+    },
+    {
+      title: '技能调用（7 天）',
+      key: 'skills',
+      align: 'right' as const,
+      sorter: (a: BotRow, b: BotRow) => a.skills7d - b.skills7d,
+      render: (_: unknown, b: BotRow) => (b.skills7d ? `${b.skills7d} 次` : muted('—')),
+    },
+    {
+      title: <Tooltip title="记忆条数；进度条是 MEMORY.md 索引的加载占用（超过 200 行 / 25,000 字符会被截断）">记忆 ⓘ</Tooltip>,
+      key: 'memory',
+      sorter: (a: BotRow, b: BotRow) => a.memCount - b.memCount,
+      render: (_: unknown, b: BotRow) =>
+        b.memCount === 0 ? (
+          muted('—')
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 140 }}>
+            <span style={{ minWidth: 42, fontVariantNumeric: 'tabular-nums' }}>{b.memCount} 条</span>
+            <Tooltip title={`索引占用 ${Math.round(b.memRatio * 100)}%`}>
+              <Progress
+                percent={Math.min(100, Math.round(b.memRatio * 100))}
+                size="small"
+                showInfo={false}
+                status={b.memRatio >= 1 ? 'exception' : 'normal'}
+                strokeColor={b.memRatio >= 1 ? undefined : b.memRatio >= MEMORY_WARN ? '#faad14' : undefined}
+                style={{ width: 70, margin: 0 }}
+              />
+            </Tooltip>
+          </div>
         ),
     },
     {
       title: '最近活动',
       key: 'last',
+      defaultSortOrder: undefined,
       sorter: (a: BotRow, b: BotRow) => (a.lastActivityAt ?? 0) - (b.lastActivityAt ?? 0),
       render: (_: unknown, b: BotRow) =>
-        b.lastActivityAt ? <Tooltip title={dayjs(b.lastActivityAt).format('YYYY-MM-DD HH:mm')}>{dayjs(b.lastActivityAt).fromNow()}</Tooltip> : '—',
+        b.lastActivityAt ? <Tooltip title={dayjs(b.lastActivityAt).format('YYYY-MM-DD HH:mm')}>{dayjs(b.lastActivityAt).fromNow()}</Tooltip> : muted('—'),
+    },
+    {
+      title: (
+        <Tooltip title="今日任务的 API 等价金额，仅供参考——走订阅用量，不额外计费">
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>用量参考 ⓘ</Typography.Text>
+        </Tooltip>
+      ),
+      key: 'usage',
+      align: 'right' as const,
+      sorter: (a: BotRow, b: BotRow) => a.today.costUsd - b.today.costUsd,
+      render: (_: unknown, b: BotRow) => (
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>{b.today.costUsd ? usd(b.today.costUsd) : '—'}</Typography.Text>
+      ),
     },
   ];
-
-  // ---------------- 定时任务：同一时刻、同一 bot、同类任务合并 ----------------
-  const batches = useMemo(() => {
-    const m = new Map<string, { when: string; botName: string; name: string; count: number }>();
-    for (const t of data?.schedule.upcoming || []) {
-      const name = batchName(t.label);
-      const key = `${t.nextExecuteAt.slice(0, 16)}|${t.botName}|${name}`;
-      const cur = m.get(key);
-      if (cur) cur.count++;
-      else m.set(key, { when: t.nextExecuteAt, botName: t.botName, name, count: 1 });
-    }
-    return [...m.values()].slice(0, 6);
-  }, [data]);
 
   return (
     <Space direction="vertical" size="middle" style={{ width: '100%' }}>
@@ -369,14 +397,7 @@ export default function OverviewPage({
       )}
       {statusBar}
       {tiles}
-      <Row gutter={[16, 16]}>
-        <Col xs={24} xl={10}>{attentionCard}</Col>
-        <Col xs={24} xl={14}>
-          <Card size="small" title="每日成本" id="cost-trend" style={{ height: '100%' }}>
-            {trend30 ? <CostTrendChart data={trend30} /> : <Typography.Text type="secondary">加载中…</Typography.Text>}
-          </Card>
-        </Col>
-      </Row>
+      {attentionCard}
 
       <Card title="机器人" extra={<Link to="/bots">管理 →</Link>} size="small">
         {data && data.bots.length === 0 ? (
