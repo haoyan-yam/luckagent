@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { Alert, Badge, Button, Card, Col, Empty, Row, Space, Table, Tag, Tooltip, Typography } from 'antd';
-import { ArrowDownOutlined, ArrowUpOutlined } from '@ant-design/icons';
+import { ArrowDownOutlined, ArrowUpOutlined, CheckCircleFilled, CloseCircleFilled, ExclamationCircleFilled } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
@@ -16,6 +16,9 @@ interface CostTrend {
   yesterdaySoFar: { tasks: number; failed: number; costUsd: number };
   dataSince: string | null;
 }
+
+interface AttentionItem { key: string; level: 'error' | 'warning'; title: string; detail?: string; link?: string; }
+interface AttentionPayload { generatedAt: string; items: AttentionItem[]; }
 
 const UP_BAD = '#cf1322';
 const DOWN_GOOD = '#389e0d';
@@ -86,6 +89,8 @@ export default function OverviewPage({
 }) {
   const { data, error, failCount } = usePoll<Overview>(() => api.get('/admin/api/overview'), 5000);
   const { data: costs } = usePoll<CostTrend>(() => api.get('/admin/api/costs?days=7'), 60000);
+  // 待处理：飞书群列表在后端缓存 5 分钟，这里每分钟拉一次，失败数等即时项最多晚 1 分钟
+  const { data: attention, error: attentionError } = usePoll<AttentionPayload>(() => api.get('/admin/api/attention'), 60000);
 
   useEffect(() => {
     if (data) onConfigDirty(data.configDirty);
@@ -216,6 +221,47 @@ export default function OverviewPage({
     </Row>
   );
 
+  // ---------------- 待处理 ----------------
+  const attentionCard = (
+    <Card
+      size="small"
+      title="待处理"
+      extra={attention && <Typography.Text type="secondary" style={{ fontSize: 12 }}>更新于 {dayjs(attention.generatedAt).format('HH:mm')}</Typography.Text>}
+      style={{ height: '100%' }}
+    >
+      {!attention && !attentionError && <Typography.Text type="secondary">检查中…（首次要拉各 bot 的飞书群列表，稍等几秒）</Typography.Text>}
+      {attentionError && !attention && <Typography.Text type="danger">加载失败：{attentionError}</Typography.Text>}
+      {attention && attention.items.length === 0 && (
+        <Space>
+          <CheckCircleFilled style={{ color: '#389e0d' }} />
+          <Typography.Text>一切正常，没有需要处理的事</Typography.Text>
+        </Space>
+      )}
+      {attention && attention.items.length > 0 && (
+        <Space direction="vertical" size={10} style={{ width: '100%' }}>
+          {attention.items.map((it) => (
+            <div key={it.key} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+              {it.level === 'error' ? (
+                <CloseCircleFilled style={{ color: '#cf1322', marginTop: 4 }} aria-label="严重" />
+              ) : (
+                <ExclamationCircleFilled style={{ color: '#d48806', marginTop: 4 }} aria-label="注意" />
+              )}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <Typography.Text strong>{it.title}</Typography.Text>
+                {it.detail && (
+                  <div>
+                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>{it.detail}</Typography.Text>
+                  </div>
+                )}
+              </div>
+              {it.link && <Link to={it.link} style={{ whiteSpace: 'nowrap' }}>去处理 →</Link>}
+            </div>
+          ))}
+        </Space>
+      )}
+    </Card>
+  );
+
   // ---------------- 机器人表格 ----------------
   type BotRow = BotOverview & { week: number; weekDaily: number[]; anomaly: boolean };
   const botRows: BotRow[] = useMemo(() => {
@@ -312,6 +358,7 @@ export default function OverviewPage({
       )}
       {statusBar}
       {tiles}
+      {attentionCard}
 
       <Card title="机器人" extra={<Link to="/bots">管理 →</Link>} size="small">
         {data && data.bots.length === 0 ? (

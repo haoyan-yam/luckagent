@@ -11,6 +11,7 @@ import { EDITABLE_DEFAULTS, displayDefault, validateDefaultsUpdate, writeEnvUpda
 import { claudeProjectsDir, physicalCwd } from '../../engines/claude/session-lister.js';
 import { SkillUsageTracker } from '../skill-usage.js';
 import { buildCostTrend } from '../cost-stats.js';
+import { buildAttention, costSpikes, unsetGroupSummaries } from '../attention.js';
 import { MEMORY_INDEX_LIMITS, parseMemoryFrontmatter, readBotMemory, searchMemories, stripFrontmatter } from '../memory-view.js';
 
 export { parseMemoryIndex, type MemoryIndexEntry } from '../memory-view.js';
@@ -568,6 +569,69 @@ export async function handleAdminRoutes(
     return true;
   }
 
+  // GET /admin/api/attention — cross-page "needs attention" list for the dashboard
+  if (method === 'GET' && url === '/admin/api/attention') {
+    let cfgBots: Array<{ name: string; workdir: string }> = [];
+    try {
+      const cfg = botsConfigPath ? readBotsConfig(botsConfigPath) : { feishuBots: [] };
+      cfgBots = (cfg.feishuBots || [])
+        .filter((b) => b.defaultWorkingDirectory)
+        .map((b) => ({ name: b.name, workdir: expandUserPath(b.defaultWorkingDirectory!) }));
+    } catch { /* bots.json unreadable — attention limited to activity-based items */ }
+
+    // Group summaries: group lists come from Feishu (slow) → cached 5 min per bot.
+    const chatsByBot: Record<string, Array<{ chatId: string; name: string }>> = {};
+    const summaryUnknownBots: string[] = [];
+    await Promise.all(
+      cfgBots.map(async ({ name }) => {
+        const chats = await cachedBotChats(name, registry.get(name)?.feishuClient);
+        if (chats) chatsByBot[name] = chats;
+        else summaryUnknownBots.push(name);
+      }),
+    );
+    const configuredByBot: Record<string, Set<string>> = {};
+    for (const t of scheduler.listRecurringTasks()) {
+      if (!t.label?.startsWith('group-summary:')) continue;
+      (configuredByBot[t.botName] ||= new Set()).add(t.label.slice('group-summary:'.length));
+    }
+    const prefs = readSummaryPrefs();
+    const excludedByBot = Object.fromEntries(Object.entries(prefs).map(([b, p]) => [b, p.excluded]));
+
+    // Project skills never used since each bot's stats coverage began.
+    const usage = skillUsageTracker().snapshot(cfgBots.map((b) => ({ name: b.name, workdir: physicalCwd(b.workdir) })));
+    const neverUsedSkills = cfgBots.flatMap((b) =>
+      scanSkillsDir(path.join(b.workdir, '.claude', 'skills'))
+        .filter((sk) => !(usage.usage[b.name]?.[sk.name]?.total))
+        .map((sk) => ({ bot: b.name, skill: sk.name })),
+    );
+
+    const memoryIndex = cfgBots.map((b) => {
+      const v = readBotMemory(memoryDirCandidates(b.workdir).find((d) => fs.existsSync(d)) ?? null);
+      return { bot: b.name, ratio: Math.max(v.index.lines / MEMORY_INDEX_LIMITS.lines, v.index.chars / MEMORY_INDEX_LIMITS.chars) };
+    });
+
+    const since = new Date();
+    since.setHours(0, 0, 0, 0);
+    since.setDate(since.getDate() - 7);
+    const events = activityStore?.taskEventsSince(since.getTime()) ?? [];
+    const trend = buildCostTrend(events, 8);
+    const todayStart = todayStartMs();
+    const failuresToday = events.filter((e) => e.type === 'task_failed' && e.timestamp >= todayStart).map((e) => ({ bot: e.botName }));
+
+    jsonResponse(res, 200, {
+      generatedAt: new Date().toISOString(),
+      items: buildAttention({
+        unsetSummaries: unsetGroupSummaries(chatsByBot, configuredByBot, excludedByBot),
+        summaryUnknownBots: summaryUnknownBots.sort(),
+        neverUsedSkills,
+        memoryIndex,
+        failuresToday,
+        spikes: costSpikes(trend.byBot),
+      }),
+    });
+    return true;
+  }
+
   // GET /admin/api/overview — aggregate dashboard payload
   if (method === 'GET' && (url === '/admin/api/overview' || url.startsWith('/admin/api/overview?'))) {
     const started = startTimeMs();
@@ -960,6 +1024,30 @@ export async function collectChatMembers(client: FeishuChatLister, chatId: strin
     pageToken = resp.data.page_token;
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Feishu group lists for the dashboard's attention panel (cached — one Feishu
+// paging round per bot is too slow to repeat on every poll)
+// ---------------------------------------------------------------------------
+
+const CHATS_TTL_MS = 5 * 60_000;
+const chatsCache = new Map<string, { at: number; chats: Array<{ chatId: string; name: string }> | null }>();
+
+async function cachedBotChats(
+  botName: string,
+  client: FeishuChatLister | undefined,
+): Promise<Array<{ chatId: string; name: string }> | null> {
+  const hit = chatsCache.get(botName);
+  if (hit && Date.now() - hit.at < CHATS_TTL_MS) return hit.chats;
+  let chats: Array<{ chatId: string; name: string }> | null = null;
+  if (client) {
+    try {
+      chats = (await collectBotChats(client)).map((c) => ({ chatId: c.chatId, name: c.name }));
+    } catch { /* Feishu error — reported as "not fetched" */ }
+  }
+  chatsCache.set(botName, { at: Date.now(), chats });
+  return chats;
 }
 
 // ---------------------------------------------------------------------------
