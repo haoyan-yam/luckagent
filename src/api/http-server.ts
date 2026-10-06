@@ -357,10 +357,12 @@ export function startApiServer(options: ApiServerOptions): http.Server {
     }
   });
 
-  // Wire activity events: each bridge records to ActivityStore
+  // Wire activity events: each bridge records to ActivityStore, and every
+  // finished task (Feishu, API, relay, schedule) is charged to its budget.
   for (const bot of registry.listRegistered()) {
     bot.bridge.onActivityEvent = (event) => {
       activityStore.record(event);
+      budgetManager.recordTaskEvent(event);
     };
   }
 
@@ -371,6 +373,7 @@ export function startApiServer(options: ApiServerOptions): http.Server {
     agentTeamsConfigWatcher?.close();
     agentTeamSupervisor.destroy();
     rateLimiter.stopSweep();
+    budgetManager.destroy();
   });
 
   return server;
