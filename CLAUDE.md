@@ -32,7 +32,7 @@ luckagent doctor --json                           # Agent-readable diagnostics
 
 For the full API (bot CRUD, schedules, skill publish, etc.), use the `/luckagent` skill.
 
-Web 管理台：bridge 自带（默认 `http://localhost:9100/admin`，用 `.env` 里的 `API_SECRET` 登录）— 覆盖系统总览 / 机器人管理 / 定时任务 / 运行日志 / 系统配置。
+Web 管理台：bridge 自带（默认 `http://localhost:9100/admin`，用 `.env` 里的 `API_SECRET` 登录）— 覆盖系统总览 / 机器人管理 / 定时任务 / 群日报 / 技能 / 记忆 / 运行日志 / 系统配置。
 
 ### Scheduling (Claude Code native)
 

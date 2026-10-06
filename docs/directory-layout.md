@@ -80,10 +80,11 @@ Luckagent 涉及四类目录：安装目录、每个 bot 的工作目录、两�
 | --- | --- |
 | `scheduled-tasks.json` | 定时任务持久化（一次性 + 周期），重启自动恢复 |
 | `sessions-<bot名>.json` | 每 bot 的会话映射（chatId → agent 会话），供连续对话续接 |
-| `activity.db` | 活动事件库（任务开始/完成/失败、费用），管理台总览的数据源 |
+| `activity.db` | 活动事件库（任务开始/完成/失败、发起人、摘要、耗时、API 等价费用），保留 7 天；管理台总览的今日任务、实时动态、今日失败都读它 |
 | `outbound-ledger.db` | 出站台账：bot 发出的卡片终版文本与媒资 key，供「引用回复」上下文回捞 |
 | `agent-teams.db` | Agent Teams（团队/任务/消息/运行）状态 |
-| `budgets.json` | 每 bot 每日预算用量 |
+| `budgets.json` | 每 bot 当天用量（`day` 字段标明是哪个本地日期，过了零点滚进 `history`，保留 90 天）与每日上限 `dailyLimitUsd`；每个完成或失败的任务都记一笔。兼容旧格式：缺 `day` 的条目按文件修改日期归档 |
+| `skill-usage-cache.json` | 管理台技能使用统计的缓存：扫描 `~/.claude/projects/**/*.jsonl` 的增量位置与每轮对话的技能使用记录。Claude Code 定期清理旧会话记录后，已统计的历史仍保留；删掉它只会触发一次重新全量扫描 |
 | `group-summary.json` | 群日报页的「已忽略」群列表（明确不总结的群，不再被「未配置」提示打扰） |
 | `last-restart.json` | 重启面包屑：重启后注入一次性提醒，防 agent 从历史会话里看到「请重启」又循环重启 |
 | `default.env` | 可选的内部默认环境变量（优先级低于真实环境变量与项目 `.env`） |

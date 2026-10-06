@@ -204,6 +204,14 @@ luckagent doctor
 - **venv 损坏**（多半是 `brew upgrade` 换了 Python 小版本后 `ModuleNotFoundError` 或 `python: bad interpreter`）：`install.sh` 会检测到并自动重建；
 - **bot 会话里 `python3` 仍是系统 Python**：PM2 进程还带着旧 PATH。`pm2 restart <进程名>` 与管理台的「重启」按钮都**沿用首次启动时的 env**，不会重读 `ecosystem.config.cjs`（pm2 7 实测）；执行 `luckagent restart`（v0.7.10 起改为从配置文件重启，会重新求值 PATH），或重跑 `bash install.sh`。
 
+## bot 好像忘了以前记住的事
+
+先在管理台「记忆」页看这个 bot 的**索引占用**。bot 每次会话开始只加载记忆索引 `MEMORY.md` 的前 **200 行 / 25,000 字符**（Claude Code 的硬上限），超出部分 bot 看不到，记忆文件本身还在，只是不会被想起。
+
+- **占用超过 70%（标黄）或已超限（标红）**：精简索引——每条记忆在索引里只留一句话指针，细节写进记忆文件本身。「明细」里筛「索引行过长」能找出超过 150 字的行；
+- **记忆在、索引里没有**：「明细」里筛「未入索引」。会话开头自动加载的只有索引，不在索引里的记忆只有 bot 主动去查时才可能用上，需要的话补进 `MEMORY.md`；
+- **想确认 bot 到底记没记过某件事**：「明细」搜索框会全文检索所有 bot 的记忆正文。
+
 ## 还没解决？
 
 - 翻[设计笔记](design-notes.md)确认你遇到的是不是「特性」（比如发送暂存目录里文件消失＝已发送成功）；

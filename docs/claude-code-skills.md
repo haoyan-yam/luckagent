@@ -77,6 +77,12 @@ cp -r 某技能目录 ~/.claude/skills/
 
 引入外部技能前自查三件事：**①** SKILL.md 里不要有其他机器的绝对路径、真实群/人 ID；**②** 依赖的密钥是否已进本机 `.env`；**③** 依赖的本地二进制与 Python 包是否已装——安装脚本已预装 python-pptx / openpyxl / Pillow / pandas / PyMuPDF 等基础包与 LibreOffice / ffmpeg / poppler，`luckagent doctor` 的 `office_media_toolchain` 项可核对（缺二进制的技能只会误导 agent）。
 
+## 看技能用没用上
+
+管理台「技能 → 项目技能」列出各 bot 的项目级技能和使用次数（近 7 天 / 近 30 天 / 累计、最近使用），也能筛出「30 天未用」「从未使用」的技能。统计来自 bot 的会话记录，**一次使用 = 一轮用到该技能的对话**，三种用法都算：调用 `Skill` 工具、直接读 `.claude/skills/<name>/SKILL.md`、直接运行技能目录里的脚本——实际上项目技能大多是后两种用法。
+
+长期「从未使用」的技能，常见原因是 `description` 写得不够具体，或与全局技能抢了同一类需求（例如项目级生图规范被全局 `image-gen` 抢走）。改法：在 `description` 里写清触发词并声明优先级，或在该 bot 的 `CLAUDE.md` 里规定「这类需求先读某技能」。
+
 ## 中央技能中心（跨 bot 共享）
 
 某个 bot 沉淀出的可复用方法，可以发布到 luckagent-core 的技能中心，其他 bot / 其他机器一条命令安装：

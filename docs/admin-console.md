@@ -53,7 +53,7 @@ bot 的增删改查（读写 `bots.json`）：
 
 ### 定时任务
 
-对应 `/api/schedule`：表格展示每个任务的类型（周期/一次性）、cron 表达式、时区、下次执行时间、状态（进行中/已暂停/待执行）；表格上方可按类型、bot、状态筛选（默认全部，各选项带计数）；新建弹窗二选一（cron 表达式 或 延迟秒数）；周期任务可暂停/恢复，所有任务可取消。详见[定时任务](scheduling.md)。
+对应 `/api/schedule`：表格展示每个任务的类型（周期/一次性）、cron 表达式、时区、下次执行时间、状态（进行中/已暂停/待执行）；表格上方可按类型、bot、状态筛选（默认全部，各选项带计数）；点「标签 / 提示词」一栏打开任务详情——类型、状态、bot、目标会话（chat_id 可复制）、cron 与时区、下次 / 上次执行、创建时间，以及保留换行的完整提示词（可一键复制）；新建弹窗二选一（cron 表达式 或 延迟秒数）；周期任务可暂停/恢复，所有任务可取消。详见[定时任务](scheduling.md)。
 
 ### 群日报
 
@@ -163,9 +163,13 @@ bot 的增删改查（读写 `bots.json`）：
 | `GET /admin/api/memory/overview` | 所有 bot 的记忆索引、文件清单（含 frontmatter 类型）与索引占用 |
 | `GET /admin/api/memory/search?q=<text>[&bot=<name>]` | 记忆正文全文检索（不区分大小写，返回命中数与上下文片段） |
 | `GET /admin/api/memory/file?bot=<name>&file=<name.md>` | 读取单条记忆（原文 + 解析后的 frontmatter + 去掉 frontmatter 的正文） |
+| `GET /admin/api/skills` | 全局技能与各 bot 项目级技能清单（名称、描述、来源、更新时间） |
+| `GET /admin/api/skills/detail?scope=global\|bot&bot=<name>&skill=<name>` | 单个技能的 `SKILL.md` 与文件清单 |
 | `GET /admin/api/skills/usage` | 各 bot 的技能调用统计（扫描会话记录，后台增量刷新） |
 | `GET /admin/api/group-summary?bot=<name>` | 读取该 bot 的群日报忽略名单 |
 | `PUT /admin/api/group-summary` | 覆写忽略名单（`{bot, excluded: ["oc_…"]}`） |
+| `GET /api/budgets`、`PUT /api/budgets/:name` | 各 bot 当天用量（按本地日期，次日零点滚动进历史）与每日上限；`PUT` 传 `{dailyLimitUsd}`，0 = 不限。上限只拦截经 HTTP API 发起的任务（`/api/talk`，即 `luckagent talk` 与跨 bot 委派），飞书消息与定时任务不受限 |
+| `GET /api/costs/report?period=daily\|weekly\|monthly` | 各 bot 当天 / 最近 7 天 / 最近 30 天（含今天）的用量与任务数 |
 | `GET/POST /api/bots`、`GET/PUT/DELETE /api/bots/:name` | bot CRUD（详情接口掩码密钥；改动需重启） |
 
 ## 相关文档

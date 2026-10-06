@@ -2,6 +2,21 @@
 
 版本号 = 根 `package.json`（管理台总览页显示的就是它）。升级：`luckagent update`（git 安装）或重跑一行安装命令（tarball 安装）。git tag 与本文件同步打点。
 
+## 未发布（main）
+
+管理台各页面改版，以及日预算记账修复。
+
+- **系统总览改为以运行状态为主**：一行系统状态条（bridge / core / bot 在线 / 开机自启 / 配置，有问题时变色并写明原因）；4 张卡片——今日任务（成员发起 / 定时拆分）、近 7 天技能调用（每日小柱图、上周对比）、近 7 天记忆沉淀（新增 / 更新）、今日定时任务；「待处理」汇总各页预警（今日失败、记忆索引超限或占用 ≥70%、未配置日报的群、从没用过的项目技能），每条可跳转处理；实时动态（执行中优先，含来源、任务摘要、耗时，每分钟刷新）；技能活跃榜；最近沉淀的记忆（点开看正文）；bot 表格改为状态、今日任务、7 天技能调用、记忆条数与索引占用、最近活动。bot 走订阅用量，成本只留一列灰色「用量参考」（API 等价金额）；定时任务按「时刻 + 类型」跨 bot 合并显示
+- **群日报页**：所有 bot 的群汇总在一张表里（不用再逐个切换 bot），可按群名 / chat_id 搜索、按 bot 与状态筛选；某个 bot 拉不到群列表时只提示该 bot，它已配置的日报照常列出
+- **定时任务页**：可按类型、bot、状态筛选（各选项带计数）；点提示词打开任务详情，看保留换行的完整提示词
+- **技能页**：拆成「项目技能 / 全局技能」两页；项目技能叠加使用统计（近 7 天 / 30 天 / 累计、最近使用、从未使用），按「一轮对话用到即算一次」计，覆盖 `Skill` 工具、直接读 `SKILL.md`、直接运行技能脚本三种用法；统计来自各 bot 的会话记录，增量扫描并缓存在 `~/.luckagent/skill-usage-cache.json`，会话记录被清理后历史仍保留
+- **记忆页**：全 bot 总览 + 明细。总览按 Claude Code 的加载上限（`MEMORY.md` 前 200 行 / 25,000 字符）显示索引占用，≥70% 标黄、超限标红；明细拍平所有记忆，可按 bot、类型、状态（30 天未更新 / 索引行过长 / 未入索引 / 文件缺失）筛选，搜索框同时搜标题、钩子和正文；详情显示类型、名称、描述，`[[名字]]` 引用可点击跳转。索引解析兼容行首 ⭐/⛔、表格行、一行多个链接等写法
+- **日预算修复**：按本地日期滚动（原先按 UTC，在 UTC+8 下早 8 点才滚动），并修复同一天内反复把花费归档成「昨天」再清零、导致每日上限永远触发不了的问题；改为对每个完成或失败的任务记账（飞书消息 / API / 跨 bot 委派 / 定时任务），此前只有 API 任务记账。旧 `budgets.json` 直接兼容
+- 新接口：`/admin/api/dashboard`、`/admin/api/activity/feed`、`/admin/api/attention`、`/admin/api/memory/overview`、`/admin/api/memory/search`、`/admin/api/skills/usage`；原 `/admin/api/memory?bot=` 由 `/admin/api/memory/overview` 取代
+- `.gitignore` 忽略 Python 缓存（`__pycache__/`、`*.pyc`）
+- 文档：管理台使用手册（各页面与接口表）、目录说明（`activity.db` / `budgets.json` / `skill-usage-cache.json`）、技能体系（看技能用没用上）、常见问题排查（bot 好像忘了以前记住的事）、README、CLAUDE.md
+- 测试：新增 `skill-usage`、`memory-view`、`attention`、`dashboard`、`budget-manager` 等用例，全量 903 例通过
+
 ## v0.7.22 — 2026-09-24
 
 - **`luckagent update` 支持 tarball 安装**：一行命令在还没有 git 的新机器上会下载 tarball，装出来没有 `.git`，以前 update 直接报错、只能手动 tarball 覆盖再重跑安装。现在 update 发现没有 `.git`、而机器上已有可用的 git（macOS 上以 Xcode 命令行工具已装为准）时，先就地转成跟踪 `origin/main` 的浅克隆：tracked 文件换成最新版，`.env`、`bots.json`、`node_modules` 等被忽略的文件不动，然后用新版 CLI 照常升级。拉取失败时清掉半截的 `.git`、提示开梯子 TUN 模式或用 tarball 覆盖；还没有 git 时给出原来的 tarball 升级方法。`LUCKAGENT_REPO` 可覆盖拉取源
