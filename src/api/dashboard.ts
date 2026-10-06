@@ -7,11 +7,7 @@
  * per-task cost is only an API-equivalent reference (shown elsewhere, muted).
  */
 
-export function localDay(ts: number): string {
-  const d = new Date(ts);
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
+import { localDay } from '../utils/local-day.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
