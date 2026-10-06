@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { memoryActivity, skillActivity, taskBreakdown } from '../src/api/dashboard.js';
+import { buildFeed, memoryActivity, recentMemories, skillActivity, summarizePrompt, taskBreakdown, topSkills } from '../src/api/dashboard.js';
 
 // Local-time timestamps keep the tests timezone-independent.
 const at = (day: number, h: number) => new Date(2026, 9, day, h).getTime(); // Oct <day>
@@ -76,5 +76,98 @@ describe('memoryActivity', () => {
       updated7d: 2,
       perBot: { A: { count: 4, ratio: 0.5 }, B: { count: 0, ratio: 0 } },
     });
+  });
+});
+
+describe('summarizePrompt', () => {
+  it('uses a scheduled prompt\'s 【title】, else the first words', () => {
+    expect(summarizePrompt('【每日群聊总结·自动发现(本 bot 自跑·静默)】你是 ELbot…')).toBe('每日群聊总结·自动发现(本 bot 自跑·静默)');
+    expect(summarizePrompt('在吗')).toBe('在吗');
+    expect(summarizePrompt('帮我  把这张\n图换个背景'.repeat(5), 10)).toBe('帮我 把这张 图换个…');
+    expect(summarizePrompt(undefined)).toBe('');
+  });
+});
+
+describe('buildFeed', () => {
+  const now = at(14, 12);
+  const ev = (type: string, botName: string, chatId: string, ts: number, extra: Record<string, unknown> = {}) => ({
+    type,
+    botName,
+    chatId,
+    timestamp: ts,
+    userId: 'ou_1',
+    prompt: '在吗',
+    ...extra,
+  });
+
+  it('pairs starts with finishes per bot+chat, shows unfinished recent starts as running first', () => {
+    const feed = buildFeed(
+      [
+        ev('task_started', 'A', 'c1', at(14, 9)),
+        ev('task_completed', 'A', 'c1', at(14, 9) + 5000, { durationMs: 5000 }),
+        ev('task_started', 'B', 'c2', at(14, 11)), // still running
+        ev('task_started', 'C', 'c3', at(14, 8)), // started 4h ago, never finished → stale, hidden
+        ev('task_failed', 'D', 'c4', at(14, 10), { userId: 'scheduler', prompt: '【日报】…', errorMessage: 'boom' }),
+      ],
+      now,
+    );
+    expect(feed.map((f) => [f.bot, f.status, f.source, f.summary])).toEqual([
+      ['B', 'running', 'member', '在吗'],
+      ['D', 'failed', 'scheduler', '日报'],
+      ['A', 'done', 'member', '在吗'],
+    ]);
+    expect(feed[1].error).toBe('boom');
+    expect(feed[2].durationMs).toBe(5000);
+  });
+
+  it('caps the list', () => {
+    const many = Array.from({ length: 30 }, (_, i) => ev('task_completed', 'A', `c${i}`, at(14, 9) + i));
+    expect(buildFeed(many, now, 5)).toHaveLength(5);
+  });
+});
+
+describe('topSkills', () => {
+  it('ranks skills by uses, listing bots and whether it is a project skill', () => {
+    const top = topSkills(
+      [
+        { bot: 'A', skill: 'ufs-poster' },
+        { bot: 'A', skill: 'ufs-poster' },
+        { bot: 'B', skill: 'lark-doc' },
+        { bot: 'A', skill: 'lark-doc' },
+        { bot: 'B', skill: 'dataviz' },
+      ],
+      { A: new Set(['ufs-poster']) },
+      2,
+    );
+    expect(top).toEqual([
+      { skill: 'lark-doc', count: 2, bots: ['A', 'B'], project: false },
+      { skill: 'ufs-poster', count: 2, bots: ['A'], project: true },
+    ]);
+  });
+});
+
+describe('recentMemories', () => {
+  it('lists the latest-touched memories across bots and flags new ones', () => {
+    const now = at(14, 12);
+    const iso = (t: number) => new Date(t).toISOString();
+    const f = (file: string, mtime: number, created: number | null) => ({
+      file,
+      title: file,
+      exists: true,
+      mtime: iso(mtime),
+      createdAt: created === null ? null : iso(created),
+    });
+    const out = recentMemories(
+      [
+        { bot: 'A', files: [f('a1.md', at(13, 9), at(13, 9)), f('a2.md', at(2, 9), at(1, 9))] },
+        { bot: 'B', files: [f('b1.md', at(14, 10), at(1, 9)), { ...f('gone.md', at(14, 11), null), exists: false }] },
+      ],
+      now,
+      2,
+    );
+    expect(out.map((m) => [m.bot, m.file, m.isNew])).toEqual([
+      ['B', 'b1.md', false],
+      ['A', 'a1.md', true],
+    ]);
   });
 });

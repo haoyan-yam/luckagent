@@ -132,3 +132,131 @@ export function memoryActivity(
   }
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// Live feed, skill ranking, recent memories
+// ---------------------------------------------------------------------------
+
+/** One line of task text for the feed: a scheduled prompt's 【title】, else the first words. Exported for tests. */
+export function summarizePrompt(prompt: string | undefined, max = 30): string {
+  const text = (prompt ?? '').replace(/\s+/g, ' ').trim();
+  const title = text.match(/^【([^】]{1,60})】/);
+  if (title) return title[1].trim();
+  return text.length > max ? `${text.slice(0, max)}…` : text;
+}
+
+export interface FeedEventLike extends TaskEventLike {
+  chatId: string;
+  prompt?: string;
+  durationMs?: number;
+  errorMessage?: string;
+}
+
+export interface FeedItem {
+  ts: number;
+  bot: string;
+  source: 'member' | 'scheduler';
+  status: 'running' | 'done' | 'failed';
+  summary: string;
+  durationMs?: number;
+  error?: string;
+}
+
+/** A start with no finish for longer than this is stale (crash/restart), not "running". */
+const RUNNING_MAX_MS = 2 * 60 * 60 * 1000;
+
+/**
+ * Recent task activity, newest first. Finished tasks come from their
+ * completed/failed event; a started event with no later finish for the same
+ * bot + chat is shown as running. Exported for tests.
+ */
+export function buildFeed(events: Iterable<FeedEventLike>, now = Date.now(), limit = 12): FeedItem[] {
+  const sorted = [...events].sort((a, b) => b.timestamp - a.timestamp);
+  const finishedAfter = new Map<string, number>(); // bot|chat → latest finish seen so far (walking newest → oldest)
+  const out: FeedItem[] = [];
+  for (const e of sorted) {
+    const key = `${e.botName}|${e.chatId}`;
+    const source = e.userId === SCHEDULER_USER ? 'scheduler' : 'member';
+    if (e.type === 'task_completed' || e.type === 'task_failed') {
+      if (!finishedAfter.has(key)) finishedAfter.set(key, e.timestamp);
+      out.push({
+        ts: e.timestamp,
+        bot: e.botName,
+        source,
+        status: e.type === 'task_failed' ? 'failed' : 'done',
+        summary: summarizePrompt(e.prompt),
+        durationMs: e.durationMs,
+        error: e.type === 'task_failed' ? e.errorMessage : undefined,
+      });
+    } else if (e.type === 'task_started' && !finishedAfter.has(key) && now - e.timestamp < RUNNING_MAX_MS) {
+      out.push({ ts: e.timestamp, bot: e.botName, source, status: 'running', summary: summarizePrompt(e.prompt) });
+    }
+    if (out.length >= limit) break;
+  }
+  // running ones first, then by time
+  return out.sort((a, b) => Number(b.status === 'running') - Number(a.status === 'running') || b.ts - a.ts);
+}
+
+export interface TopSkill {
+  skill: string;
+  count: number;
+  bots: string[];
+  /** A project-level skill of (one of) the bots that used it, vs. a global one. */
+  project: boolean;
+}
+
+/** Most-used skills in a window. Exported for tests. */
+export function topSkills(
+  uses: Iterable<{ bot: string; skill: string }>,
+  projectSkills: Record<string, Set<string>>,
+  limit = 8,
+): TopSkill[] {
+  const acc = new Map<string, { count: number; bots: Set<string> }>();
+  for (const u of uses) {
+    const a = acc.get(u.skill) ?? { count: 0, bots: new Set<string>() };
+    a.count++;
+    a.bots.add(u.bot);
+    acc.set(u.skill, a);
+  }
+  return [...acc]
+    .map(([skill, a]) => ({
+      skill,
+      count: a.count,
+      bots: [...a.bots].sort(),
+      project: [...a.bots].some((b) => projectSkills[b]?.has(skill)),
+    }))
+    .sort((a, b) => b.count - a.count || a.skill.localeCompare(b.skill))
+    .slice(0, limit);
+}
+
+export interface RecentMemory {
+  bot: string;
+  file: string;
+  title: string;
+  mtime: string;
+  /** Created (not just edited) in the last 7 days. */
+  isNew: boolean;
+}
+
+/** Latest-touched memories across bots. Exported for tests. */
+export function recentMemories(
+  bots: Array<{ bot: string; files: Array<MemoryFileLike & { file: string; title: string }> }>,
+  now = Date.now(),
+  limit = 8,
+): RecentMemory[] {
+  const since = now - 7 * DAY_MS;
+  return bots
+    .flatMap((b) =>
+      b.files
+        .filter((f) => f.exists && f.mtime)
+        .map((f) => ({
+          bot: b.bot,
+          file: f.file,
+          title: f.title,
+          mtime: f.mtime!,
+          isNew: !!f.createdAt && Date.parse(f.createdAt) >= since,
+        })),
+    )
+    .sort((a, b) => b.mtime.localeCompare(a.mtime))
+    .slice(0, limit);
+}

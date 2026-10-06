@@ -11,7 +11,7 @@ import { EDITABLE_DEFAULTS, displayDefault, validateDefaultsUpdate, writeEnvUpda
 import { claudeProjectsDir, physicalCwd } from '../../engines/claude/session-lister.js';
 import { SkillUsageTracker } from '../skill-usage.js';
 import { buildAttention, unsetGroupSummaries } from '../attention.js';
-import { memoryActivity, skillActivity, taskBreakdown } from '../dashboard.js';
+import { buildFeed, memoryActivity, recentMemories, skillActivity, taskBreakdown, topSkills } from '../dashboard.js';
 import { MEMORY_INDEX_LIMITS, parseMemoryFrontmatter, readBotMemory, searchMemories, stripFrontmatter } from '../memory-view.js';
 
 export { parseMemoryIndex, type MemoryIndexEntry } from '../memory-view.js';
@@ -580,12 +580,31 @@ export async function handleAdminRoutes(
       };
     });
 
+    const recentUses = tracker.usesSince(physical, Date.now() - 15 * 24 * 60 * 60 * 1000);
+    const weekStart = new Date();
+    weekStart.setHours(0, 0, 0, 0);
+    weekStart.setDate(weekStart.getDate() - 6);
+    const projectSkills = Object.fromEntries(
+      cfgBots.map((b) => [b.name, new Set(scanSkillsDir(path.join(b.workdir, '.claude', 'skills')).map((sk) => sk.name))]),
+    );
+    const memoryFiles = cfgBots.map((b, i) => ({ bot: b.name, files: memory[i].files }));
+
     jsonResponse(res, 200, {
       generatedAt: new Date().toISOString(),
       tasks: taskBreakdown(todayEvents),
-      skills: skillActivity(tracker.usesSince(physical, Date.now() - 15 * 24 * 60 * 60 * 1000)),
-      memory: memoryActivity(memory),
+      skills: {
+        ...skillActivity(recentUses),
+        top: topSkills(recentUses.filter((u) => u.ts >= weekStart.getTime()), projectSkills),
+      },
+      memory: { ...memoryActivity(memory), recent: recentMemories(memoryFiles) },
     });
+    return true;
+  }
+
+  // GET /admin/api/activity/feed — latest task activity for the dashboard (running first)
+  if (method === 'GET' && url === '/admin/api/activity/feed') {
+    const events = activityStore?.list({ limit: 200 }) ?? [];
+    jsonResponse(res, 200, { items: buildFeed(events) });
     return true;
   }
 

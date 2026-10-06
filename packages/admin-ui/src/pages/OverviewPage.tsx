@@ -1,5 +1,5 @@
-import { useEffect, useMemo } from 'react';
-import { Alert, Badge, Button, Card, Col, Empty, Progress, Row, Space, Table, Tag, Tooltip, Typography } from 'antd';
+import { useEffect, useMemo, useState } from 'react';
+import { Alert, Badge, Button, Card, Col, Descriptions, Drawer, Empty, Progress, Row, Space, Table, Tag, Tooltip, Typography } from 'antd';
 import { ArrowDownOutlined, ArrowUpOutlined, CheckCircleFilled, CloseCircleFilled, ExclamationCircleFilled } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { Link } from 'react-router-dom';
@@ -7,6 +7,7 @@ import { api } from '../api/client';
 import { usePoll } from '../hooks/usePoll';
 import type { Overview, BotOverview } from '../api/types';
 import { Sparkline } from '../components/Sparkline';
+import { MarkdownView } from '../md';
 
 interface AttentionItem { key: string; level: 'error' | 'warning'; title: string; detail?: string; link?: string; }
 interface AttentionPayload { generatedAt: string; items: AttentionItem[]; }
@@ -21,8 +22,45 @@ interface DashboardPayload {
     people: number;
     perBot: Record<string, { members: number; scheduled: number; failed: number }>;
   };
-  skills: { days: string[]; daily: number[]; uses7d: number; usesPrev7d: number; perBot: Record<string, number> };
-  memory: { total: number; created7d: number; updated7d: number; perBot: Record<string, { count: number; ratio: number }> };
+  skills: {
+    days: string[];
+    daily: number[];
+    uses7d: number;
+    usesPrev7d: number;
+    perBot: Record<string, number>;
+    top: Array<{ skill: string; count: number; bots: string[]; project: boolean }>;
+  };
+  memory: {
+    total: number;
+    created7d: number;
+    updated7d: number;
+    perBot: Record<string, { count: number; ratio: number }>;
+    recent: Array<{ bot: string; file: string; title: string; mtime: string; isNew: boolean }>;
+  };
+}
+interface FeedItem {
+  ts: number;
+  bot: string;
+  source: 'member' | 'scheduler';
+  status: 'running' | 'done' | 'failed';
+  summary: string;
+  durationMs?: number;
+  error?: string;
+}
+interface MemFile {
+  file: string;
+  frontmatter: { name: string; description: string; type: string } | null;
+  body: string;
+  sizeBytes: number;
+  mtime: string;
+}
+
+const MEM_TYPE: Record<string, string> = { project: '项目', feedback: '反馈', reference: '参考', user: '用户' };
+
+function fmtDuration(ms?: number) {
+  if (!ms) return '';
+  const s = Math.round(ms / 1000);
+  return s < 60 ? `${s} 秒` : `${Math.floor(s / 60)} 分 ${s % 60} 秒`;
 }
 
 const MEMORY_WARN = 0.7;
@@ -92,6 +130,19 @@ export default function OverviewPage({
   const { data: dash } = usePoll<DashboardPayload>(() => api.get('/admin/api/dashboard'), 60000);
   // 待处理：飞书群列表在后端缓存 5 分钟，这里每分钟拉一次，失败数等即时项最多晚 1 分钟
   const { data: attention, error: attentionError } = usePoll<AttentionPayload>(() => api.get('/admin/api/attention'), 60000);
+  const { data: feed } = usePoll<{ items: FeedItem[] }>(() => api.get('/admin/api/activity/feed'), 10000);
+  const [memViewer, setMemViewer] = useState<{ title: string; loading: boolean; data?: MemFile } | null>(null);
+
+  const openMemory = async (bot: string, file: string, title: string) => {
+    const head = `${bot} / ${title}`;
+    setMemViewer({ title: head, loading: true });
+    try {
+      const d = await api.get<MemFile>(`/admin/api/memory/file?bot=${encodeURIComponent(bot)}&file=${encodeURIComponent(file)}`);
+      setMemViewer({ title: head, loading: false, data: d });
+    } catch {
+      setMemViewer({ title: head, loading: false });
+    }
+  };
 
   useEffect(() => {
     if (data) onConfigDirty(data.configDirty);
@@ -166,17 +217,21 @@ export default function OverviewPage({
     </Card>
   );
 
-  // ---------------- 定时任务：同一时刻、同一 bot、同类任务合并 ----------------
+  // ---------------- 定时任务：同一时刻的同类任务合并（跨 bot），bot 列在后面 ----------------
   const batches = useMemo(() => {
-    const m = new Map<string, { when: string; botName: string; name: string; count: number }>();
+    const m = new Map<string, { when: string; name: string; count: number; bots: Map<string, number> }>();
     for (const t of data?.schedule.upcoming || []) {
       const name = batchName(t.label);
-      const key = `${t.nextExecuteAt.slice(0, 16)}|${t.botName}|${name}`;
-      const cur = m.get(key);
-      if (cur) cur.count++;
-      else m.set(key, { when: t.nextExecuteAt, botName: t.botName, name, count: 1 });
+      const key = `${t.nextExecuteAt.slice(0, 16)}|${name}`;
+      const cur = m.get(key) ?? { when: t.nextExecuteAt, name, count: 0, bots: new Map<string, number>() };
+      cur.count++;
+      cur.bots.set(t.botName, (cur.bots.get(t.botName) ?? 0) + 1);
+      m.set(key, cur);
     }
-    return [...m.values()].slice(0, 6);
+    return [...m.values()].slice(0, 6).map((b) => ({
+      ...b,
+      botText: [...b.bots].map(([bot, n]) => (n > 1 ? `${bot} ×${n}` : bot)).join('、'),
+    }));
   }, [data]);
 
   // ---------------- 运行状态卡片 ----------------
@@ -263,6 +318,96 @@ export default function OverviewPage({
                 )}
               </div>
               {it.link && <Link to={it.link} style={{ whiteSpace: 'nowrap' }}>去处理 →</Link>}
+            </div>
+          ))}
+        </Space>
+      )}
+    </Card>
+  );
+
+  // ---------------- 实时动态 ----------------
+  const feedCard = (
+    <Card size="small" title="实时动态" extra={<Typography.Text type="secondary" style={{ fontSize: 12 }}>每 10 秒刷新</Typography.Text>} style={{ height: '100%' }}>
+      {!feed && <Typography.Text type="secondary">加载中…</Typography.Text>}
+      {feed && feed.items.length === 0 && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="最近没有任务" />}
+      {feed && feed.items.length > 0 && (
+        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+          {feed.items.map((f, i) => (
+            <div key={`${f.ts}-${f.bot}-${i}`}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                {f.status === 'running' ? (
+                  <Badge status="processing" />
+                ) : f.status === 'failed' ? (
+                  <CloseCircleFilled style={{ color: '#cf1322' }} aria-label="失败" />
+                ) : (
+                  <CheckCircleFilled style={{ color: '#389e0d' }} aria-label="完成" />
+                )}
+                <Typography.Text type="secondary" style={{ fontSize: 12, fontVariantNumeric: 'tabular-nums', flex: 'none' }}>
+                  {f.status === 'running' ? '执行中' : dayjs(f.ts).format('HH:mm')}
+                </Typography.Text>
+                <Typography.Text strong style={{ flex: 'none' }}>{f.bot}</Typography.Text>
+                <Tag color={f.source === 'member' ? 'blue' : undefined} style={{ margin: 0, flex: 'none' }}>{f.source === 'member' ? '成员' : '定时'}</Tag>
+                <Typography.Text ellipsis={{ tooltip: f.summary }} style={{ flex: 1, minWidth: 0 }}>{f.summary || '—'}</Typography.Text>
+                {f.durationMs ? (
+                  <Typography.Text type="secondary" style={{ fontSize: 12, flex: 'none' }}>{fmtDuration(f.durationMs)}</Typography.Text>
+                ) : null}
+              </div>
+              {f.error && (
+                <Typography.Text type="danger" style={{ fontSize: 12, marginLeft: 22 }} ellipsis={{ tooltip: f.error }}>
+                  {f.error}
+                </Typography.Text>
+              )}
+            </div>
+          ))}
+        </Space>
+      )}
+    </Card>
+  );
+
+  // ---------------- 技能活跃榜 / 最近沉淀的记忆 ----------------
+  const topMax = Math.max(1, ...(sk?.top || []).map((x) => x.count));
+  const skillRankCard = (
+    <Card size="small" title="技能活跃榜（近 7 天）" extra={<Link to="/skills">全部技能 →</Link>} style={{ height: '100%' }}>
+      {!sk && <Typography.Text type="secondary">加载中…</Typography.Text>}
+      {sk && sk.top.length === 0 && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="近 7 天没有 bot 调用技能" />}
+      {sk && sk.top.length > 0 && (
+        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+          {sk.top.map((x) => (
+            <div key={x.skill} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ width: 170, minWidth: 0, flex: 'none', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Typography.Text ellipsis={{ tooltip: x.skill }} style={{ minWidth: 0 }}>{x.skill}</Typography.Text>
+                <Tag style={{ margin: 0, flex: 'none' }} color={x.project ? 'blue' : undefined}>{x.project ? '项目' : '全局'}</Tag>
+              </div>
+              <div style={{ flex: 1, height: 8, background: '#f0efec', borderRadius: 4 }}>
+                <div style={{ width: `${(x.count / topMax) * 100}%`, height: '100%', background: '#2a78d6', borderRadius: 4 }} />
+              </div>
+              <Typography.Text style={{ width: 44, textAlign: 'right', fontVariantNumeric: 'tabular-nums', flex: 'none' }}>{x.count} 次</Typography.Text>
+              <Typography.Text type="secondary" ellipsis={{ tooltip: x.bots.join('、') }} style={{ width: 120, fontSize: 12, flex: 'none' }}>
+                {x.bots.join('、')}
+              </Typography.Text>
+            </div>
+          ))}
+        </Space>
+      )}
+    </Card>
+  );
+
+  const recentMemoryCard = (
+    <Card size="small" title="最近沉淀的记忆" extra={<Link to="/memory">全部记忆 →</Link>} style={{ height: '100%' }}>
+      {!mem && <Typography.Text type="secondary">加载中…</Typography.Text>}
+      {mem && mem.recent.length === 0 && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有记忆" />}
+      {mem && mem.recent.length > 0 && (
+        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+          {mem.recent.map((m) => (
+            <div key={`${m.bot}/${m.file}`} style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+              <Tooltip title={dayjs(m.mtime).format('YYYY-MM-DD HH:mm')}>
+                <Typography.Text type="secondary" style={{ fontSize: 12, width: 64, flex: 'none' }}>{dayjs(m.mtime).fromNow()}</Typography.Text>
+              </Tooltip>
+              <Tag color={m.isNew ? 'green' : undefined} style={{ margin: 0, flex: 'none' }}>{m.isNew ? '新增' : '更新'}</Tag>
+              <Typography.Text style={{ flex: 'none' }}>{m.bot}</Typography.Text>
+              <Typography.Link ellipsis style={{ flex: 1, minWidth: 0 }} onClick={() => openMemory(m.bot, m.file, m.title)}>
+                {m.title}
+              </Typography.Link>
             </div>
           ))}
         </Space>
@@ -397,7 +542,10 @@ export default function OverviewPage({
       )}
       {statusBar}
       {tiles}
-      {attentionCard}
+      <Row gutter={[16, 16]}>
+        <Col xs={24} xl={10}>{attentionCard}</Col>
+        <Col xs={24} xl={14}>{feedCard}</Col>
+      </Row>
 
       <Card title="机器人" extra={<Link to="/bots">管理 →</Link>} size="small">
         {data && data.bots.length === 0 ? (
@@ -420,6 +568,11 @@ export default function OverviewPage({
         <style>{'.overview-row-anomaly td { background: #fff1f0 !important; }'}</style>
       </Card>
 
+      <Row gutter={[16, 16]}>
+        <Col xs={24} lg={12}>{skillRankCard}</Col>
+        <Col xs={24} lg={12}>{recentMemoryCard}</Col>
+      </Row>
+
       <Row gutter={16}>
         <Col xs={24} lg={12}>
           <Card
@@ -430,13 +583,13 @@ export default function OverviewPage({
             {batches.length ? (
               <Space direction="vertical" size={6} style={{ width: '100%' }}>
                 {batches.map((b) => (
-                  <div key={`${b.when}|${b.botName}|${b.name}`} style={{ display: 'flex', gap: 10, alignItems: 'baseline' }}>
-                    <Typography.Text strong style={{ minWidth: 86, fontVariantNumeric: 'tabular-nums' }}>{whenText(b.when)}</Typography.Text>
-                    <Typography.Text>{b.botName}</Typography.Text>
-                    <Typography.Text type="secondary">
+                  <div key={`${b.when}|${b.name}`} style={{ display: 'flex', gap: 10, alignItems: 'baseline', minWidth: 0 }}>
+                    <Typography.Text strong style={{ minWidth: 86, flex: 'none', fontVariantNumeric: 'tabular-nums' }}>{whenText(b.when)}</Typography.Text>
+                    <Typography.Text style={{ flex: 'none' }}>
                       {b.name}
                       {b.count > 1 && ` × ${b.count}`}
                     </Typography.Text>
+                    <Typography.Text type="secondary" ellipsis={{ tooltip: b.botText }} style={{ fontSize: 12, flex: 1, minWidth: 0 }}>{b.botText}</Typography.Text>
                   </div>
                 ))}
               </Space>
@@ -464,6 +617,26 @@ export default function OverviewPage({
           </Card>
         </Col>
       </Row>
+
+      <Drawer title={memViewer?.title} open={!!memViewer} onClose={() => setMemViewer(null)} width={720}>
+        {memViewer?.loading && <Typography.Text type="secondary">加载中…</Typography.Text>}
+        {memViewer && !memViewer.loading && !memViewer.data && <Alert type="warning" message="读取失败" />}
+        {memViewer?.data && (
+          <>
+            <Descriptions size="small" column={2} bordered style={{ marginBottom: 16 }}>
+              <Descriptions.Item label="类型">{MEM_TYPE[memViewer.data.frontmatter?.type ?? ''] ?? '未标注'}</Descriptions.Item>
+              <Descriptions.Item label="更新">{dayjs(memViewer.data.mtime).format('YYYY-MM-DD HH:mm')}</Descriptions.Item>
+              {memViewer.data.frontmatter?.description && (
+                <Descriptions.Item label="描述" span={2}>{memViewer.data.frontmatter.description}</Descriptions.Item>
+              )}
+            </Descriptions>
+            <MarkdownView text={memViewer.data.body} />
+            <div style={{ marginTop: 16 }}>
+              <Link to="/memory">在记忆页查看全部 →</Link>
+            </div>
+          </>
+        )}
+      </Drawer>
     </Space>
   );
 }
