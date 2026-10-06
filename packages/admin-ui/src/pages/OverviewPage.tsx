@@ -7,6 +7,7 @@ import { api } from '../api/client';
 import { usePoll } from '../hooks/usePoll';
 import type { Overview, BotOverview } from '../api/types';
 import { Sparkline } from '../components/Sparkline';
+import { CostTrendChart } from '../components/CostTrendChart';
 
 interface BotDaily { tasks: number[]; failed: number[]; cost: number[]; }
 interface CostTrend {
@@ -90,6 +91,8 @@ export default function OverviewPage({
   const { data, error, failCount } = usePoll<Overview>(() => api.get('/admin/api/overview'), 5000);
   const { data: costs } = usePoll<CostTrend>(() => api.get('/admin/api/costs?days=7'), 60000);
   // 待处理：飞书群列表在后端缓存 5 分钟，这里每分钟拉一次，失败数等即时项最多晚 1 分钟
+  // 趋势图固定按 30 天取数：颜色按 30 天排名分配，切 7 天只截取，不会重新上色
+  const { data: trend30 } = usePoll<CostTrend>(() => api.get('/admin/api/costs?days=30'), 60000);
   const { data: attention, error: attentionError } = usePoll<AttentionPayload>(() => api.get('/admin/api/attention'), 60000);
 
   useEffect(() => {
@@ -255,6 +258,14 @@ export default function OverviewPage({
                 )}
               </div>
               {it.link && <Link to={it.link} style={{ whiteSpace: 'nowrap' }}>去处理 →</Link>}
+              {!it.link && it.key === 'cost-spike' && (
+                <Typography.Link
+                  style={{ whiteSpace: 'nowrap' }}
+                  onClick={() => document.getElementById('cost-trend')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+                >
+                  看趋势 →
+                </Typography.Link>
+              )}
             </div>
           ))}
         </Space>
@@ -358,7 +369,14 @@ export default function OverviewPage({
       )}
       {statusBar}
       {tiles}
-      {attentionCard}
+      <Row gutter={[16, 16]}>
+        <Col xs={24} xl={10}>{attentionCard}</Col>
+        <Col xs={24} xl={14}>
+          <Card size="small" title="每日成本" id="cost-trend" style={{ height: '100%' }}>
+            {trend30 ? <CostTrendChart data={trend30} /> : <Typography.Text type="secondary">加载中…</Typography.Text>}
+          </Card>
+        </Col>
+      </Row>
 
       <Card title="机器人" extra={<Link to="/bots">管理 →</Link>} size="small">
         {data && data.bots.length === 0 ? (
