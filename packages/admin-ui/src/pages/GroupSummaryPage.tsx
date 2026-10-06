@@ -7,6 +7,7 @@ import {
   Input,
   Modal,
   Popconfirm,
+  Segmented,
   Select,
   Space,
   Table,
@@ -37,114 +38,149 @@ interface Chat {
 type RowStatus = 'on' | 'paused' | 'ignored' | 'unset' | 'orphan';
 
 interface Row {
+  botName: string;
   chatId: string;
   name: string;
   status: RowStatus;
   task?: ScheduleTask;
 }
 
+const STATUS_LABEL: Record<RowStatus, string> = {
+  unset: '未配置',
+  on: '已开日报',
+  paused: '已暂停',
+  ignored: '已忽略',
+  orphan: '失效',
+};
+const STATUS_ORDER: RowStatus[] = ['unset', 'on', 'paused', 'ignored', 'orphan'];
+
 export default function GroupSummaryPage() {
-  const [bot, setBot] = useState<string | null>(null);
-  const [chats, setChats] = useState<Chat[]>([]);
-  const [chatsError, setChatsError] = useState<string | null>(null);
+  const [chatsByBot, setChatsByBot] = useState<Record<string, Chat[]>>({});
+  const [chatErrors, setChatErrors] = useState<Record<string, string>>({});
   const [loadingChats, setLoadingChats] = useState(false);
-  const [excluded, setExcluded] = useState<string[]>([]);
+  const [excludedByBot, setExcludedByBot] = useState<Record<string, string[]>>({});
+  const [search, setSearch] = useState('');
+  const [botFilter, setBotFilter] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<RowStatus | 'all'>('all');
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorTarget, setEditorTarget] = useState<Row | null>(null);
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
 
   const { data: overview } = usePoll<Overview>(() => api.get('/admin/api/overview'), 30000);
-  const botNames = (overview?.bots || []).map((b) => b.name);
+  const botNames = useMemo(() => (overview?.bots || []).map((b) => b.name), [overview]);
+  // overview 每 30s 轮询一次会产生新数组；用名单字符串做依赖，名单不变就不重拉飞书
+  const botKey = botNames.join('\n');
 
   const { data: schedule, refresh: refreshSchedule } = usePoll<{ recurringTasks: ScheduleTask[] }>(
     () => api.get('/api/schedule'),
     10000,
   );
 
-  // Auto-select the first bot once the list arrives.
-  useEffect(() => {
-    if (!bot && botNames.length) setBot(botNames[0]);
-  }, [bot, botNames]);
-
+  // 所有 bot 并行拉群列表 + 忽略名单；单个 bot 失败（未运行/凭证失效）只记错误，不影响其他 bot
   const loadSeq = useRef(0);
-  const loadChats = useCallback(async (botName: string) => {
+  const loadAll = useCallback(async (names: string[]) => {
     const seq = ++loadSeq.current;
     setLoadingChats(true);
-    setChatsError(null);
-    try {
-      const r = await api.get<{ chats: Chat[] }>(`/admin/api/feishu/chats?bot=${encodeURIComponent(botName)}`);
-      if (seq === loadSeq.current) setChats(r.chats);
-    } catch (err: any) {
-      if (seq === loadSeq.current) {
-        setChats([]);
-        setChatsError(err?.message || '拉取群列表失败');
-      }
-    } finally {
-      if (seq === loadSeq.current) setLoadingChats(false);
+    const results = await Promise.all(
+      names.map(async (name) => {
+        const [chats, excluded] = await Promise.allSettled([
+          api.get<{ chats: Chat[] }>(`/admin/api/feishu/chats?bot=${encodeURIComponent(name)}`),
+          api.get<{ excluded: string[] }>(`/admin/api/group-summary?bot=${encodeURIComponent(name)}`),
+        ]);
+        return { name, chats, excluded };
+      }),
+    );
+    if (seq !== loadSeq.current) return;
+    const nextChats: Record<string, Chat[]> = {};
+    const nextErrors: Record<string, string> = {};
+    const nextExcluded: Record<string, string[]> = {};
+    for (const r of results) {
+      if (r.chats.status === 'fulfilled') nextChats[r.name] = r.chats.value.chats;
+      else nextErrors[r.name] = (r.chats.reason as any)?.message || '拉取群列表失败';
+      nextExcluded[r.name] = r.excluded.status === 'fulfilled' ? r.excluded.value.excluded : [];
     }
+    setChatsByBot(nextChats);
+    setChatErrors(nextErrors);
+    setExcludedByBot(nextExcluded);
+    setLoadingChats(false);
   }, []);
 
   useEffect(() => {
-    setChats([]);
-    setExcluded([]);
-    if (!bot) return;
-    let cancelled = false;
-    void loadChats(bot);
-    void api
-      .get<{ excluded: string[] }>(`/admin/api/group-summary?bot=${encodeURIComponent(bot)}`)
-      .then((r) => { if (!cancelled) setExcluded(r.excluded); })
-      .catch(() => { if (!cancelled) setExcluded([]); });
-    return () => { cancelled = true; };
-  }, [bot, loadChats]);
+    if (!botKey) return;
+    void loadAll(botKey.split('\n'));
+  }, [botKey, loadAll]);
 
-  const saveExcluded = useCallback(
-    (update: (prev: string[]) => string[]) => {
-      if (!bot) return;
-      setExcluded((prev) => {
-        const next = update(prev);
-        api.put('/admin/api/group-summary', { bot, excluded: next }).catch(async (err: any) => {
-          message.error(err?.message || '保存忽略名单失败');
-          // 失败以服务端为准回读，避免本地状态漂移
-          try {
-            const r = await api.get<{ excluded: string[] }>(`/admin/api/group-summary?bot=${encodeURIComponent(bot)}`);
-            setExcluded(r.excluded);
-          } catch { /* 桥接不可达时保持现状 */ }
-        });
-        return next;
+  const saveExcluded = useCallback((bot: string, update: (prev: string[]) => string[]) => {
+    setExcludedByBot((prevAll) => {
+      const next = update(prevAll[bot] || []);
+      api.put('/admin/api/group-summary', { bot, excluded: next }).catch(async (err: any) => {
+        message.error(err?.message || '保存忽略名单失败');
+        // 失败以服务端为准回读，避免本地状态漂移
+        try {
+          const r = await api.get<{ excluded: string[] }>(`/admin/api/group-summary?bot=${encodeURIComponent(bot)}`);
+          setExcludedByBot((cur) => ({ ...cur, [bot]: r.excluded }));
+        } catch { /* 桥接不可达时保持现状 */ }
       });
-    },
-    [bot],
-  );
+      return { ...prevAll, [bot]: next };
+    });
+  }, []);
 
   const rows: Row[] = useMemo(() => {
-    if (!bot) return [];
-    const tasks = (schedule?.recurringTasks || []).filter(
-      (t) => t.botName === bot && (t.label || '').startsWith(LABEL_PREFIX),
-    );
-    const taskByChat = new Map(tasks.map((t) => [(t.label || '').slice(LABEL_PREFIX.length), t]));
-    const list: Row[] = chats.map((c) => {
-      const task = taskByChat.get(c.chatId);
-      if (task) return { chatId: c.chatId, name: c.name, status: task.status === 'paused' ? 'paused' : 'on', task };
-      if (excluded.includes(c.chatId)) return { chatId: c.chatId, name: c.name, status: 'ignored' };
-      return { chatId: c.chatId, name: c.name, status: 'unset' };
-    });
-    // Tasks whose group the bot has since left → orphans, still deletable.
-    // Only when the chats fetch SUCCEEDED with data — an error/empty list
-    // must not mislabel every healthy task as orphaned (and invite mass
-    // deletion).
-    if (!chatsError && chats.length > 0) {
-      for (const t of tasks) {
-        const cid = (t.label || '').slice(LABEL_PREFIX.length);
-        if (!chats.some((c) => c.chatId === cid)) {
-          list.push({ chatId: cid, name: '（bot 已不在此群）', status: 'orphan', task: t });
+    const list: Row[] = [];
+    for (const bot of botNames) {
+      const tasks = (schedule?.recurringTasks || []).filter(
+        (t) => t.botName === bot && (t.label || '').startsWith(LABEL_PREFIX),
+      );
+      const taskByChat = new Map(tasks.map((t) => [(t.label || '').slice(LABEL_PREFIX.length), t]));
+      const chats = chatsByBot[bot];
+      const excluded = excludedByBot[bot] || [];
+      if (!chats) {
+        // 群列表拉不到（bot 未运行等）：已配置的日报照样列出来，只是群名未知、也无法判定失效
+        for (const [cid, task] of taskByChat) {
+          list.push({ botName: bot, chatId: cid, name: '（群列表未拉到）', status: task.status === 'paused' ? 'paused' : 'on', task });
+        }
+        continue;
+      }
+      for (const c of chats) {
+        const task = taskByChat.get(c.chatId);
+        const base = { botName: bot, chatId: c.chatId, name: c.name };
+        if (task) list.push({ ...base, status: task.status === 'paused' ? 'paused' : 'on', task });
+        else if (excluded.includes(c.chatId)) list.push({ ...base, status: 'ignored' });
+        else list.push({ ...base, status: 'unset' });
+      }
+      // Tasks whose group the bot has since left → orphans, still deletable.
+      // Only when the chats fetch SUCCEEDED with data — an error/empty list
+      // must not mislabel every healthy task as orphaned (and invite mass
+      // deletion).
+      if (chats.length > 0) {
+        for (const [cid, task] of taskByChat) {
+          if (!chats.some((c) => c.chatId === cid)) {
+            list.push({ botName: bot, chatId: cid, name: '（bot 已不在此群）', status: 'orphan', task });
+          }
         }
       }
     }
     return list;
-  }, [bot, chats, chatsError, excluded, schedule]);
+  }, [botNames, chatsByBot, excludedByBot, schedule]);
 
-  const unsetCount = rows.filter((r) => r.status === 'unset').length;
+  // 群名搜索 + bot 筛选先过一遍，状态计数基于这一层，切状态时数字不跳
+  const searched = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return rows.filter(
+      (r) =>
+        (!botFilter || r.botName === botFilter) &&
+        (!q || r.name.toLowerCase().includes(q) || r.chatId.toLowerCase().includes(q)),
+    );
+  }, [rows, search, botFilter]);
+  const statusCounts = useMemo(() => {
+    const m: Record<RowStatus, number> = { unset: 0, on: 0, paused: 0, ignored: 0, orphan: 0 };
+    for (const r of searched) m[r.status]++;
+    return m;
+  }, [searched]);
+  const visibleRows = statusFilter === 'all' ? searched : searched.filter((r) => r.status === statusFilter);
+
+  const errorBots = Object.keys(chatErrors);
 
   const openEditor = (row: Row) => {
     setEditorTarget(row);
@@ -152,13 +188,13 @@ export default function GroupSummaryPage() {
       cronExpr: row.task?.cronExpr || DEFAULT_CRON,
       prompt:
         row.task?.prompt ||
-        DEFAULT_TEMPLATE.replaceAll('{bot}', bot || '').replaceAll('{chatId}', row.chatId),
+        DEFAULT_TEMPLATE.replaceAll('{bot}', row.botName).replaceAll('{chatId}', row.chatId),
     });
     setEditorOpen(true);
   };
 
   const submitEditor = async () => {
-    if (!bot || !editorTarget) return;
+    if (!editorTarget) return;
     const { cronExpr, prompt } = await form.validateFields();
     setSaving(true);
     try {
@@ -167,14 +203,14 @@ export default function GroupSummaryPage() {
         message.success('已更新');
       } else {
         await api.post('/api/schedule', {
-          botName: bot,
+          botName: editorTarget.botName,
           chatId: editorTarget.chatId,
           prompt,
           cronExpr,
           label: `${LABEL_PREFIX}${editorTarget.chatId}`,
         });
         // 开启日报的群顺手移出忽略名单
-        saveExcluded((prev) => prev.filter((c) => c !== editorTarget.chatId));
+        saveExcluded(editorTarget.botName, (prev) => prev.filter((c) => c !== editorTarget.chatId));
         message.success('日报已开启（调度即时生效，无需重启）');
       }
       setEditorOpen(false);
@@ -197,11 +233,10 @@ export default function GroupSummaryPage() {
   };
 
   const runNow = async (row: Row) => {
-    if (!bot) return;
     const prompt =
-      row.task?.prompt || DEFAULT_TEMPLATE.replaceAll('{bot}', bot).replaceAll('{chatId}', row.chatId);
+      row.task?.prompt || DEFAULT_TEMPLATE.replaceAll('{bot}', row.botName).replaceAll('{chatId}', row.chatId);
     try {
-      await api.post('/api/talk', { botName: bot, chatId: row.chatId, prompt, async: true });
+      await api.post('/api/talk', { botName: row.botName, chatId: row.chatId, prompt, async: true });
       message.success('已触发一次日报，稍后到群里查看结果');
     } catch (err: any) {
       message.error(err?.message || '触发失败');
@@ -222,6 +257,7 @@ export default function GroupSummaryPage() {
     );
 
   const columns = [
+    { title: 'Bot', key: 'bot', render: (_: unknown, r: Row) => r.botName },
     {
       title: '群',
       key: 'name',
@@ -260,14 +296,14 @@ export default function GroupSummaryPage() {
               <Button size="small" type="primary" onClick={() => openEditor(r)}>
                 开启日报
               </Button>
-              <Button size="small" onClick={() => saveExcluded((prev) => [...prev, r.chatId])}>
+              <Button size="small" onClick={() => saveExcluded(r.botName, (prev) => [...prev, r.chatId])}>
                 忽略
               </Button>
             </>
           )}
           {r.status === 'ignored' && (
             <>
-              <Button size="small" onClick={() => saveExcluded((prev) => prev.filter((c) => c !== r.chatId))}>
+              <Button size="small" onClick={() => saveExcluded(r.botName, (prev) => prev.filter((c) => c !== r.chatId))}>
                 取消忽略
               </Button>
               <Button size="small" type="primary" onClick={() => openEditor(r)}>
@@ -315,49 +351,78 @@ export default function GroupSummaryPage() {
     },
   ];
 
+  const unsetTotal = rows.filter((r) => r.status === 'unset').length;
+
   return (
     <Card
       title="群日报"
       extra={
-        <Space>
-          <Select
-            style={{ width: 200 }}
-            placeholder="选择 bot"
-            value={bot}
-            onChange={setBot}
-            options={botNames.map((n) => ({ value: n, label: n }))}
-          />
-          <Button onClick={() => bot && loadChats(bot)} loading={loadingChats}>
-            刷新群列表
-          </Button>
-        </Space>
+        <Button onClick={() => botKey && loadAll(botKey.split('\n'))} loading={loadingChats}>
+          刷新群列表
+        </Button>
       }
     >
-      {chatsError && (
+      {errorBots.length > 0 && (
         <Alert
           type="warning"
           showIcon
           style={{ marginBottom: 16 }}
-          message={`无法拉取群列表：${chatsError}`}
-          description="bot 需处于运行状态且飞书凭证有效（需要 im:chat:readonly 权限）。"
+          message={`${errorBots.length} 个 bot 无法拉取群列表：${errorBots.join('、')}`}
+          description={
+            <>
+              {errorBots.map((b) => (
+                <div key={b}>
+                  <Typography.Text code>{b}</Typography.Text> {chatErrors[b]}
+                </div>
+              ))}
+              <div>bot 需处于运行状态且飞书凭证有效（需要 im:chat:readonly 权限）；它已配置的日报仍会列出。</div>
+            </>
+          }
         />
       )}
-      {!chatsError && unsetCount > 0 && (
+      {unsetTotal > 0 && (
         <Alert
           type="info"
           showIcon
           style={{ marginBottom: 16 }}
-          message={`有 ${unsetCount} 个群尚未配置日报——逐个「开启」或「忽略」后此提示消失。`}
+          message={`有 ${unsetTotal} 个群尚未配置日报——逐个「开启」或「忽略」后此提示消失。`}
         />
       )}
+      <Space wrap style={{ marginBottom: 12 }}>
+        <Input.Search
+          allowClear
+          placeholder="搜索群名 / chat_id"
+          style={{ width: 220 }}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <Select
+          allowClear
+          style={{ width: 180 }}
+          placeholder="全部 bot"
+          value={botFilter}
+          onChange={(v) => setBotFilter(v ?? null)}
+          options={botNames.map((n) => ({ value: n, label: n }))}
+        />
+        <Segmented<RowStatus | 'all'>
+          value={statusFilter}
+          onChange={setStatusFilter}
+          options={[
+            { value: 'all', label: `全部 (${searched.length})` },
+            ...STATUS_ORDER.map((s) => ({ value: s, label: `${STATUS_LABEL[s]} (${statusCounts[s]})` })),
+          ]}
+        />
+      </Space>
       <Table
-        rowKey="chatId"
-        dataSource={rows}
+        rowKey={(r) => `${r.botName}:${r.chatId}`}
+        dataSource={visibleRows}
         columns={columns}
         loading={loadingChats}
         pagination={{ pageSize: 20 }}
         size="small"
-        locale={{ emptyText: bot ? '该 bot 不在任何群里（先把 bot 拉进群）' : '先选择一个 bot' }}
+        locale={{
+          emptyText: botNames.length === 0 ? '暂无 bot' : rows.length === 0 ? 'bot 们不在任何群里（先把 bot 拉进群）' : '没有符合筛选条件的群',
+        }}
       />
       <Typography.Paragraph type="secondary" style={{ marginTop: 12, marginBottom: 0 }}>
         日报本质是 label 为 <Typography.Text code>group-summary:&lt;chatId&gt;</Typography.Text> 的周期任务
