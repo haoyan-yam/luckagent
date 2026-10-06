@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import {
   Button,
   Card,
+  Descriptions,
   Form,
   Input,
   InputNumber,
@@ -43,6 +44,7 @@ export default function SchedulePage() {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [botFilter, setBotFilter] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [detail, setDetail] = useState<ScheduleTask | null>(null);
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
 
@@ -128,11 +130,11 @@ export default function SchedulePage() {
       title: '标签 / 提示词',
       key: 'prompt',
       render: (_: unknown, t: ScheduleTask) => (
-        <span>
+        <span style={{ cursor: 'pointer' }} title="点击查看完整提示词" onClick={() => setDetail(t)}>
           {t.label && <Tag color="geekblue">{t.label}</Tag>}
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          <Typography.Link style={{ fontSize: 12 }}>
             {t.prompt.length > 60 ? `${t.prompt.slice(0, 60)}…` : t.prompt}
-          </Typography.Text>
+          </Typography.Link>
         </span>
       ),
     },
@@ -231,6 +233,66 @@ export default function SchedulePage() {
         任务持久化在 <Typography.Text code>~/.luckagent/scheduled-tasks.json</Typography.Text>
         ，桥接重启后自动恢复；周期任务按 cron 表达式与时区（<Typography.Text code>SCHEDULE_TIMEZONE</Typography.Text>）计算下次触发。
       </Typography.Paragraph>
+
+      <Modal
+        title={detail?.label ? `任务详情：${detail.label}` : '任务详情'}
+        open={!!detail}
+        onCancel={() => setDetail(null)}
+        footer={<Button onClick={() => setDetail(null)}>关闭</Button>}
+        width={720}
+      >
+        {detail && (
+          <>
+            <Descriptions size="small" column={2} bordered style={{ marginBottom: 16 }}>
+              <Descriptions.Item label="类型">{detail.type === 'recurring' ? '周期' : '一次性'}</Descriptions.Item>
+              <Descriptions.Item label="状态">{statusTag(detail.status)}</Descriptions.Item>
+              <Descriptions.Item label="Bot">{detail.botName}</Descriptions.Item>
+              <Descriptions.Item label="目标会话">
+                <Typography.Text copyable style={{ fontSize: 12 }}>
+                  {detail.chatId}
+                </Typography.Text>
+              </Descriptions.Item>
+              {detail.type === 'recurring' ? (
+                <>
+                  <Descriptions.Item label="cron">
+                    <Typography.Text code>{detail.cronExpr}</Typography.Text>
+                    {detail.timezone ? ` (${detail.timezone})` : ''}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="下次执行">
+                    {detail.nextExecuteAt ? dayjs(detail.nextExecuteAt).format('YYYY-MM-DD HH:mm') : '—'}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="上次执行">
+                    {detail.lastExecutedAt ? dayjs(detail.lastExecutedAt).format('YYYY-MM-DD HH:mm') : '—'}
+                  </Descriptions.Item>
+                </>
+              ) : (
+                <Descriptions.Item label="执行时间">
+                  {detail.executeAt ? dayjs(detail.executeAt).format('YYYY-MM-DD HH:mm') : '—'}
+                </Descriptions.Item>
+              )}
+              <Descriptions.Item label="创建时间">{dayjs(detail.createdAt).format('YYYY-MM-DD HH:mm')}</Descriptions.Item>
+            </Descriptions>
+            <Typography.Text strong>
+              提示词 <Typography.Text copyable={{ text: detail.prompt, tooltips: ['复制提示词', '已复制'] }} />
+            </Typography.Text>
+            <pre
+              style={{
+                marginTop: 8,
+                padding: 12,
+                maxHeight: 400,
+                overflow: 'auto',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                background: 'rgba(0, 0, 0, 0.04)',
+                borderRadius: 6,
+                fontSize: 13,
+              }}
+            >
+              {detail.prompt}
+            </pre>
+          </>
+        )}
+      </Modal>
 
       <Modal title="新建定时任务" open={createOpen} onCancel={() => setCreateOpen(false)} onOk={onCreate} confirmLoading={saving} okText="创建" cancelText="取消">
         <Form form={form} layout="vertical" initialValues={{ mode: 'cron' }}>
