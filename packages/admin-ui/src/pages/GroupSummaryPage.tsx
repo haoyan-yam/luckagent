@@ -398,6 +398,7 @@ export default function GroupSummaryPage() {
         />
         <Select
           allowClear
+          showSearch
           style={{ width: 180 }}
           placeholder="全部 bot"
           value={botFilter}

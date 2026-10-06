@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Button,
   Card,
@@ -8,6 +8,7 @@ import {
   Modal,
   Popconfirm,
   Radio,
+  Segmented,
   Select,
   Space,
   Table,
@@ -21,8 +22,27 @@ import { api } from '../api/client';
 import { usePoll } from '../hooks/usePoll';
 import type { Overview, ScheduleTask } from '../api/types';
 
+type TypeFilter = ScheduleTask['type'] | 'all';
+
+const STATUS_LABEL: Record<string, string> = { active: '进行中', paused: '已暂停', pending: '待执行' };
+const STATUS_ORDER = ['active', 'paused', 'pending'];
+
+const statusTag = (v: string) =>
+  v === 'active' ? (
+    <Tag color="green">进行中</Tag>
+  ) : v === 'paused' ? (
+    <Tag color="orange">已暂停</Tag>
+  ) : v === 'pending' ? (
+    <Tag color="blue">待执行</Tag>
+  ) : (
+    <Tag>{v}</Tag>
+  );
+
 export default function SchedulePage() {
   const [createOpen, setCreateOpen] = useState(false);
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
+  const [botFilter, setBotFilter] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<string>('all');
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
 
@@ -33,10 +53,26 @@ export default function SchedulePage() {
   const { data: overview } = usePoll<Overview>(() => api.get('/admin/api/overview'), 30000);
   const botNames = (overview?.bots || []).map((b) => b.name);
 
-  const all: ScheduleTask[] = [
-    ...(data?.recurringTasks || []),
-    ...(data?.tasks || []).filter((t) => t.status === 'pending'),
+  const all: ScheduleTask[] = useMemo(
+    () => [...(data?.recurringTasks || []), ...(data?.tasks || []).filter((t) => t.status === 'pending')],
+    [data],
+  );
+
+  // 每个维度的计数都基于「另外两个维度」筛完后的结果，切换任一筛选时其余数字跟着变
+  const matchType = (t: ScheduleTask) => typeFilter === 'all' || t.type === typeFilter;
+  const matchBot = (t: ScheduleTask) => !botFilter || t.botName === botFilter;
+  const matchStatus = (t: ScheduleTask) => statusFilter === 'all' || t.status === statusFilter;
+  const visible = all.filter((t) => matchType(t) && matchBot(t) && matchStatus(t));
+  const forType = all.filter((t) => matchBot(t) && matchStatus(t));
+  const forStatus = all.filter((t) => matchType(t) && matchBot(t));
+  const countType = (v: ScheduleTask['type']) => forType.filter((t) => t.type === v).length;
+  const countStatus = (v: string) => forStatus.filter((t) => t.status === v).length;
+  // 已知状态固定顺序在前，接口若返回其他状态也能筛到
+  const statusOptions = [
+    ...STATUS_ORDER,
+    ...Array.from(new Set(all.map((t) => t.status))).filter((s) => !STATUS_ORDER.includes(s)),
   ];
+  const botOptions = Array.from(new Set([...botNames, ...all.map((t) => t.botName)]));
 
   const act = async (fn: () => Promise<unknown>, ok: string) => {
     try {
@@ -119,8 +155,7 @@ export default function SchedulePage() {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
-      render: (v: string) =>
-        v === 'active' ? <Tag color="green">进行中</Tag> : v === 'paused' ? <Tag color="orange">已暂停</Tag> : <Tag>{v}</Tag>,
+      render: (v: string) => statusTag(v),
     },
     {
       title: '操作',
@@ -156,7 +191,42 @@ export default function SchedulePage() {
         </Button>
       }
     >
-      <Table rowKey="id" dataSource={all} columns={columns} pagination={{ pageSize: 20 }} size="small" />
+      <Space wrap style={{ marginBottom: 12 }}>
+        <Segmented<TypeFilter>
+          value={typeFilter}
+          onChange={setTypeFilter}
+          options={[
+            { value: 'all', label: `全部类型 (${forType.length})` },
+            { value: 'recurring', label: `周期 (${countType('recurring')})` },
+            { value: 'one-time', label: `一次性 (${countType('one-time')})` },
+          ]}
+        />
+        <Select
+          allowClear
+          showSearch
+          style={{ width: 180 }}
+          placeholder="全部 bot"
+          value={botFilter}
+          onChange={(v) => setBotFilter(v ?? null)}
+          options={botOptions.map((n) => ({ value: n, label: n }))}
+        />
+        <Segmented<string>
+          value={statusFilter}
+          onChange={setStatusFilter}
+          options={[
+            { value: 'all', label: `全部状态 (${forStatus.length})` },
+            ...statusOptions.map((s) => ({ value: s, label: `${STATUS_LABEL[s] || s} (${countStatus(s)})` })),
+          ]}
+        />
+      </Space>
+      <Table
+        rowKey="id"
+        dataSource={visible}
+        columns={columns}
+        pagination={{ pageSize: 20 }}
+        size="small"
+        locale={{ emptyText: all.length === 0 ? '暂无定时任务' : '没有符合筛选条件的任务' }}
+      />
       <Typography.Paragraph type="secondary">
         任务持久化在 <Typography.Text code>~/.luckagent/scheduled-tasks.json</Typography.Text>
         ，桥接重启后自动恢复；周期任务按 cron 表达式与时区（<Typography.Text code>SCHEDULE_TIMEZONE</Typography.Text>）计算下次触发。
