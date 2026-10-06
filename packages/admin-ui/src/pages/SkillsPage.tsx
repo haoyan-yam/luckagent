@@ -200,8 +200,17 @@ export default function SkillsPage() {
         (a.stat.lastUsedAt ? Date.parse(a.stat.lastUsedAt) : 0) - (b.stat.lastUsedAt ? Date.parse(b.stat.lastUsedAt) : 0),
       render: (_: unknown, r: ProjectRow) =>
         r.state === 'never' ? (
-          <Tooltip title={r.coverageFrom ? `${r.bot} 自 ${fmtDate(r.coverageFrom)}（现存最早的会话记录）以来没有用过` : undefined}>
-            <Tag>从未使用</Tag>
+          <Tooltip title={r.coverageFrom ? `${r.bot} 现有会话记录从 ${fmtDate(r.coverageFrom)} 开始，此后没有用过` : undefined}>
+            <div>
+              <Tag>从未使用</Tag>
+              {r.coverageFrom && (
+                <div>
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    自 {dayjs(r.coverageFrom).format('M/D')} 起
+                  </Typography.Text>
+                </div>
+              )}
+            </div>
           </Tooltip>
         ) : (
           <Tooltip title={dayjs(r.stat.lastUsedAt).format('YYYY-MM-DD HH:mm')}>
@@ -246,17 +255,11 @@ export default function SkillsPage() {
   const larkSkills = globalSkills.filter((s) => s.name.startsWith('lark-'));
   const mainSkills = globalSkills.filter((s) => !s.name.startsWith('lark-'));
 
-  // 各 bot 会话记录的起始日不同，只看有项目技能的 bot
-  const coverageDates = botsWithSkills
+  // 各 bot 会话记录的起始日不同（每行「从未使用」下单独标注），顶部只给最早的那天
+  const earliestCoverage = botsWithSkills
     .map((b) => usage?.coverage[b])
     .filter((v): v is string => !!v)
-    .sort();
-  const coverageText =
-    coverageDates.length === 0
-      ? ''
-      : fmtDate(coverageDates[0]) === fmtDate(coverageDates[coverageDates.length - 1])
-        ? `，统计自 ${fmtDate(coverageDates[0])} 起`
-        : `，各 bot 统计起始日 ${fmtDate(coverageDates[0])} ~ ${fmtDate(coverageDates[coverageDates.length - 1])}（以现存最早的会话记录为准）`;
+    .sort()[0];
 
   const usageMeta = (
     <Typography.Text type="secondary" style={{ fontSize: 12 }}>
@@ -265,9 +268,9 @@ export default function SkillsPage() {
           <Spin size="small" /> 正在统计对话记录…{' '}
         </>
       )}
-      使用次数 = 用到该技能的对话轮数（一次请求里跑多少次脚本都只算 1 次），含 Skill 工具调用、直接读取 SKILL.md、直接运行技能脚本
-      {coverageText}
-      {usage?.lastScanAt && `；上次统计 ${dayjs(usage.lastScanAt).format('HH:mm')}`}
+      {earliestCoverage && `统计范围：各 bot 现有会话记录，最早从 ${dayjs(earliestCoverage).format('M 月 D 日')}开始。`}
+      使用次数 = 用到该技能的对话轮数（一次请求里跑多少次脚本都只算 1 次），含 Skill 工具调用、直接读取 SKILL.md、直接运行技能脚本。
+      {usage?.lastScanAt && `上次统计 ${dayjs(usage.lastScanAt).format('HH:mm')}。`}
     </Typography.Text>
   );
 
