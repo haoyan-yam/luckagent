@@ -10,12 +10,22 @@ export function renderMarkdown(md: string): { __html: string } {
   return { __html: marked.parse(escaped, { async: false, breaks: true }) as string };
 }
 
-export function MarkdownView({ text }: { text: string }) {
+/**
+ * onLinkClick：拦截正文里的链接点击（如记忆之间的互相引用）；返回 true 表示已处理、
+ * 不再走浏览器默认跳转。
+ */
+export function MarkdownView({ text, onLinkClick }: { text: string; onLinkClick?: (href: string) => boolean }) {
   return (
     <div
       className="md-view"
       style={{ lineHeight: 1.7, wordBreak: 'break-word' }}
       dangerouslySetInnerHTML={renderMarkdown(text)}
+      onClick={(e) => {
+        if (!onLinkClick) return;
+        const a = (e.target as HTMLElement).closest('a');
+        const href = a?.getAttribute('href');
+        if (href && onLinkClick(href)) e.preventDefault();
+      }}
     />
   );
 }

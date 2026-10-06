@@ -1,8 +1,8 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { parseIndexLine, parseMemoryFrontmatter, readBotMemory, stripFrontmatter } from '../src/api/memory-view.js';
+import { parseIndexLine, parseMemoryFrontmatter, readBotMemory, searchMemories, stripFrontmatter } from '../src/api/memory-view.js';
 
 let dirs: string[] = [];
 const tmp = () => {
@@ -105,5 +105,43 @@ describe('readBotMemory', () => {
     const v = readBotMemory(dir);
     expect(v.index).toEqual({ exists: false, lines: 0, chars: 0 });
     expect(v.files).toHaveLength(1);
+  });
+});
+
+describe('searchMemories', () => {
+  it('finds case-insensitive matches across bots with a snippet and count, skipping MEMORY.md', () => {
+    const a = tmp();
+    const b = tmp();
+    writeFileSync(join(a, 'MEMORY.md'), '- [x](x.md) — Echo 在索引里');
+    writeFileSync(join(a, 'x.md'), `${'前文'.repeat(40)}CMO echo 偏好：留白、绿植。ECHO 再次出现`);
+    writeFileSync(join(b, 'y.md'), '无关内容');
+    writeFileSync(join(b, 'z.md'), 'Echo');
+    const { hits, truncated } = searchMemories([{ bot: 'A', memDir: a }, { bot: 'B', memDir: b }], ' Echo ');
+    expect(truncated).toBe(false);
+    expect(hits.map((h) => [h.bot, h.file, h.matches])).toEqual([
+      ['A', 'x.md', 2],
+      ['B', 'z.md', 1],
+    ]);
+    expect(hits[0].snippet.startsWith('…')).toBe(true);
+    expect(hits[0].snippet).toContain('CMO echo 偏好');
+  });
+
+  it('returns nothing for a blank query and stops at the limit', () => {
+    const a = tmp();
+    for (const n of ['1', '2', '3']) writeFileSync(join(a, `${n}.md`), 'hit');
+    expect(searchMemories([{ bot: 'A', memDir: a }], '   ').hits).toEqual([]);
+    const r = searchMemories([{ bot: 'A', memDir: a }], 'hit', 2);
+    expect(r.hits).toHaveLength(2);
+    expect(r.truncated).toBe(true);
+  });
+
+  it('picks up edits (mtime-keyed cache)', () => {
+    const a = tmp();
+    const f = join(a, 'm.md');
+    writeFileSync(f, 'old text');
+    expect(searchMemories([{ bot: 'A', memDir: a }], 'new').hits).toHaveLength(0);
+    writeFileSync(f, 'new text, longer');
+    utimesSync(f, new Date(), new Date(Date.now() + 5000));
+    expect(searchMemories([{ bot: 'A', memDir: a }], 'new').hits).toHaveLength(1);
   });
 });

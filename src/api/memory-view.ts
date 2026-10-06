@@ -173,3 +173,72 @@ export function readBotMemory(memDir: string | null): BotMemoryView {
   }
   return { exists: true, memoryDir: memDir, index, files };
 }
+
+export interface MemorySearchHit {
+  bot: string;
+  file: string;
+  /** Number of occurrences in the file. */
+  matches: number;
+  /** Text around the first occurrence, whitespace collapsed. */
+  snippet: string;
+}
+
+const contentCache = new Map<string, { mtimeMs: number; text: string; lower: string }>();
+
+function readCached(file: string): { text: string; lower: string } | null {
+  let st: fs.Stats;
+  try {
+    st = fs.statSync(file);
+  } catch {
+    contentCache.delete(file);
+    return null;
+  }
+  const hit = contentCache.get(file);
+  if (hit && hit.mtimeMs === st.mtimeMs) return hit;
+  try {
+    const text = fs.readFileSync(file, 'utf-8');
+    const entry = { mtimeMs: st.mtimeMs, text, lower: text.toLowerCase() };
+    contentCache.set(file, entry);
+    return entry;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Case-insensitive full-text search over memory files (MEMORY.md excluded —
+ * its lines are the hooks, already searchable client-side). A few MB in
+ * total, so a linear scan with an mtime-keyed content cache is plenty.
+ * Exported for tests.
+ */
+export function searchMemories(
+  dirs: Array<{ bot: string; memDir: string }>,
+  query: string,
+  limit = 300,
+): { hits: MemorySearchHit[]; truncated: boolean } {
+  const q = query.trim().toLowerCase();
+  const hits: MemorySearchHit[] = [];
+  if (!q) return { hits, truncated: false };
+  for (const { bot, memDir } of dirs) {
+    let names: string[];
+    try {
+      names = fs.readdirSync(memDir).filter((f) => f.endsWith('.md') && f !== 'MEMORY.md').sort();
+    } catch {
+      continue;
+    }
+    for (const file of names) {
+      const c = readCached(path.join(memDir, file));
+      if (!c) continue;
+      const first = c.lower.indexOf(q);
+      if (first === -1) continue;
+      if (hits.length >= limit) return { hits, truncated: true };
+      let matches = 0;
+      for (let i = first; i !== -1; i = c.lower.indexOf(q, i + q.length)) matches++;
+      const start = Math.max(0, first - 40);
+      const end = Math.min(c.text.length, first + q.length + 80);
+      const snippet = `${start > 0 ? '…' : ''}${c.text.slice(start, end).replace(/\s+/g, ' ').trim()}${end < c.text.length ? '…' : ''}`;
+      hits.push({ bot, file, matches, snippet });
+    }
+  }
+  return { hits, truncated: false };
+}

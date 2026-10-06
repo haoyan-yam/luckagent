@@ -80,7 +80,8 @@ bot 的增删改查（读写 `bots.json`）：
 只读视图，展示各 bot 的 Claude Code auto-memory（按工作目录隔离的私人笔记），分两个标签页：
 
 - **总览**：一个 bot 一行——记忆条数、总大小、**索引占用**、反馈类记忆数、30 天未更新数、索引行过长数、异常（未入索引 / 文件缺失）、最近更新。bot 每次会话开始只加载 `MEMORY.md` 的前 **200 行 / 25,000 字符**（Claude Code 2.1.290 源码核实），超出部分 bot 看不到；占用取两项中更高的一项，≥70% 标黄、超限标红并注明「已被截断」。点一行或某个计数，跳到明细并带上筛选。
-- **明细**：所有 bot 的记忆拍平成一张表——Bot、标题与文件名、类型（取记忆文件 frontmatter 的 `type`：项目 / 反馈 / 参考 / 用户）、钩子（索引里的那句话，超过 150 字标出字数）、大小、更新时间（30 天未更新标橙）。可按标题 / 钩子 / 文件名搜索，按 bot、状态、类型筛选。
+- **明细**：所有 bot 的记忆拍平成一张表——Bot、标题与文件名、类型（取记忆文件 frontmatter 的 `type`：项目 / 反馈 / 参考 / 用户）、钩子（索引里的那句话，超过 150 字标出字数）、大小、更新时间（30 天未更新标橙）。搜索框同时搜标题、钩子和**正文**（正文命中由后端全文检索，显示命中处数与上下文片段并高亮关键词），并可按 bot、状态、类型筛选。
+- **详情**：顶部显示记忆的类型、名称、描述（取自 frontmatter）和文件信息，正文去掉 frontmatter 后渲染；正文里的 `[[名字]]` 引用和指向同目录 `.md` 的链接可直接点击，跳到被引用的那条记忆。
 
 索引解析兼容 bot 的各种写法：行首带 ⭐/⛔ 标记、表格行、一行多个链接（如「8 月日报：[0831](…) ｜ [0828](…)」，这行的字数平摊给其中每条记忆）。修改记忆仍在对应 bot 的记忆目录里手动编辑。
 
@@ -151,6 +152,8 @@ bot 的增删改查（读写 `bots.json`）：
 | `GET /admin/api/feishu/chats?bot=<name>` | 列出 bot 所在的群（群名 + chat_id，供群日报页与选人器） |
 | `GET /admin/api/feishu/chat-members?bot=<name>&chatId=<oc_>` | 列出某群成员（姓名 + open_id，供白名单选人） |
 | `GET /admin/api/memory/overview` | 所有 bot 的记忆索引、文件清单（含 frontmatter 类型）与索引占用 |
+| `GET /admin/api/memory/search?q=<text>[&bot=<name>]` | 记忆正文全文检索（不区分大小写，返回命中数与上下文片段） |
+| `GET /admin/api/memory/file?bot=<name>&file=<name.md>` | 读取单条记忆（原文 + 解析后的 frontmatter + 去掉 frontmatter 的正文） |
 | `GET /admin/api/skills/usage` | 各 bot 的技能调用统计（扫描会话记录，后台增量刷新） |
 | `GET /admin/api/group-summary?bot=<name>` | 读取该 bot 的群日报忽略名单 |
 | `PUT /admin/api/group-summary` | 覆写忽略名单（`{bot, excluded: ["oc_…"]}`） |

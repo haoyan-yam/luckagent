@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Button,
   Card,
+  Descriptions,
   Drawer,
   Input,
   Progress,
@@ -14,6 +15,7 @@ import {
   Tag,
   Tooltip,
   Typography,
+  message,
 } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
@@ -49,7 +51,15 @@ interface OverviewPayload {
   limits: { lines: number; chars: number };
   bots: BotMemory[];
 }
-interface MemFile { file: string; content: string; sizeBytes: number; mtime: string; }
+interface MemFile {
+  file: string;
+  content: string;
+  frontmatter: Frontmatter | null;
+  body: string;
+  sizeBytes: number;
+  mtime: string;
+}
+interface SearchHit { bot: string; file: string; matches: number; snippet: string; }
 
 type MemType = 'project' | 'feedback' | 'reference' | 'user' | 'none';
 type TypeFilter = MemType | 'all';
@@ -89,6 +99,25 @@ const toType = (t: string | undefined): MemType =>
 const fmtSize = (b: number) => (b >= 1024 * 1024 ? `${(b / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
 const fmtK = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
 
+/** 把命中的关键词标出来 */
+function highlight(text: string, q: string) {
+  const needle = q.trim();
+  if (!needle) return text;
+  const lower = text.toLowerCase();
+  const n = needle.toLowerCase();
+  const out: Array<string | JSX.Element> = [];
+  let i = 0;
+  for (let j = lower.indexOf(n); j !== -1; j = lower.indexOf(n, i)) {
+    out.push(text.slice(i, j), <mark key={j} style={{ padding: 0 }}>{text.slice(j, j + n.length)}</mark>);
+    i = j + n.length;
+  }
+  out.push(text.slice(i));
+  return out;
+}
+
+/** 记忆正文里的 [[name]] 引用转成可点击的内部链接 */
+const linkifyRefs = (body: string) => body.replace(/\[\[([^\]\n]+)\]\]/g, (_, name: string) => `[${name}](#mem:${encodeURIComponent(name.trim())})`);
+
 const hasFlag = (r: Row, f: Flag) =>
   f === 'stale' ? r.stale : f === 'longHook' ? r.longHook : f === 'unindexed' ? !r.indexed : !r.exists;
 
@@ -99,7 +128,29 @@ export default function MemoryPage() {
   const [botFilter, setBotFilter] = useState<string | null>(null);
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [flagFilter, setFlagFilter] = useState<Flag | null>(null);
-  const [viewer, setViewer] = useState<{ title: string; loading: boolean; data?: MemFile } | null>(null);
+  const [viewer, setViewer] = useState<{ bot: string; title: string; loading: boolean; data?: MemFile } | null>(null);
+  // 正文全文搜索：后端检索，结果按 bot/file 合进明细表的筛选
+  const [contentHits, setContentHits] = useState<Map<string, SearchHit> | null>(null);
+  const [searching, setSearching] = useState(false);
+  const query = search.trim();
+
+  useEffect(() => {
+    if (query.length < 2) {
+      setContentHits(null);
+      setSearching(false);
+      return;
+    }
+    let stale = false;
+    setSearching(true);
+    const timer = setTimeout(() => {
+      api
+        .get<{ hits: SearchHit[] }>(`/admin/api/memory/search?q=${encodeURIComponent(query)}`)
+        .then((r) => { if (!stale) setContentHits(new Map(r.hits.map((h) => [`${h.bot}/${h.file}`, h]))); })
+        .catch(() => { if (!stale) setContentHits(null); })
+        .finally(() => { if (!stale) setSearching(false); });
+    }, 300);
+    return () => { stale = true; clearTimeout(timer); };
+  }, [query]);
 
   const limits = data?.limits ?? { lines: 200, chars: 25000 };
 
@@ -117,13 +168,38 @@ export default function MemoryPage() {
   }, [data]);
 
   const openFile = async (bot: string, file: string, title: string) => {
-    setViewer({ title: `${bot} / ${title}`, loading: true });
+    setViewer({ bot, title: `${bot} / ${title}`, loading: true });
     try {
       const d = await api.get<MemFile>(`/admin/api/memory/file?bot=${encodeURIComponent(bot)}&file=${encodeURIComponent(file)}`);
-      setViewer({ title: `${bot} / ${title}`, loading: false, data: d });
+      setViewer({ bot, title: `${bot} / ${title}`, loading: false, data: d });
     } catch {
-      setViewer({ title: `${bot} / ${title}`, loading: false });
+      setViewer({ bot, title: `${bot} / ${title}`, loading: false });
     }
+  };
+
+  // 详情里点记忆之间的引用：[[name]] 或指向同目录 .md 的相对链接
+  const onMemoryLink = (href: string): boolean => {
+    if (!viewer) return false;
+    let target: Row | undefined;
+    if (href.startsWith('#mem:')) {
+      const name = decodeURIComponent(href.slice(5));
+      target = rows.find((r) => r.bot === viewer.bot && r.exists && (r.frontmatter?.name === name || r.file === `${name}.md`));
+      if (!target) {
+        message.info(`${viewer.bot} 没有名为「${name}」的记忆`);
+        return true;
+      }
+    } else if (/^(?!\w+:)(?:\.\/)?[^/#?]+\.md$/.test(href)) {
+      const file = decodeURIComponent(href.replace(/^\.\//, ''));
+      target = rows.find((r) => r.bot === viewer.bot && r.file === file && r.exists);
+      if (!target) {
+        message.info(`${viewer.bot} 的记忆目录里没有 ${file}`);
+        return true;
+      }
+    } else {
+      return false;
+    }
+    void openFile(target.bot, target.file, target.title);
+    return true;
   };
 
   // ---------------- 总览：一个 bot 一行 ----------------
@@ -310,9 +386,13 @@ export default function MemoryPage() {
       (r) =>
         (!botFilter || r.bot === botFilter) &&
         (!flagFilter || hasFlag(r, flagFilter)) &&
-        (!q || r.title.toLowerCase().includes(q) || r.hook.toLowerCase().includes(q) || r.file.toLowerCase().includes(q)),
+        (!q ||
+          r.title.toLowerCase().includes(q) ||
+          r.hook.toLowerCase().includes(q) ||
+          r.file.toLowerCase().includes(q) ||
+          !!contentHits?.has(`${r.bot}/${r.file}`)),
     );
-  }, [rows, search, botFilter, flagFilter]);
+  }, [rows, search, botFilter, flagFilter, contentHits]);
   const typeCount = (t: MemType) => base.filter((r) => r.type === t).length;
   const visible = typeFilter === 'all' ? base : base.filter((r) => r.type === typeFilter);
 
@@ -325,9 +405,9 @@ export default function MemoryPage() {
       render: (_: unknown, r: Row) => (
         <div>
           {r.exists ? (
-            <Typography.Link strong onClick={() => openFile(r.bot, r.file, r.title)}>{r.title}</Typography.Link>
+            <Typography.Link strong onClick={() => openFile(r.bot, r.file, r.title)}>{highlight(r.title, query)}</Typography.Link>
           ) : (
-            <Typography.Text strong>{r.title}</Typography.Text>
+            <Typography.Text strong>{highlight(r.title, query)}</Typography.Text>
           )}
           <div>
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>{r.file}</Typography.Text>
@@ -347,12 +427,23 @@ export default function MemoryPage() {
       title: '钩子（索引里的一句话）',
       key: 'hook',
       ellipsis: { showTitle: false },
-      render: (_: unknown, r: Row) => (
-        <Tooltip title={r.hook} placement="topLeft">
-          {r.longHook && <Tag color="orange">{r.lineChars} 字</Tag>}
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>{r.hook || '—'}</Typography.Text>
-        </Tooltip>
-      ),
+      render: (_: unknown, r: Row) => {
+        const hit = contentHits?.get(`${r.bot}/${r.file}`);
+        return (
+          <div>
+            <Tooltip title={r.hook} placement="topLeft">
+              {r.longHook && <Tag color="orange">{r.lineChars} 字</Tag>}
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>{r.hook ? highlight(r.hook, query) : '—'}</Typography.Text>
+            </Tooltip>
+            {hit && (
+              <div style={{ whiteSpace: 'normal', marginTop: 2 }}>
+                <Tag color="processing">正文 {hit.matches} 处</Tag>
+                <Typography.Text style={{ fontSize: 12 }}>{highlight(hit.snippet, query)}</Typography.Text>
+              </div>
+            )}
+          </div>
+        );
+      },
     },
     {
       title: '大小',
@@ -383,9 +474,10 @@ export default function MemoryPage() {
       <Space wrap>
         <Input.Search
           allowClear
-          placeholder="搜索标题 / 钩子 / 文件名"
+          placeholder="搜索标题 / 钩子 / 正文"
           style={{ width: 240 }}
           value={search}
+          loading={searching}
           onChange={(e) => setSearch(e.target.value)}
         />
         <Select
@@ -457,10 +549,23 @@ export default function MemoryPage() {
         {viewer && !viewer.loading && !viewer.data && <Alert type="warning" message="读取失败" />}
         {viewer?.data && (
           <>
-            <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
-              {viewer.data.file} · {(viewer.data.sizeBytes / 1024).toFixed(1)}KB · 更新于 {dayjs(viewer.data.mtime).format('YYYY-MM-DD HH:mm')}
-            </Typography.Paragraph>
-            <MarkdownView text={viewer.data.content} />
+            <Descriptions size="small" column={2} bordered style={{ marginBottom: 16 }}>
+              <Descriptions.Item label="类型">
+                <Tag color={TYPE_META[toType(viewer.data.frontmatter?.type)].color}>{TYPE_META[toType(viewer.data.frontmatter?.type)].label}</Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="名称">
+                {viewer.data.frontmatter?.name ? <Typography.Text code>{viewer.data.frontmatter.name}</Typography.Text> : '—'}
+              </Descriptions.Item>
+              {viewer.data.frontmatter?.description && (
+                <Descriptions.Item label="描述" span={2}>{viewer.data.frontmatter.description}</Descriptions.Item>
+              )}
+              <Descriptions.Item label="文件" span={2}>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  {viewer.data.file} · {(viewer.data.sizeBytes / 1024).toFixed(1)}KB · 更新于 {dayjs(viewer.data.mtime).format('YYYY-MM-DD HH:mm')}
+                </Typography.Text>
+              </Descriptions.Item>
+            </Descriptions>
+            <MarkdownView text={linkifyRefs(viewer.data.body)} onLinkClick={onMemoryLink} />
           </>
         )}
       </Drawer>

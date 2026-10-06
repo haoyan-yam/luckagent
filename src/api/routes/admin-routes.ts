@@ -10,7 +10,7 @@ import { COMPAT_PROVIDERS, resolveEngineName } from '../../engines/index.js';
 import { EDITABLE_DEFAULTS, displayDefault, validateDefaultsUpdate, writeEnvUpdates } from '../env-defaults.js';
 import { claudeProjectsDir, physicalCwd } from '../../engines/claude/session-lister.js';
 import { SkillUsageTracker } from '../skill-usage.js';
-import { MEMORY_INDEX_LIMITS, readBotMemory } from '../memory-view.js';
+import { MEMORY_INDEX_LIMITS, parseMemoryFrontmatter, readBotMemory, searchMemories, stripFrontmatter } from '../memory-view.js';
 
 export { parseMemoryIndex, type MemoryIndexEntry } from '../memory-view.js';
 import { jsonResponse, parseJsonBody } from './helpers.js';
@@ -510,6 +510,24 @@ export async function handleAdminRoutes(
     return true;
   }
 
+  // GET /admin/api/memory/search?q=<text>[&bot=<name>] — full-text search across bots' memory files
+  if (method === 'GET' && url.startsWith('/admin/api/memory/search?')) {
+    const q = new URL(url, 'http://x').searchParams;
+    const query = (q.get('q') || '').slice(0, 200);
+    const onlyBot = q.get('bot');
+    const dirs: Array<{ bot: string; memDir: string }> = [];
+    try {
+      const cfg = botsConfigPath ? readBotsConfig(botsConfigPath) : { feishuBots: [] };
+      for (const b of cfg.feishuBots || []) {
+        if (!b.defaultWorkingDirectory || (onlyBot && b.name !== onlyBot)) continue;
+        const memDir = memoryDirCandidates(expandUserPath(b.defaultWorkingDirectory)).find((d) => fs.existsSync(d));
+        if (memDir) dirs.push({ bot: b.name, memDir });
+      }
+    } catch { /* bots.json unreadable — no hits */ }
+    jsonResponse(res, 200, { query, ...searchMemories(dirs, query) });
+    return true;
+  }
+
   // GET /admin/api/memory/file?bot=<name>&file=<name.md>
   if (method === 'GET' && url.startsWith('/admin/api/memory/file?')) {
     const q = new URL(url, 'http://x').searchParams;
@@ -522,7 +540,15 @@ export async function handleAdminRoutes(
     try {
       const p = path.join(memDir, file);
       const st = fs.statSync(p);
-      jsonResponse(res, 200, { file, content: fs.readFileSync(p, 'utf-8').slice(0, 300_000), sizeBytes: st.size, mtime: st.mtime.toISOString() });
+      const content = fs.readFileSync(p, 'utf-8').slice(0, 300_000);
+      jsonResponse(res, 200, {
+        file,
+        content,
+        frontmatter: parseMemoryFrontmatter(content),
+        body: stripFrontmatter(content),
+        sizeBytes: st.size,
+        mtime: st.mtime.toISOString(),
+      });
     } catch {
       jsonResponse(res, 404, { error: 'file not found' });
     }
