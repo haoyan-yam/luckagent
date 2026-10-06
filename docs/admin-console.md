@@ -68,7 +68,12 @@ bot 的增删改查（读写 `bots.json`）：
 
 ### 技能
 
-只读视图：列出**全局技能**（`~/.claude/skills/`，对所有 bot 生效）与**项目级技能**（各 bot 工作目录 `.claude/skills/`，与全局同名时项目级优先），点开可直接渲染 `SKILL.md`。用来核对某个 bot 到底能看到哪些技能、技能文案是否过期；增删技能仍走文件系统或 `luckagent skills`（见[技能体系](claude-code-skills.md)）。
+只读视图，分两个标签页，点技能名可直接渲染 `SKILL.md`：
+
+- **项目技能**（默认）：所有 bot 工作目录 `.claude/skills/` 下的定制技能拍平成一张表（与全局同名时项目级优先），叠加**使用统计**——近 7 天 / 近 30 天 / 累计调用次数、涉及会话数、最近使用时间；顶部汇总「近 30 天在用 / 30 天未用 / 从未使用」，可按技能名、bot、使用状态筛选。
+- **全局技能**：`~/.claude/skills/`（对所有 bot 生效，由 `luckagent update` / lark-cli 维护），不纳入使用统计。
+
+使用统计来自各 bot 的 Claude Code 会话记录（`~/.claude/projects/**/*.jsonl`）。**一次「使用」= 一轮用到该技能的对话**（一次请求里跑多少次脚本都只算 1 次），包括三种方式：调用 `Skill` 工具、直接读取 `.claude/skills/<name>/SKILL.md`、直接运行技能目录下的脚本——实际上项目级技能大多是后两种方式在用，只数 `Skill` 工具会严重低估。详情里的「直接使用」是其中没走 `Skill` 工具的轮数。按调用时的工作目录归属到 bot；增量扫描，结果缓存在 `~/.luckagent/skill-usage-cache.json`，会话记录被 Claude Code 定期清理后已统计的历史仍保留。每个 bot 的统计起始日以它现存最早的会话记录为准，「从未使用」指该日以来没有任何读取或调用。增删技能仍走文件系统或 `luckagent skills`（见[技能体系](claude-code-skills.md)）。
 
 ### 记忆
 
@@ -140,6 +145,7 @@ bot 的增删改查（读写 `bots.json`）：
 | `POST /admin/api/restart` | 重启桥接（进程自退出 + PM2 拉起） |
 | `GET /admin/api/feishu/chats?bot=<name>` | 列出 bot 所在的群（群名 + chat_id，供群日报页与选人器） |
 | `GET /admin/api/feishu/chat-members?bot=<name>&chatId=<oc_>` | 列出某群成员（姓名 + open_id，供白名单选人） |
+| `GET /admin/api/skills/usage` | 各 bot 的技能调用统计（扫描会话记录，后台增量刷新） |
 | `GET /admin/api/group-summary?bot=<name>` | 读取该 bot 的群日报忽略名单 |
 | `PUT /admin/api/group-summary` | 覆写忽略名单（`{bot, excluded: ["oc_…"]}`） |
 | `GET/POST /api/bots`、`GET/PUT/DELETE /api/bots/:name` | bot CRUD（详情接口掩码密钥；改动需重启） |

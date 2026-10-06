@@ -8,7 +8,8 @@ import { readBotsConfig } from '../bots-config-writer.js';
 import { expandUserPath, ORIGINAL_ENV_KEYS, projectsRoot } from '../../config.js';
 import { COMPAT_PROVIDERS, resolveEngineName } from '../../engines/index.js';
 import { EDITABLE_DEFAULTS, displayDefault, validateDefaultsUpdate, writeEnvUpdates } from '../env-defaults.js';
-import { claudeProjectsDir } from '../../engines/claude/session-lister.js';
+import { claudeProjectsDir, physicalCwd } from '../../engines/claude/session-lister.js';
+import { SkillUsageTracker } from '../skill-usage.js';
 import { jsonResponse, parseJsonBody } from './helpers.js';
 import type { RouteContext } from './types.js';
 
@@ -450,6 +451,19 @@ export async function handleAdminRoutes(
       }
     } catch { /* bots.json unreadable — still return globals */ }
     jsonResponse(res, 200, { globalDir, global: scanSkillsDir(globalDir), bots });
+    return true;
+  }
+
+  // GET /admin/api/skills/usage — per-bot Skill call stats mined from transcripts
+  if (method === 'GET' && url === '/admin/api/skills/usage') {
+    const bots: Array<{ name: string; workdir: string }> = [];
+    try {
+      const cfg = botsConfigPath ? readBotsConfig(botsConfigPath) : { feishuBots: [] };
+      for (const b of cfg.feishuBots || []) {
+        if (b.defaultWorkingDirectory) bots.push({ name: b.name, workdir: physicalCwd(expandUserPath(b.defaultWorkingDirectory)) });
+      }
+    } catch { /* bots.json unreadable — no attribution possible */ }
+    jsonResponse(res, 200, skillUsageTracker().snapshot(bots));
     return true;
   }
 
@@ -931,6 +945,23 @@ export async function collectChatMembers(client: FeishuChatLister, chatId: strin
     pageToken = resp.data.page_token;
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Skill usage tracker (lazy singleton; cache next to the other runtime state)
+// ---------------------------------------------------------------------------
+
+let usageTracker: SkillUsageTracker | null = null;
+
+function skillUsageTracker(): SkillUsageTracker {
+  if (!usageTracker) {
+    const dir = process.env.SESSION_STORE_DIR || path.join(os.homedir(), '.luckagent');
+    usageTracker = new SkillUsageTracker(
+      path.join(dir, 'skill-usage-cache.json'),
+      path.join(os.homedir(), '.claude', 'projects'),
+    );
+  }
+  return usageTracker;
 }
 
 // ---------------------------------------------------------------------------
