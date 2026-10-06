@@ -10,6 +10,9 @@ import { COMPAT_PROVIDERS, resolveEngineName } from '../../engines/index.js';
 import { EDITABLE_DEFAULTS, displayDefault, validateDefaultsUpdate, writeEnvUpdates } from '../env-defaults.js';
 import { claudeProjectsDir, physicalCwd } from '../../engines/claude/session-lister.js';
 import { SkillUsageTracker } from '../skill-usage.js';
+import { MEMORY_INDEX_LIMITS, readBotMemory } from '../memory-view.js';
+
+export { parseMemoryIndex, type MemoryIndexEntry } from '../memory-view.js';
 import { jsonResponse, parseJsonBody } from './helpers.js';
 import type { RouteContext } from './types.js';
 
@@ -385,18 +388,6 @@ export function memoryDirCandidates(workDir: string): string[] {
   return [...new Set([exact, ...legacy])];
 }
 
-export interface MemoryIndexEntry { title: string; file: string; hook: string; }
-
-/** Parse MEMORY.md lines of the form `- [Title](file.md) — hook`. */
-export function parseMemoryIndex(indexRaw: string): MemoryIndexEntry[] {
-  const out: MemoryIndexEntry[] = [];
-  for (const line of indexRaw.split('\n')) {
-    const m = line.match(/^\s*-\s*\[([^\]]+)\]\(([^)]+)\)\s*(?:[—–-]{1,2}\s*(.*))?$/);
-    if (m) out.push({ title: m[1].trim(), file: m[2].trim(), hook: (m[3] || '').trim() });
-  }
-  return out;
-}
-
 function safeLeafName(v: unknown): string | null {
   if (typeof v !== 'string' || !v) return null;
   if (v.includes('/') || v.includes('\\') || v.includes('..')) return null;
@@ -503,35 +494,19 @@ export async function handleAdminRoutes(
     return true;
   }
 
-  // GET /admin/api/memory?bot=<name> — the bot's auto-memory, indexed view
-  if (method === 'GET' && url.startsWith('/admin/api/memory?')) {
-    const q = new URL(url, 'http://x').searchParams;
-    const botName = q.get('bot') || '';
-    const wd = resolveBotWorkdir(botsConfigPath, botName);
-    if (!wd) { jsonResponse(res, 404, { error: 'bot not found' }); return true; }
-    const memDir = memoryDirCandidates(wd).find((d) => fs.existsSync(d));
-    if (!memDir) {
-      jsonResponse(res, 200, { exists: false, workdir: wd, entries: [], orphans: [] });
-      return true;
-    }
-    let indexRaw = '';
-    try { indexRaw = fs.readFileSync(path.join(memDir, 'MEMORY.md'), 'utf-8'); } catch { /* no index */ }
-    const indexed = parseMemoryIndex(indexRaw);
-    const onDisk = new Map<string, fs.Stats>();
+  // GET /admin/api/memory/overview — every bot's auto-memory index + files + index health
+  if (method === 'GET' && url === '/admin/api/memory/overview') {
+    const bots: Array<{ name: string; workdir: string } & ReturnType<typeof readBotMemory>> = [];
     try {
-      for (const f of fs.readdirSync(memDir)) {
-        if (f.endsWith('.md') && f !== 'MEMORY.md') onDisk.set(f, fs.statSync(path.join(memDir, f)));
+      const cfg = botsConfigPath ? readBotsConfig(botsConfigPath) : { feishuBots: [] };
+      for (const b of cfg.feishuBots || []) {
+        if (!b.defaultWorkingDirectory) continue;
+        const wd = expandUserPath(b.defaultWorkingDirectory);
+        const memDir = memoryDirCandidates(wd).find((d) => fs.existsSync(d)) ?? null;
+        bots.push({ name: b.name, workdir: wd, ...readBotMemory(memDir) });
       }
-    } catch { /* ignore */ }
-    const entries = indexed.map((e) => {
-      const st = onDisk.get(e.file);
-      return { ...e, exists: !!st, sizeBytes: st?.size ?? null, mtime: st?.mtime.toISOString() ?? null };
-    });
-    const referenced = new Set(indexed.map((e) => e.file));
-    const orphans = [...onDisk.entries()]
-      .filter(([f]) => !referenced.has(f))
-      .map(([f, st]) => ({ file: f, sizeBytes: st.size, mtime: st.mtime.toISOString() }));
-    jsonResponse(res, 200, { exists: true, memoryDir: memDir, workdir: wd, hasIndex: !!indexRaw, entries, orphans });
+    } catch { /* bots.json unreadable — empty overview */ }
+    jsonResponse(res, 200, { limits: MEMORY_INDEX_LIMITS, bots });
     return true;
   }
 
