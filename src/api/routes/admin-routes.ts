@@ -10,6 +10,7 @@ import { COMPAT_PROVIDERS, resolveEngineName } from '../../engines/index.js';
 import { EDITABLE_DEFAULTS, displayDefault, validateDefaultsUpdate, writeEnvUpdates } from '../env-defaults.js';
 import { claudeProjectsDir, physicalCwd } from '../../engines/claude/session-lister.js';
 import { SkillUsageTracker } from '../skill-usage.js';
+import { buildCostTrend } from '../cost-stats.js';
 import { MEMORY_INDEX_LIMITS, parseMemoryFrontmatter, readBotMemory, searchMemories, stripFrontmatter } from '../memory-view.js';
 
 export { parseMemoryIndex, type MemoryIndexEntry } from '../memory-view.js';
@@ -555,6 +556,18 @@ export async function handleAdminRoutes(
     return true;
   }
 
+  // GET /admin/api/costs?days=7|30 — per-bot daily tasks/cost + today vs. yesterday-so-far
+  if (method === 'GET' && (url === '/admin/api/costs' || url.startsWith('/admin/api/costs?'))) {
+    const q = new URL(url, 'http://x').searchParams;
+    const days = Math.min(35, Math.max(1, Number(q.get('days')) || 7));
+    const since = new Date();
+    since.setHours(0, 0, 0, 0);
+    since.setDate(since.getDate() - days);
+    const events = activityStore?.taskEventsSince(since.getTime()) ?? [];
+    jsonResponse(res, 200, buildCostTrend(events, days, Date.now(), activityStore?.earliestTimestamp() ?? null));
+    return true;
+  }
+
   // GET /admin/api/overview — aggregate dashboard payload
   if (method === 'GET' && (url === '/admin/api/overview' || url.startsWith('/admin/api/overview?'))) {
     const started = startTimeMs();
@@ -626,7 +639,8 @@ export async function handleAdminRoutes(
     const recurring = scheduler.listRecurringTasks()
       .filter((r) => r.status === 'active')
       .sort((a, b) => a.nextExecuteAt - b.nextExecuteAt)
-      .slice(0, 5)
+      // enough to group same-time batches (e.g. a dozen group summaries at 08:00) client-side
+      .slice(0, 60)
       .map((r) => ({ id: r.id, botName: r.botName, label: r.label || null, nextExecuteAt: new Date(r.nextExecuteAt).toISOString() }));
 
     const recentFailures = todayEvents

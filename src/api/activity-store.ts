@@ -24,7 +24,8 @@ export interface ActivityEvent {
 }
 
 const MAX_BUFFER_SIZE = 100;
-const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+// 35 days: the dashboard's 30-day cost trend reads from here (rows are tiny — a few hundred a week).
+const MAX_AGE_MS = 35 * 24 * 60 * 60 * 1000;
 
 export class ActivityStore {
   private db: Database.Database;
@@ -114,12 +115,28 @@ export class ActivityStore {
     return this.db.prepare(sql).all(...params).map(this.mapRow) as ActivityEvent[];
   }
 
+  /** Task completion/failure events since `since` (no limit) — the dashboard's cost aggregation input. */
+  taskEventsSince(since: number): Array<{ botName: string; type: string; costUsd?: number; timestamp: number }> {
+    return (this.db
+      .prepare(
+        "SELECT bot_name, type, cost_usd, timestamp FROM activity_events WHERE type IN ('task_completed', 'task_failed') AND timestamp >= ? ORDER BY timestamp",
+      )
+      .all(since) as Array<{ bot_name: string; type: string; cost_usd: number | null; timestamp: number }>)
+      .map((r) => ({ botName: r.bot_name, type: r.type, costUsd: r.cost_usd ?? undefined, timestamp: r.timestamp }));
+  }
+
+  /** Timestamp of the oldest stored event, or null when empty. */
+  earliestTimestamp(): number | null {
+    const row = this.db.prepare('SELECT MIN(timestamp) AS ts FROM activity_events').get() as { ts: number | null } | undefined;
+    return row?.ts ?? null;
+  }
+
   /** Get recent events from in-memory buffer (fast). */
   getRecent(limit = 50): ActivityEvent[] {
     return this.buffer.slice(0, limit);
   }
 
-  /** Clean up events older than 7 days. */
+  /** Clean up events older than MAX_AGE_MS (35 days). */
   cleanup(): void {
     const cutoff = Date.now() - MAX_AGE_MS;
     const result = this.db.prepare('DELETE FROM activity_events WHERE timestamp < ?').run(cutoff);
