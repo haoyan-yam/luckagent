@@ -130,7 +130,7 @@ export default function OverviewPage({
   const { data: dash } = usePoll<DashboardPayload>(() => api.get('/admin/api/dashboard'), 60000);
   // 待处理：飞书群列表在后端缓存 5 分钟，这里每分钟拉一次，失败数等即时项最多晚 1 分钟
   const { data: attention, error: attentionError } = usePoll<AttentionPayload>(() => api.get('/admin/api/attention'), 60000);
-  const { data: feed } = usePoll<{ items: FeedItem[] }>(() => api.get('/admin/api/activity/feed'), 10000);
+  const { data: feed } = usePoll<{ items: FeedItem[] }>(() => api.get('/admin/api/activity/feed'), 60000);
   const [memViewer, setMemViewer] = useState<{ title: string; loading: boolean; data?: MemFile } | null>(null);
 
   const openMemory = async (bot: string, file: string, title: string) => {
@@ -327,7 +327,7 @@ export default function OverviewPage({
 
   // ---------------- 实时动态 ----------------
   const feedCard = (
-    <Card size="small" title="实时动态" extra={<Typography.Text type="secondary" style={{ fontSize: 12 }}>每 10 秒刷新</Typography.Text>} style={{ height: '100%' }}>
+    <Card size="small" title="实时动态" extra={<Typography.Text type="secondary" style={{ fontSize: 12 }}>每分钟刷新</Typography.Text>} style={{ height: '100%' }}>
       {!feed && <Typography.Text type="secondary">加载中…</Typography.Text>}
       {feed && feed.items.length === 0 && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="最近没有任务" />}
       {feed && feed.items.length > 0 && (
