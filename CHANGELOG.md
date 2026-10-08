@@ -2,7 +2,9 @@
 
 版本号 = 根 `package.json`（管理台总览页显示的就是它）。升级：`luckagent update`（git 安装）或重跑一行安装命令（tarball 安装）。git tag 与本文件同步打点。
 
-## 未发布（main）
+## v0.7.24 — 2026-10-08
+
+默认飞书权限全集扩充（日历 / 邮箱 / 审批 / OKR / 妙记等）。
 
 - **默认飞书权限全集扩充**（`docs/feishu-permissions.json`，接入向导的一键复制同源）：应用身份 129 → 154 项，补齐日历 / 会议室 / 忙闲 / 请假等 `calendar:*`（此前 `--as bot` 操作日历缺权限）及 `corehr:work_calendar:read`，移除未使用的 `ehr:employee:readonly`；用户身份 128 → 234 项，新增邮箱 `mail:*`、审批 `approval:*`、OKR `okr:*`、考勤、妙记 / 视频会议 `minutes:*` / `vc:*`、多维表格应用模式与 workspace、群管理与 Feed、任务分组 / 自定义字段 / 附件等，对齐 lark-mail / lark-approval / lark-okr / lark-attendance / lark-meeting 等技能。已有 bot 需在飞书开放平台重新批量导入并发布版本才生效
 - 文档：飞书应用配置指南更新权限数量与覆盖范围、需管理员审批的敏感权限说明
