@@ -1,11 +1,11 @@
 ---
 name: opencli
-description: Turn any website into a CLI and drive the user's logged-in Chrome. Use opencli when the user wants data from a specific site (Bilibili, 知乎, 小红书, 12306, Amazon, GitHub, arXiv, LinkedIn, 36kr, Hacker News, 抖音, 微博, etc.), wants to search/scrape/download from a website, automate browser actions (open/click/fill/extract/screenshot), or call wrapped external CLIs (gh, docker, lark-cli, notion, vercel...). 前提：本机已安装 opencli 二进制（PATH 可用）。
+description: Turn any website into a CLI and drive the user's logged-in Chrome. Use opencli when the user wants data from a specific site (Bilibili, 知乎, 小红书, 12306, Amazon, GitHub, arXiv, LinkedIn, 36kr, Hacker News, 抖音, 微博, etc.), wants to search/scrape/download from a website, or automate browser actions (open/click/fill/extract/screenshot). 前提：本机已安装 opencli 二进制（PATH 可用，2.x）。
 ---
 
 # OpenCLI — "Make any website your CLI"
 
-`opencli` runs locally (binary on PATH). It exposes **155+ website adapters**, **13 wrapped external CLIs**, and a **browser-automation bridge** that drives the user's real logged-in Chrome — all as plain CLI commands. Great for AI agents because every command can emit structured output.
+`opencli` (2.x) runs locally (binary on PATH). It exposes **170+ website adapters** and a **browser-automation bridge** that drives the user's real logged-in Chrome — all as plain CLI commands that return JSON by default.
 
 ## Command shape
 
@@ -13,86 +13,91 @@ description: Turn any website into a CLI and drive the user's logged-in Chrome. 
 opencli <site> <command> [args] [options]
 ```
 
-- Discover everything: `opencli list`
-- Per-command help (READ THIS before guessing args): `opencli <site> <command> --help`
+- Find commands: `opencli list [query] [--site <site>] [--limit n] [--offset n]` (paginated; follow `nextOffset`)
+- Per-command help (READ THIS before guessing args): `opencli <site> <command> --help -f json`
 - Validate connectivity / browser bridge: `opencli doctor`
 
-## ⭐ Always request structured output for parsing
+## ⭐ Output is a JSON envelope
 
-Default format is a human table. When you need to parse the result, append `-f json` (or `yaml`):
+Every command prints JSON by default:
 
-```bash
-opencli hackernews top --limit 5 -f json
-opencli bilibili hot --limit 10 -f yaml
+```json
+{ "ok": true,  "data": ... }
+{ "ok": false, "error": { "code": "...", "message": "...", "hint": "..." } }
 ```
 
+- Read results from `data`; on failure read `error.message` / `error.hint`. Failures also exit nonzero.
+- Follow/streaming modes emit JSON Lines.
+- Only pass `-f table|plain|yaml|md|csv` when you want human-readable output.
+
 Common options on (almost) every command:
-- `-f, --format <table|plain|json|yaml|md|csv>` (default `table`)
+- `-f, --format <json|table|plain|yaml|md|csv>` (default `json`)
 - `--limit <n>` (where listing)
 - `-v, --verbose` (debug)
 - `--trace <off|on|retain-on-failure>`
 
-Each `--help` footer also shows: `Access:` (public/cookie/intercept), `Browser:` (yes/no), `Domain:`, an `Example:`, and `Output columns:`.
+Each `--help` footer also shows: `Access:` (read/write), `Browser:` (yes/no), `Domain:`, an `Example:`, and `Output columns:`.
 
-## Access levels (important for login)
+## Login
 
-Commands are tagged by how they get data:
-- **`public`** — no login, works immediately (e.g. `36kr hot`, `12306 trains`, `hackernews top`, `arxiv`, `github`).
-- **`cookie`** — needs the site logged in inside the user's Chrome.
-- **`intercept`** — needs browser network interception.
+`Browser: no` commands work immediately (e.g. `hackernews top`, `arxiv`, `12306 trains`). `Browser: yes` commands run in the user's Chrome and usually need that site logged in.
 
-Check login state for all sites:
 ```bash
-opencli auth status
+opencli auth status                # login state for every site with an auth adapter
+opencli <site> login               # e.g. opencli xiaohongshu login (opens Chrome, waits for auth)
+opencli <site> whoami              # confirm identity
 ```
-Log in to a site (opens Chrome, waits for auth):
+If a command fails as not-logged-in, tell the user to run `opencli <site> login` (they must complete login in the browser), then retry. Prefer `Browser: no` commands when possible.
+
+`Access: write` commands change something on the site (post, comment, delete, add to cart…) — confirm with the user before running them.
+
+## Browser bridge
+
+Drive the logged-in Chrome directly. Page commands **require `--session <name>`** (one name per task; reuse it across steps):
+
 ```bash
-opencli <site> login        # e.g. opencli xiaohongshu login
-opencli <site> whoami       # confirm identity
+opencli browser open https://example.com --session task1
+opencli browser state --session task1          # URL, title, interactive elements with [N] indices
+opencli browser extract --session task1        # pull page content (chunked; pass --start <next_start_char> for more)
+opencli browser click / fill / type / scroll / screenshot / eval / wait ... --session task1
+opencli browser close --session task1          # release the tab when done
 ```
-If a `cookie`/`intercept` command fails with not-logged-in, tell the user to run `opencli <site> login` (they must complete login in the browser), then retry. Prefer `public` commands when possible.
+- `opencli browser chrome describe` / `chrome call` — native Chrome tab/window/tab-group management without attaching a page.
+- `opencli browser network --static --session <s>` — captured requests + endpoint evidence (for API reverse-engineering).
 
-## Categories
-
-**Site adapters (155+)** — e.g. `12306 1688 36kr 51job amazon arxiv baidu-scholar bilibili binance boss bbc bloomberg booking chess cnki coingecko coupang ctrip deepseek dianping douban douyin duckduckgo eastmoney facebook gitee github google google-scholar hackernews hf hupu imdb indeed instagram jd jike jira ke kimi lichess linkedin linux-do maimai maven mdn medium notebooklm reddit weibo xiaohongshu zhihu ...` (run `opencli list` for the full set + each site's subcommands).
-
-**External CLIs (13)** — opencli proxies these if installed: `discord docker dws(钉钉) gh lark-cli longbridge ntn(notion) obsidian tg vercel wecom-cli(企业微信) wrangler wx(微信)`. Manage with `opencli external list|register`.
-
-**Browser bridge** — drive the logged-in Chrome directly:
-```bash
-opencli browser open https://example.com
-opencli browser extract        # pull structured content
-opencli browser click / fill / type / scroll / screenshot / eval / wait ...
-opencli doctor                 # diagnose bridge connectivity
-```
 Use the browser bridge as a fallback when no site adapter covers the task.
 
 ## Typical examples
 
 ```bash
-# Public, no login
-opencli hackernews top --limit 5 -f json
-opencli 36kr hot -f yaml
-opencli arxiv search "diffusion model" --limit 10 -f json
-opencli 12306 trains --from 上海 --to 北京 --date 2026-07-01    # check --help for exact flags
-opencli github repo jackwener/opencli -f json
+# No browser / no login
+opencli hackernews top --limit 5
+opencli arxiv search "diffusion model" --limit 10
+opencli 12306 trains --help -f json            # check exact flags first
+opencli github repo jackwener/opencli
 
-# Needs the site logged-in in Chrome (cookie)
-opencli xiaohongshu search "关键词" -f json
-opencli zhihu hot -f json
+# Needs the site logged-in in Chrome
+opencli xiaohongshu search "关键词" --limit 10
+opencli zhihu hot
 opencli bilibili download BV1xxxxxx --output ./bili
-
-# Wrapped external CLI
-opencli gh ...
-opencli lark-cli ...
 ```
 
 ## Working tips
 
-1. **Never invent flags.** Run `opencli <site> <command> --help` first; arg names/format vary per adapter.
-2. **Discovery:** `opencli list` shows all sites; a bare `opencli <site>` lists that site's subcommands.
-3. **Parse-friendly:** add `-f json` whenever you'll process the output programmatically; summarize results back to the user concisely (Feishu cards are small).
-4. **Login flow is human-in-the-loop:** for `cookie`/`intercept` commands, the user must complete login in their Chrome via `opencli <site> login`. Don't loop retrying — surface the instruction.
-5. **Browser issues:** if browser commands hang or fail, run `opencli doctor`; the daemon can be managed with `opencli daemon status|restart|stop`.
-6. **Downloads / files:** when a command produces files for the user, copy them to the outputs directory from the system prompt so they reach the chat.
-7. **Config (env):** `OPENCLI_DAEMON_PORT` (default 19825), `OPENCLI_PROFILE` (Chrome profile alias), `OPENCLI_BROWSER_COMMAND_TIMEOUT` (default 60s).
+1. **Never invent flags.** Run `opencli <site> <command> --help -f json` first; arg names vary per adapter.
+2. **Discovery:** `opencli list <keyword>` searches all commands; `opencli <site> --help` lists one site's subcommands.
+3. **Summarize, don't dump:** parse `data` and report concisely (Feishu cards are small).
+4. **Login flow is human-in-the-loop:** don't loop retrying login failures — surface the `opencli <site> login` instruction.
+5. **Browser issues:** if browser commands hang or fail, run `opencli doctor`; the daemon can be managed with `opencli daemon status|restart|stop`. `Navigation rejected` errors usually mean the Chrome extension is older than 1.0.26.
+6. **Adapter broken?** An `error.code` of `COMMAND_EXEC` with a site-specific message often means the site changed — report it to the user rather than retrying endlessly.
+7. **Downloads / files:** when a command produces files for the user, copy them to the outputs directory from the system prompt so they reach the chat.
+8. **Known issue — `xiaohongshu search` fails with `search_input_not_available`** (2.0.2; site moved to an AI-search homepage, upstream fix pending in jackwener/OpenCLI#2673). Workaround: open the results page directly and read the cards (URL-encode the keyword; use `eval`, since `extract` is flooded with inline images):
+   ```bash
+   opencli browser open "https://www.xiaohongshu.com/search_result?keyword=<urlencoded>" --session xhs
+   opencli browser wait selector "section.note-item" --session xhs
+   opencli browser eval --session xhs "[...document.querySelectorAll('section.note-item')].slice(0,10).map(s=>({title:s.querySelector('.title, .footer .title span')?.innerText, author:s.querySelector('.author .name, .name')?.innerText, likes:s.querySelector('.count, .like-wrapper .count')?.innerText, url:s.querySelector('a.cover, a[href*=\"/search_result/\"], a[href*=\"/explore/\"]')?.href}))"
+   opencli browser close --session xhs
+   ```
+   Drop this workaround once `opencli xiaohongshu search` works again.
+9. **External CLIs** (gh, docker, lark-cli…) are no longer proxied by opencli in 2.x — call them directly.
+10. **Config (env):** `OPENCLI_DAEMON_PORT` (default 19825), `OPENCLI_PROFILE` (Chrome profile alias), `OPENCLI_BROWSER_COMMAND_TIMEOUT` (default 60s).
