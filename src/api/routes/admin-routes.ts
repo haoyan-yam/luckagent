@@ -10,6 +10,7 @@ import { COMPAT_PROVIDERS, resolveEngineName } from '../../engines/index.js';
 import { EDITABLE_DEFAULTS, displayDefault, validateDefaultsUpdate, writeEnvUpdates } from '../env-defaults.js';
 import { claudeProjectsDir, physicalCwd } from '../../engines/claude/session-lister.js';
 import { SkillUsageTracker } from '../skill-usage.js';
+import { MemoryRecallTracker } from '../memory-recall.js';
 import { buildAttention, unsetGroupSummaries } from '../attention.js';
 import { buildFeed, memoryActivity, recentMemories, skillActivity, taskBreakdown, topSkills } from '../dashboard.js';
 import { MEMORY_INDEX_LIMITS, parseMemoryFrontmatter, readBotMemory, searchMemories, stripFrontmatter } from '../memory-view.js';
@@ -509,6 +510,24 @@ export async function handleAdminRoutes(
       }
     } catch { /* bots.json unreadable — empty overview */ }
     jsonResponse(res, 200, { limits: MEMORY_INDEX_LIMITS, bots });
+    return true;
+  }
+
+  // GET /admin/api/memory/recall — per-bot, per-file recall stats mined from transcripts
+  if (method === 'GET' && url === '/admin/api/memory/recall') {
+    const bots: Array<{ name: string; workdir: string }> = [];
+    const dirs: Array<{ bot: string; memDir: string }> = [];
+    try {
+      const cfg = botsConfigPath ? readBotsConfig(botsConfigPath) : { feishuBots: [] };
+      for (const b of cfg.feishuBots || []) {
+        if (!b.defaultWorkingDirectory) continue;
+        const wd = expandUserPath(b.defaultWorkingDirectory);
+        bots.push({ name: b.name, workdir: physicalCwd(wd) });
+        const memDir = memoryDirCandidates(wd).find((d) => fs.existsSync(d));
+        if (memDir) dirs.push({ bot: b.name, memDir });
+      }
+    } catch { /* bots.json unreadable — no attribution possible */ }
+    jsonResponse(res, 200, memoryRecallTracker().snapshot(bots, dirs));
     return true;
   }
 
@@ -1085,7 +1104,7 @@ async function cachedBotChats(
 }
 
 // ---------------------------------------------------------------------------
-// Skill usage tracker (lazy singleton; cache next to the other runtime state)
+// Transcript-mined stats: skill usage + memory recall (lazy singletons; caches next to the other runtime state)
 // ---------------------------------------------------------------------------
 
 let usageTracker: SkillUsageTracker | null = null;
@@ -1099,6 +1118,19 @@ function skillUsageTracker(): SkillUsageTracker {
     );
   }
   return usageTracker;
+}
+
+let recallTracker: MemoryRecallTracker | null = null;
+
+function memoryRecallTracker(): MemoryRecallTracker {
+  if (!recallTracker) {
+    const dir = process.env.SESSION_STORE_DIR || path.join(os.homedir(), '.luckagent');
+    recallTracker = new MemoryRecallTracker(
+      path.join(dir, 'memory-recall-cache.json'),
+      path.join(os.homedir(), '.claude', 'projects'),
+    );
+  }
+  return recallTracker;
 }
 
 // ---------------------------------------------------------------------------

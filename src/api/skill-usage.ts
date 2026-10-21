@@ -33,7 +33,7 @@ export interface SkillUse {
   viaTool: boolean;
 }
 
-interface FileState {
+export interface FileState {
   size: number;
   mtimeMs: number;
   /** Byte offset just past the last complete line already scanned. */
@@ -45,10 +45,23 @@ interface FileState {
   cwd: string | null;
 }
 
-export interface UsageCache {
-  version: 2;
+/** Incremental scan state over all transcripts plus the uses found so far, keyed by turn. */
+export interface TranscriptCache<U> {
+  version: number;
   files: Record<string, FileState>;
-  uses: Record<string, SkillUse>;
+  uses: Record<string, U>;
+}
+
+export type UsageCache = TranscriptCache<SkillUse> & { version: 2 };
+
+/**
+ * What a scan looks for: `markers` is a cheap byte-level prefilter (a chunk
+ * containing none of them is skipped unparsed); `collect` folds one
+ * non-user line into `uses` under the turn `promptId`.
+ */
+export interface LineCollector<U> {
+  markers: Buffer[];
+  collect(line: string, promptId: string | null, uses: Record<string, U>): void;
 }
 
 export interface SkillUsageStat {
@@ -71,7 +84,7 @@ export interface SkillUsageSnapshot {
   usage: Record<string, Record<string, SkillUsageStat>>;
 }
 
-const MARKERS = [Buffer.from('"name":"Skill"'), Buffer.from('.claude/skills/')];
+const SKILL_MARKERS = ['"name":"Skill"', '.claude/skills/'];
 const PROMPT_ID = Buffer.from('"promptId":"');
 const SKILL_PATH_RE = /\.claude\/skills\/([A-Za-z0-9][\w.-]*)/g;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -96,7 +109,7 @@ export function skillsInToolUse(block: any): Array<{ skill: string; viaTool: boo
 
 /** Record skill uses found on one assistant line into `uses`. Exported for tests. */
 export function collectLine(line: string, promptId: string | null, uses: Record<string, SkillUse>): void {
-  if (!MARKERS.some((m) => line.includes(m.toString()))) return;
+  if (!SKILL_MARKERS.some((m) => line.includes(m))) return;
   let rec: any;
   try {
     rec = JSON.parse(line);
@@ -123,6 +136,8 @@ export function collectLine(line: string, promptId: string | null, uses: Record<
     }
   }
 }
+
+const SKILL_COLLECTOR: LineCollector<SkillUse> = { markers: SKILL_MARKERS.map((m) => Buffer.from(m)), collect: collectLine };
 
 function lastPromptIdIn(buf: Buffer): string | null {
   const i = buf.lastIndexOf(PROMPT_ID);
@@ -153,11 +168,12 @@ function readFileHead(file: string): { firstTs: number | null; cwd: string | nul
  * Scan complete lines from `start`, tracking the current turn's promptId.
  * Returns the offset past the last newline and the promptId in effect there.
  */
-async function scanFileFrom(
+async function scanFileFrom<U>(
   file: string,
   start: number,
   promptId: string | null,
-  uses: Record<string, SkillUse>,
+  uses: Record<string, U>,
+  collector: LineCollector<U>,
 ): Promise<{ offset: number; promptId: string | null }> {
   let offset = start;
   let pid = promptId;
@@ -172,8 +188,8 @@ async function scanFileFrom(
     const complete = pending.length ? Buffer.concat([...pending, chunk.subarray(0, nl + 1)]) : chunk.subarray(0, nl + 1);
     pending = nl + 1 < chunk.length ? [chunk.subarray(nl + 1)] : [];
     offset += complete.length;
-    // Cheap byte-level prefilter: most chunks touch no skill — just carry the turn forward.
-    if (!MARKERS.some((m) => complete.indexOf(m) !== -1)) {
+    // Cheap byte-level prefilter: most chunks touch nothing of interest — just carry the turn forward.
+    if (!collector.markers.some((m) => complete.indexOf(m) !== -1)) {
       pid = lastPromptIdIn(complete) ?? pid;
       continue;
     }
@@ -182,7 +198,7 @@ async function scanFileFrom(
         const m = line.match(/"promptId":"([^"]+)"/);
         if (m) pid = m[1];
       } else {
-        collectLine(line, pid, uses);
+        collector.collect(line, pid, uses);
       }
     }
   }
@@ -210,7 +226,16 @@ function listJsonl(root: string): string[] {
 }
 
 /** Incrementally fold new transcript content into `cache` (mutated). Exported for tests. */
-export async function scanTranscripts(root: string, cache: UsageCache): Promise<UsageCache> {
+export function scanTranscripts(root: string, cache: UsageCache): Promise<UsageCache> {
+  return scanTranscriptsWith(root, cache, SKILL_COLLECTOR);
+}
+
+/** `scanTranscripts` for any collector — shared by skill usage and memory recall. */
+export async function scanTranscriptsWith<U, C extends TranscriptCache<U>>(
+  root: string,
+  cache: C,
+  collector: LineCollector<U>,
+): Promise<C> {
   for (const file of listJsonl(root)) {
     let st: fs.Stats;
     try {
@@ -224,7 +249,7 @@ export async function scanTranscripts(root: string, cache: UsageCache): Promise<
     const resume = prev && st.size >= prev.offset;
     const head = resume ? { firstTs: prev.firstTs, cwd: prev.cwd } : readFileHead(file);
     try {
-      const r = await scanFileFrom(file, resume ? prev.offset : 0, resume ? prev.promptId : null, cache.uses);
+      const r = await scanFileFrom(file, resume ? prev.offset : 0, resume ? prev.promptId : null, cache.uses, collector);
       cache.files[file] = { size: st.size, mtimeMs: st.mtimeMs, offset: r.offset, promptId: r.promptId, ...head };
     } catch {
       /* unreadable right now — retry next scan */
@@ -292,33 +317,38 @@ export function coverageByBot(
 }
 
 /**
- * Process-wide tracker: serves the last result instantly and refreshes in the
- * background (first full scan of a few GB of transcripts takes a few seconds).
+ * Process-wide incremental scan: serves the last result instantly and
+ * refreshes in the background (first full scan of a few GB of transcripts
+ * takes a few seconds). The cache is persisted to `cachePath`; one with a
+ * different `version` is discarded and rebuilt.
  */
-export class SkillUsageTracker {
-  private cache: UsageCache | null = null;
+export class TranscriptScanStore<U> {
+  private cache: TranscriptCache<U> | null = null;
   private refreshing: Promise<void> | null = null;
   private lastScanAt: number | null = null;
 
   constructor(
     private readonly cachePath: string,
     private readonly projectsRoot: string,
+    private readonly version: number,
+    private readonly collector: LineCollector<U>,
     private readonly minIntervalMs = 60_000,
   ) {}
 
-  private load(): UsageCache {
+  load(): TranscriptCache<U> {
     if (this.cache) return this.cache;
     try {
       const parsed = JSON.parse(fs.readFileSync(this.cachePath, 'utf-8'));
       // Older cache versions counted differently — rebuild from scratch.
-      this.cache = parsed?.version === 2 && parsed.files && parsed.uses ? parsed : emptyCache();
+      this.cache = parsed?.version === this.version && parsed.files && parsed.uses ? parsed : null;
     } catch {
-      this.cache = emptyCache();
+      /* no cache yet */
     }
-    return this.cache!;
+    this.cache ||= { version: this.version, files: {}, uses: {} };
+    return this.cache;
   }
 
-  private persist(cache: UsageCache): void {
+  private persist(cache: TranscriptCache<U>): void {
     try {
       fs.mkdirSync(path.dirname(this.cachePath), { recursive: true });
       const tmp = `${this.cachePath}.tmp`;
@@ -332,7 +362,7 @@ export class SkillUsageTracker {
   refresh(): Promise<void> {
     if (!this.refreshing) {
       const cache = this.load();
-      this.refreshing = scanTranscripts(this.projectsRoot, cache)
+      this.refreshing = scanTranscriptsWith(this.projectsRoot, cache, this.collector)
         .then((c) => {
           this.persist(c);
           this.lastScanAt = Date.now();
@@ -344,10 +374,35 @@ export class SkillUsageTracker {
     return this.refreshing;
   }
 
+  /** Current cache, kicking off a background refresh when the last scan is stale. */
+  current(): { cache: TranscriptCache<U>; scanning: boolean; lastScanAt: string | null } {
+    const cache = this.load();
+    if (!this.refreshing && (this.lastScanAt === null || Date.now() - this.lastScanAt > this.minIntervalMs)) {
+      void this.refresh().catch(() => {});
+    }
+    return {
+      cache,
+      scanning: this.refreshing !== null,
+      lastScanAt: this.lastScanAt ? new Date(this.lastScanAt).toISOString() : null,
+    };
+  }
+}
+
+export class SkillUsageTracker {
+  private readonly store: TranscriptScanStore<SkillUse>;
+
+  constructor(cachePath: string, projectsRoot: string, minIntervalMs = 60_000) {
+    this.store = new TranscriptScanStore(cachePath, projectsRoot, 2, SKILL_COLLECTOR, minIntervalMs);
+  }
+
+  refresh(): Promise<void> {
+    return this.store.refresh();
+  }
+
   /** Individual uses since `since`, attributed to bots (for windowed views like the dashboard). */
   usesSince(bots: Array<{ name: string; workdir: string }>, since: number): Array<{ bot: string; skill: string; ts: number }> {
     const out: Array<{ bot: string; skill: string; ts: number }> = [];
-    for (const u of Object.values(this.load().uses)) {
+    for (const u of Object.values(this.store.load().uses)) {
       if (u.ts < since) continue;
       const bot = botForCwd(u.cwd, bots);
       if (bot) out.push({ bot, skill: u.skill, ts: u.ts });
@@ -356,13 +411,10 @@ export class SkillUsageTracker {
   }
 
   snapshot(bots: Array<{ name: string; workdir: string }>): SkillUsageSnapshot {
-    const cache = this.load();
-    if (!this.refreshing && (this.lastScanAt === null || Date.now() - this.lastScanAt > this.minIntervalMs)) {
-      void this.refresh().catch(() => {});
-    }
+    const { cache, scanning, lastScanAt } = this.store.current();
     return {
-      scanning: this.refreshing !== null,
-      lastScanAt: this.lastScanAt ? new Date(this.lastScanAt).toISOString() : null,
+      scanning,
+      lastScanAt,
       coverage: coverageByBot(Object.values(cache.files), bots),
       usage: aggregateUsage(Object.values(cache.uses), bots),
     };

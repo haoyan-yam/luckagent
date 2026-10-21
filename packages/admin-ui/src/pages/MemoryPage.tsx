@@ -10,6 +10,7 @@ import {
   Segmented,
   Select,
   Space,
+  Spin,
   Table,
   Tabs,
   Tag,
@@ -60,16 +61,33 @@ interface MemFile {
   mtime: string;
 }
 interface SearchHit { bot: string; file: string; matches: number; snippet: string; }
+interface RecallStat {
+  total: number;
+  last7d: number;
+  last30d: number;
+  sessions: number;
+  lastRecalledAt: string | null;
+}
+interface RecallPayload {
+  scanning: boolean;
+  lastScanAt: string | null;
+  coverage: Record<string, string>;
+  recall: Record<string, Record<string, RecallStat>>;
+}
 
 type MemType = 'project' | 'feedback' | 'reference' | 'user' | 'none';
 type TypeFilter = MemType | 'all';
-type Flag = 'stale' | 'longHook' | 'unindexed' | 'missing';
+type Flag = 'cold' | 'stale' | 'longHook' | 'unindexed' | 'missing';
+type RecallState = 'active' | 'idle' | 'never';
 
 interface Row extends MemFileView {
   bot: string;
   type: MemType;
   stale: boolean;
   longHook: boolean;
+  recall: RecallStat;
+  recallState: RecallState;
+  coverageFrom: string | null;
 }
 
 const STALE_DAYS = 30;
@@ -86,7 +104,11 @@ const TYPE_META: Record<MemType, { label: string; color?: string }> = {
 };
 const TYPE_ORDER: MemType[] = ['project', 'feedback', 'reference', 'user', 'none'];
 
+const NO_RECALL: RecallStat = { total: 0, last7d: 0, last30d: 0, sessions: 0, lastRecalledAt: null };
+const recallState = (s: RecallStat): RecallState => (s.last30d > 0 ? 'active' : s.total > 0 ? 'idle' : 'never');
+
 const FLAG_LABEL: Record<Flag, string> = {
+  cold: `${STALE_DAYS} 天未召回`,
   stale: `${STALE_DAYS} 天未更新`,
   longHook: '索引行过长',
   unindexed: '未入索引',
@@ -119,10 +141,17 @@ function highlight(text: string, q: string) {
 const linkifyRefs = (body: string) => body.replace(/\[\[([^\]\n]+)\]\]/g, (_, name: string) => `[${name}](#mem:${encodeURIComponent(name.trim())})`);
 
 const hasFlag = (r: Row, f: Flag) =>
-  f === 'stale' ? r.stale : f === 'longHook' ? r.longHook : f === 'unindexed' ? !r.indexed : !r.exists;
+  f === 'cold' ? r.exists && r.recallState !== 'active' : f === 'stale' ? r.stale : f === 'longHook' ? r.longHook : f === 'unindexed' ? !r.indexed : !r.exists;
 
 export default function MemoryPage() {
   const { data, error, refresh } = usePoll<OverviewPayload>(() => api.get('/admin/api/memory/overview'), 60000);
+  // 召回统计要扫会话记录，首次较慢：扫描中 3 秒轮询一次，扫完回到 60 秒
+  const [recallScanning, setRecallScanning] = useState(false);
+  const { data: recall, error: recallError } = usePoll<RecallPayload>(
+    () => api.get('/admin/api/memory/recall'),
+    recallScanning ? 3000 : 60000,
+  );
+  useEffect(() => setRecallScanning(!!recall?.scanning), [recall?.scanning]);
   const [tab, setTab] = useState('overview');
   const [search, setSearch] = useState('');
   const [botFilter, setBotFilter] = useState<string | null>(null);
@@ -157,15 +186,21 @@ export default function MemoryPage() {
   const rows: Row[] = useMemo(() => {
     const now = Date.now();
     return (data?.bots || []).flatMap((b) =>
-      b.files.map((f) => ({
-        ...f,
-        bot: b.name,
-        type: toType(f.frontmatter?.type),
-        stale: !!f.mtime && now - Date.parse(f.mtime) > STALE_DAYS * 86400000,
-        longHook: f.lineChars > LONG_HOOK_CHARS,
-      })),
+      b.files.map((f) => {
+        const stat = recall?.recall[b.name]?.[f.file] || NO_RECALL;
+        return {
+          ...f,
+          bot: b.name,
+          type: toType(f.frontmatter?.type),
+          stale: !!f.mtime && now - Date.parse(f.mtime) > STALE_DAYS * 86400000,
+          longHook: f.lineChars > LONG_HOOK_CHARS,
+          recall: stat,
+          recallState: recallState(stat),
+          coverageFrom: recall?.coverage[b.name] ?? null,
+        };
+      }),
     );
-  }, [data]);
+  }, [data, recall]);
 
   const openFile = async (bot: string, file: string, title: string) => {
     setViewer({ bot, title: `${bot} / ${title}`, loading: true });
@@ -214,6 +249,8 @@ export default function MemoryPage() {
           count: rs.filter((r) => r.exists).length,
           totalBytes: rs.reduce((s, r) => s + (r.sizeBytes ?? 0), 0),
           feedback: rs.filter((r) => r.type === 'feedback').length,
+          recalled30d: rs.reduce((s, r) => s + r.recall.last30d, 0),
+          cold: rs.filter((r) => hasFlag(r, 'cold')).length,
           stale: rs.filter((r) => r.stale).length,
           longHook: rs.filter((r) => r.longHook).length,
           unindexed: rs.filter((r) => !r.indexed).length,
@@ -307,6 +344,22 @@ export default function MemoryPage() {
       render: (_: unknown, r: OverviewRow) => r.feedback || <Typography.Text type="secondary">0</Typography.Text>,
     },
     {
+      title: <Tooltip title={`近 ${STALE_DAYS} 天该 bot 所有记忆被读取的对话轮数之和`}>{STALE_DAYS} 天召回 ⓘ</Tooltip>,
+      key: 'recalled30d',
+      width: 120,
+      align: 'right' as const,
+      sorter: (a: OverviewRow, b: OverviewRow) => a.recalled30d - b.recalled30d,
+      render: (_: unknown, r: OverviewRow) => r.recalled30d || <Typography.Text type="secondary">0</Typography.Text>,
+    },
+    {
+      title: <Tooltip title={`近 ${STALE_DAYS} 天一次都没被读过的记忆（含从未召回），可考虑合并或清理`}>{STALE_DAYS} 天未召回 ⓘ</Tooltip>,
+      key: 'cold',
+      width: 130,
+      align: 'right' as const,
+      sorter: (a: OverviewRow, b: OverviewRow) => a.cold - b.cold,
+      render: (_: unknown, r: OverviewRow) => countCell(r.cold, r.name, 'cold'),
+    },
+    {
       title: `${STALE_DAYS} 天未更新`,
       key: 'stale',
       width: 100,
@@ -356,6 +409,23 @@ export default function MemoryPage() {
     warn: overviewRows.filter((r) => r.ratio >= WARN_RATIO).length,
   };
 
+  // 各 bot 会话记录的起始日不同（「从未召回」悬浮里单独标注），这里只给最早的那天
+  const earliestCoverage = Object.values(recall?.coverage || {}).sort()[0];
+  const recallMeta = (
+    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+      {recall?.scanning && (
+        <>
+          <Spin size="small" /> 正在统计对话记录…{' '}
+        </>
+      )}
+      {recallError && <Typography.Text type="warning">召回统计加载失败：{recallError}。</Typography.Text>}
+      召回次数 = bot 主动读取这条记忆的对话轮数（一次请求里读多少遍都只算 1 次），含 Read 工具和 cat / grep / sed 等命令读取；
+      MEMORY.md 每次会话自动加载，不计入；新建、修改记忆也不算召回。
+      {earliestCoverage && `统计范围：现有会话记录，最早从 ${dayjs(earliestCoverage).format('M 月 D 日')}开始。`}
+      {recall?.lastScanAt && `上次统计 ${dayjs(recall.lastScanAt).format('HH:mm')}。`}
+    </Typography.Text>
+  );
+
   const overviewTab = (
     <Space direction="vertical" size="middle" style={{ width: '100%' }}>
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
@@ -363,6 +433,7 @@ export default function MemoryPage() {
         bot 每次会话开始只加载索引 MEMORY.md 的前 {limits.lines} 行 / {limits.chars.toLocaleString()} 字符，
         占用超过 {Math.round(WARN_RATIO * 100)}% 标黄、超限标红。点击一行查看该 bot 的记忆明细。
       </Typography.Text>
+      {recallMeta}
       {totals.warn > 0 && (
         <Alert type="warning" showIcon message={`有 ${totals.warn} 个 bot 的记忆索引占用超过 ${Math.round(WARN_RATIO * 100)}%，建议精简索引行（一行一句话指针）。`} />
       )}
@@ -446,6 +517,40 @@ export default function MemoryPage() {
       },
     },
     {
+      title: <Tooltip title="近 30 天读取过这条记忆的对话轮数">30 天</Tooltip>,
+      key: 'recall30d',
+      width: 76,
+      align: 'right' as const,
+      sorter: (a: Row, b: Row) => a.recall.last30d - b.recall.last30d,
+      render: (_: unknown, r: Row) => r.recall.last30d || <Typography.Text type="secondary">0</Typography.Text>,
+    },
+    {
+      title: <Tooltip title="现有会话记录里读取过这条记忆的对话轮数">累计召回</Tooltip>,
+      key: 'recallTotal',
+      width: 104,
+      align: 'right' as const,
+      sorter: (a: Row, b: Row) => a.recall.total - b.recall.total,
+      render: (_: unknown, r: Row) => r.recall.total || <Typography.Text type="secondary">0</Typography.Text>,
+    },
+    {
+      title: '最近召回',
+      key: 'lastRecalled',
+      width: 110,
+      sorter: (a: Row, b: Row) => (a.recall.lastRecalledAt || '').localeCompare(b.recall.lastRecalledAt || ''),
+      render: (_: unknown, r: Row) =>
+        !r.exists ? (
+          '—'
+        ) : r.recallState === 'never' ? (
+          <Tooltip title={r.coverageFrom ? `${r.bot} 现有会话记录从 ${dayjs(r.coverageFrom).format('YYYY-MM-DD')} 开始，此后没读过` : undefined}>
+            <Tag>从未召回</Tag>
+          </Tooltip>
+        ) : (
+          <Tooltip title={dayjs(r.recall.lastRecalledAt).format('YYYY-MM-DD HH:mm')}>
+            {r.recallState === 'idle' ? <Tag color="orange">{dayjs(r.recall.lastRecalledAt).fromNow()}</Tag> : dayjs(r.recall.lastRecalledAt).fromNow()}
+          </Tooltip>
+        ),
+    },
+    {
       title: '大小',
       key: 'size',
       width: 80,
@@ -518,6 +623,7 @@ export default function MemoryPage() {
         size="small"
         locale={{ emptyText: rows.length === 0 ? '各 bot 还没有产生记忆' : '没有符合筛选条件的记忆' }}
       />
+      {recallMeta}
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
         类型取自记忆文件开头的 type 字段：项目 = 项目进展与决定，反馈 = 用户对 bot 的纠正与确认，参考 = 外部资料指针，用户 = 关于人的偏好。
         修改记忆仍在对应 bot 的记忆目录里手动编辑。
@@ -559,6 +665,17 @@ export default function MemoryPage() {
               {viewer.data.frontmatter?.description && (
                 <Descriptions.Item label="描述" span={2}>{viewer.data.frontmatter.description}</Descriptions.Item>
               )}
+              {(() => {
+                const r = rows.find((x) => x.bot === viewer.bot && x.file === viewer.data!.file);
+                if (!r) return null;
+                return (
+                  <Descriptions.Item label="召回" span={2}>
+                    {r.recall.total > 0
+                      ? `近 7 天 ${r.recall.last7d} 次 · 近 30 天 ${r.recall.last30d} 次 · 累计 ${r.recall.total} 次（${r.recall.sessions} 个会话）· 最近 ${dayjs(r.recall.lastRecalledAt).format('YYYY-MM-DD HH:mm')}`
+                      : '从未召回'}
+                  </Descriptions.Item>
+                );
+              })()}
               <Descriptions.Item label="文件" span={2}>
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                   {viewer.data.file} · {(viewer.data.sizeBytes / 1024).toFixed(1)}KB · 更新于 {dayjs(viewer.data.mtime).format('YYYY-MM-DD HH:mm')}
