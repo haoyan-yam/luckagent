@@ -2,6 +2,15 @@
 
 版本号 = 根 `package.json`（管理台总览页显示的就是它）。升级：`luckagent update`（git 安装）或重跑一行安装命令（tarball 安装）。git tag 与本文件同步打点。
 
+## v0.7.29 — 2026-10-21
+
+`luckagent update` 升级 opencli 后自动收尾，不用再手动重启 daemon、自己查扩展版本。
+
+- **自动重启 daemon**：opencli 版本有变化时执行 `opencli daemon restart`，避免新 CLI 连着旧版 daemon；版本没变不重启，不打断 bot 正在跑的浏览器任务。重启失败给 warn 和手动命令
+- **检查 Chrome 扩展**：升级后跑 `opencli doctor`，扩展过旧时 warn 并给出下载地址（jackwener/OpenCLI releases，ZIP 在 `chrome://extensions` 里加载）；Chrome 未打开、扩展未连接时只提示稍后自行 `opencli doctor`
+- 检查出错（doctor 失败、输出无法解析等）只跳过提示，不中断 update
+- 修正 v0.7.28 的升级提示：opencli 2.0 不拒绝旧版扩展，建议升到 1.0.26 修复 `Navigation rejected.`
+
 ## v0.7.28 — 2026-10-21
 
 opencli 内置技能适配 opencli 2.0。`luckagent update` 会照常把 opencli 升到 `@latest`（当前 2.0.2），升级后 bot 按新技能调用。
