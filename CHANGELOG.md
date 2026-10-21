@@ -9,7 +9,7 @@ opencli 内置技能适配 opencli 2.0。`luckagent update` 会照常把 opencli
 - **适配 2.0 破坏性变更**：输出默认是 `{ok, data}` JSON 信封（失败为 `{ok:false, error}` 且退出码非零）；浏览器页面命令必须带 `--session`；`Access` 标签改为 read/write，write 类命令先找用户确认；去掉已被 2.0 移除的外部 CLI 透传（gh / lark-cli 等改为直接调用）
 - **新用法**：`opencli list <关键词>` 分页搜索命令、`--help -f json` 看结构化参数、`browser chrome describe/call`、`browser network --static`
 - **已知问题绕行**：opencli 2.0.2 的 `xiaohongshu search` 在小红书 AI 搜索首页上报 `search_input_not_available`（上游 jackwener/OpenCLI#2673 待合并）。技能里给出直接打开搜索结果页再 `eval` 读笔记卡片的步骤，上游修好后移除
-- **升级提示**：opencli 2.0 需要 Chrome 扩展 ≥ 1.0.25，建议升到 1.0.26（修复 `Navigation rejected.`）；升级 CLI 后执行 `opencli daemon restart`，再用 `opencli doctor` 确认
+- **升级提示**：opencli 2.0 不会拒绝旧版 Chrome 扩展（≥ 1.0.22 即可完整使用失败自动重试），但建议升到 1.0.26，修复浏览器命令偶发的 `Navigation rejected.`；升级 CLI 后执行 `opencli daemon restart`，再用 `opencli doctor` 确认
 
 ## v0.7.27 — 2026-10-21
 

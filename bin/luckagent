@@ -232,8 +232,39 @@ cmd_update() {
   # opencli（网站自动化）：同样只升级经 npm 全局安装的那份（install.sh 的装法）
   if command -v opencli &>/dev/null && npm ls -g --depth=0 @jackwener/opencli &>/dev/null; then
     info "Updating opencli..."
+    local opencli_before opencli_after
+    opencli_before=$(opencli --version 2>/dev/null | head -1) || true
     if npm install -g @jackwener/opencli@latest 2>/dev/null; then
-      success "opencli updated ($(opencli --version 2>/dev/null | head -1 || echo 'version unknown'))"
+      opencli_after=$(opencli --version 2>/dev/null | head -1) || true
+      success "opencli updated (${opencli_after:-version unknown})"
+      # 版本变了就重启 daemon：npm 只换二进制，后台还跑着旧版 daemon
+      if [[ -n "$opencli_after" && "$opencli_before" != "$opencli_after" ]]; then
+        if opencli daemon restart &>/dev/null; then
+          success "opencli daemon restarted"
+        else
+          warn "opencli daemon restart failed; run: opencli daemon restart"
+        fi
+      fi
+      # Chrome 扩展只能用户手动升级，这里只提示
+      local ext_check
+      ext_check=$(opencli doctor 2>/dev/null | python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)["data"]
+except Exception:
+    sys.exit()
+if not d.get("extensionConnected"):
+    print("disconnected")
+elif d.get("extensionOutdated"):
+    cur, latest = d.get("extensionVersion") or "?", d.get("latestExtensionVersion")
+    print("outdated v%s%s" % (cur, " -> v" + latest if latest else ""))
+' 2>/dev/null) || true
+      case "$ext_check" in
+        outdated*)
+          warn "opencli Chrome extension is ${ext_check#outdated } — update it from https://github.com/jackwener/OpenCLI/releases (load the ZIP via chrome://extensions)" ;;
+        disconnected)
+          info "opencli Chrome extension not connected; open Chrome and run 'opencli doctor' to check its version" ;;
+      esac
     else
       warn "opencli update failed; Luckagent update will continue"
     fi
