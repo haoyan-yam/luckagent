@@ -2,6 +2,14 @@
 
 版本号 = 根 `package.json`（管理台总览页显示的就是它）。升级：`luckagent update`（git 安装）或重跑一行安装命令（tarball 安装）。git tag 与本文件同步打点。
 
+## v0.7.30 — 2026-11-04
+
+image-gen 走 Codex 生图时不再写会话记录，修复 `~/.codex` 越用越大、最终把磁盘写满的问题。
+
+- **原因**：`codex exec` 默认把每次会话落盘到 `~/.codex/sessions`，并同步进 `~/.codex/thread_history_1.sqlite`；生图会话里带着 base64 编码的参考图和成图，单次约 8MB。脚本出图后从 `generated_images` 拷走，从不 resume，这些记录毫无用处，实测一个月累积 30G 以上
+- **修复**：`codex_image.py` 调用 `codex exec` 时加 `--ephemeral`，出图、拷图、透明校验、额度 / 登录兜底都不受影响（已实测）
+- **清理旧记录**：升级不会删除已有记录。`originator` 为 `codex_exec` 的会话都是生图留下的，可以删；`codex-tui` 是手动开的 Codex 会话，按需保留。删 `thread_history_1.sqlite` 前先 `codex app-server daemon stop`，删完再 `start`
+
 ## v0.7.29 — 2026-10-21
 
 `luckagent update` 升级 opencli 后自动收尾，不用再手动重启 daemon、自己查扩展版本。
