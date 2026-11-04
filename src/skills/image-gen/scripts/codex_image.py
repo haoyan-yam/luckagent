@@ -271,7 +271,8 @@ IMG_EXTS = (".png", ".jpg", ".jpeg", ".webp")
 def run_codex(envelope: str, refs, args, tmpdir: Path) -> Run:
     res = Run()
     last_file = tmpdir / "last_message.txt"
-    cmd = [CODEX_BIN, "exec", "--skip-git-repo-check", "-C", str(tmpdir), "-s", "read-only",
+    # --ephemeral：不落 ~/.codex/sessions 会话文件（每次生图会把 base64 图片写进去，单个约 8MB）
+    cmd = [CODEX_BIN, "exec", "--ephemeral", "--skip-git-repo-check", "-C", str(tmpdir), "-s", "read-only",
            "-c", f"model_reasoning_effort={args.effort}", "--json", "-o", str(last_file)]
     for r in refs:
         cmd += ["-i", r]   # -i 变长，必须放最后；prompt 走 stdin
