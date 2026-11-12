@@ -25,6 +25,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import Database from 'better-sqlite3';
 import type { Logger } from '../utils/logger.js';
+import { recordFeishuSend } from '../feishu/download-index.js';
 
 export type OutboundKind = 'card' | 'text' | 'notice' | 'image' | 'file' | 'audio';
 
@@ -107,6 +108,12 @@ export class OutboundLedger {
       );
     } catch (err) {
       this.logger.warn({ err, messageId: rec.messageId }, 'Outbound ledger record failed');
+    }
+    // Ledger rows expire after 30 days; the outputs/ index keeps the Feishu
+    // pointer for as long as the archive copy lives (deferred: walks outputs/).
+    if (rec.kind !== 'card' && rec.kind !== 'text' && rec.kind !== 'notice' && rec.workDir && rec.fileName && rec.mediaKey && rec.fileSize != null) {
+      const sent = { workDir: rec.workDir, fileName: rec.fileName, fileSize: rec.fileSize, messageId: rec.messageId, mediaKey: rec.mediaKey, kind: rec.kind, chatId: rec.chatId, ts: rec.ts };
+      setImmediate(() => recordFeishuSend(sent));
     }
   }
 

@@ -21,10 +21,13 @@ export default function MemberPicker({
   botName,
   value,
   onChange,
+  hint = '白名单里的人在「仅群聊模式」下仍可私聊本 bot；清空即恢复「无人可私聊」。',
 }: {
   botName: string | null;
   value?: string[];
   onChange?: (v: string[]) => void;
+  /** Helper line under the picker; defaults to the private-chat whitelist wording. Pass null to hide. */
+  hint?: string | null;
 }) {
   const [chats, setChats] = useState<Chat[]>([]);
   const [chatId, setChatId] = useState<string | null>(null);
@@ -100,9 +103,11 @@ export default function MemberPicker({
         optionFilterProp="label"
         tokenSeparators={[',', ' ']}
       />
-      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-        白名单里的人在「仅群聊模式」下仍可私聊本 bot；清空即恢复「无人可私聊」。
-      </Typography.Text>
+      {hint && (
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          {hint}
+        </Typography.Text>
+      )}
     </Space>
   );
 }

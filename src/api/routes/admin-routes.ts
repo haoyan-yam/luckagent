@@ -8,14 +8,14 @@ import { readBotsConfig } from '../bots-config-writer.js';
 import { expandUserPath, ORIGINAL_ENV_KEYS, projectsRoot } from '../../config.js';
 import { COMPAT_PROVIDERS, resolveEngineName } from '../../engines/index.js';
 import { EDITABLE_DEFAULTS, displayDefault, validateDefaultsUpdate, writeEnvUpdates } from '../env-defaults.js';
-import { claudeProjectsDir, physicalCwd } from '../../engines/claude/session-lister.js';
+import { physicalCwd } from '../../engines/claude/session-lister.js';
 import { SkillUsageTracker } from '../skill-usage.js';
 import { MemoryRecallTracker } from '../memory-recall.js';
 import { buildAttention, unsetGroupSummaries } from '../attention.js';
 import { buildFeed, memoryActivity, recentMemories, skillActivity, taskBreakdown, topSkills } from '../dashboard.js';
-import { MEMORY_INDEX_LIMITS, parseMemoryFrontmatter, readBotMemory, searchMemories, stripFrontmatter } from '../memory-view.js';
+import { MEMORY_INDEX_LIMITS, memoryDirCandidates, parseMemoryFrontmatter, readBotMemory, searchMemories, stripFrontmatter } from '../memory-view.js';
 
-export { parseMemoryIndex, type MemoryIndexEntry } from '../memory-view.js';
+export { memoryDirCandidates, parseMemoryIndex, type MemoryIndexEntry } from '../memory-view.js';
 import { jsonResponse, parseJsonBody } from './helpers.js';
 import type { RouteContext } from './types.js';
 
@@ -381,15 +381,6 @@ export function scanSkillsDir(dir: string): SkillInfo[] {
   return out;
 }
 
-/** Claude Code keys per-project data dirs by the sanitized workdir path
- *  (claudeProjectsDir — the exact rule). The two older guesses stay as
- *  fallbacks for dirs written by earlier Claude Code versions. Exported for tests. */
-export function memoryDirCandidates(workDir: string): string[] {
-  const root = path.join(os.homedir(), '.claude', 'projects');
-  const exact = path.join(claudeProjectsDir(workDir), 'memory');
-  const legacy = [workDir.replaceAll('/', '-'), workDir.replace(/[/.]/g, '-')].map((c) => path.join(root, c, 'memory'));
-  return [...new Set([exact, ...legacy])];
-}
 
 function safeLeafName(v: unknown): string | null {
   if (typeof v !== 'string' || !v) return null;

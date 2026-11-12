@@ -12,6 +12,7 @@ import {
   CommentOutlined,
   AppstoreOutlined,
   BookOutlined,
+  ClearOutlined,
 } from '@ant-design/icons';
 import { api } from './api/client';
 import { getToken, clearToken } from './auth';
@@ -25,6 +26,7 @@ import LogsPage from './pages/LogsPage';
 import SkillsPage from './pages/SkillsPage';
 import MemoryPage from './pages/MemoryPage';
 import ConfigPage from './pages/ConfigPage';
+import HousekeepingPage from './pages/HousekeepingPage';
 
 const { Sider, Header, Content } = Layout;
 
@@ -35,6 +37,7 @@ const MENU = [
   { key: '/summary', icon: <CommentOutlined />, label: '群日报' },
   { key: '/skills', icon: <AppstoreOutlined />, label: '技能' },
   { key: '/memory', icon: <BookOutlined />, label: '记忆' },
+  { key: '/housekeeping', icon: <ClearOutlined />, label: '清理归档' },
   { key: '/logs', icon: <FileTextOutlined />, label: '运行日志' },
   { key: '/config', icon: <SettingOutlined />, label: '系统配置' },
 ];
@@ -152,6 +155,7 @@ export default function App() {
             <Route path="/summary" element={<GroupSummaryPage />} />
             <Route path="/skills" element={<SkillsPage />} />
             <Route path="/memory" element={<MemoryPage />} />
+            <Route path="/housekeeping" element={<HousekeepingPage />} />
             <Route path="/logs" element={<LogsPage />} />
             <Route path="/config" element={<ConfigPage onRestart={doRestart} />} />
             <Route path="*" element={<Navigate to="/overview" replace />} />

@@ -32,6 +32,7 @@ import {
   handleExecutorRoutes,
   handleAgentTeamRoutes,
   handleAdminRoutes,
+  handleHousekeepingRoutes,
 } from './routes/index.js';
 import { serveAdminStatic } from './admin-static.js';
 import type { RouteContext } from './routes/index.js';
@@ -205,6 +206,7 @@ export function startApiServer(options: ApiServerOptions): http.Server {
 
   // Route handlers in priority order
   const routeHandlers = [
+    handleHousekeepingRoutes,
     handleAdminRoutes,
     handleVoiceRoutes,
     handleTeamRoutes,

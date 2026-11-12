@@ -36,9 +36,9 @@ Luckagent 涉及四类目录：安装目录、每个 bot 的工作目录、两�
 
 ```
 ~/projects/<bot名>/
-├── inputs/           # 聊天里收到的文件落地处（持久保留，任务结束不清理）
+├── inputs/           # 聊天里收到的文件落地处（任务结束不清理；开启「清理归档」后，旧大文件会归档到 NAS）
 ├── work/             # 过程文件、草稿、中间产物
-├── outputs/          # 归档目录：定稿产物的留存副本（⚠️ 放这里不会自动发群）
+├── outputs/          # 归档目录：定稿产物的留存副本（⚠️ 放这里不会自动发群；旧大文件同样会被「清理归档」移到 NAS）
 ├── CLAUDE.md         # 本 bot 专属指令（模板 src/workspace/CLAUDE.md，已存在则不覆盖）
 ├── AGENTS.md         # CLAUDE.md 的符号链接（兼容读 AGENTS.md 的工具）
 └── .claude/skills/   # 引擎发现的技能
@@ -56,7 +56,7 @@ Luckagent 涉及四类目录：安装目录、每个 bot 的工作目录、两�
 | --- | --- | --- |
 | 路径 | `<工作目录>/outputs/` | `<系统tmp>/luckagent-outputs-<用户名>/<chatId>/` |
 | 放进去会发到聊天吗 | **不会** | **会**——桥接自动扫描并发送 |
-| 发送后文件还在吗 | 一直在（留档） | **发过即删** |
+| 发送后文件还在吗 | 一直在（留档；开启「清理归档」后，超过 30 天的大文件会移到 NAS） | **发过即删** |
 | 路径怎么改 | 工作区约定，自便 | 环境变量 `OUTPUTS_BASE_DIR`（或 bot 级 `outputsBaseDir`） |
 
 **要把文件发到聊天**：复制到发送暂存目录对应 chatId 的子目录（桥接会在系统提示里把确切路径告诉 agent）。**要留档**：放 `outputs/`。正确顺序是**先在 `outputs/` 留档，再复制一份过去发送**——因为发送暂存目录里的文件发出后就没了。
@@ -104,3 +104,16 @@ Luckagent 涉及四类目录：安装目录、每个 bot 的工作目录、两�
 - [设计笔记](design-notes.md) —— 发送目录生命周期等行为的来龙去脉
 - [技能体系](claude-code-skills.md) —— 技能目录与两级指令模板
 - [常见问题排查](troubleshooting.md) —— 目录相关的常见坑
+
+## 清理归档（磁盘维护）
+
+管理台「清理归档」按规则把长期没动的大文件移出本机：归档类规则先复制到 NAS 硬盘、校验 SHA-1 一致后才删本机副本；「已解压的 zip」「Codex 生图会话」移到废纸篓。默认规则、保护范围（记忆 / CLAUDE.md / 项目技能 / 活跃脚本引用的文件、系列最新一版）和找回方式见 bot 共用规范 `src/workspace/PROJECTS-CLAUDE.md` 的「旧文件会被自动归档」一节。相关文件：
+
+| 文件 | 内容 |
+| --- | --- |
+| `~/.luckagent/housekeeping/config.json` | 规则、定时、归档目录、异常提醒（管理台保存） |
+| `~/.luckagent/housekeeping/runs/` | 执行记录（正式执行留最近 200 次，预览留 30 次） |
+| `~/.luckagent/housekeeping/归档总清单.tsv` | 本机累计归档清单：原路径 → 硬盘位置 + SHA-1 |
+| `<归档目录>/归档清单.tsv` | 硬盘上的同一份清单（不开本机也能查） |
+| `<工作目录>/inputs/.feishu-index.tsv` | 下载附件时记录的 message_id / file_key，可直接从飞书重新下载 |
+| `<工作目录>/outputs/.feishu-index.tsv` | 发群时记录、且 outputs 里有同名同大小留档的文件 |

@@ -5,7 +5,9 @@
  */
 
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
+import { claudeProjectsDir } from '../engines/claude/session-lister.js';
 
 export interface MemoryIndexEntry { title: string; file: string; hook: string; }
 
@@ -244,4 +246,14 @@ export function searchMemories(
     }
   }
   return { hits, truncated: false };
+}
+
+/** Claude Code keys per-project data dirs by the sanitized workdir path
+ *  (claudeProjectsDir — the exact rule). The two older guesses stay as
+ *  fallbacks for dirs written by earlier Claude Code versions. Exported for tests. */
+export function memoryDirCandidates(workDir: string): string[] {
+  const root = path.join(os.homedir(), '.claude', 'projects');
+  const exact = path.join(claudeProjectsDir(workDir), 'memory');
+  const legacy = [workDir.replaceAll('/', '-'), workDir.replace(/[/.]/g, '-')].map((c) => path.join(root, c, 'memory'));
+  return [...new Set([exact, ...legacy])];
 }

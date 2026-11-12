@@ -16,6 +16,8 @@ import { BotRegistry } from './api/bot-registry.js';
 import { PeerManager } from './api/peer-manager.js';
 import { TaskScheduler } from './scheduler/task-scheduler.js';
 import { startApiServer } from './api/http-server.js';
+import { initHousekeeping } from './housekeeping/service.js';
+import { sendAlertCard } from './housekeeping/notify-feishu.js';
 import { DocSync } from './sync/doc-sync.js';
 import { MemoryClient } from './memory/memory-client.js';
 
@@ -342,10 +344,22 @@ async function main() {
     agentTeams: appConfig.agentTeams,
   });
 
+  // 清理归档：按后台配置的 cron 定时执行（默认关闭）
+  const housekeeping = initHousekeeping(logger, botsConfigPath, {
+    // 只在出异常时用：执行失败、硬盘没接上、出错多、磁盘快满
+    notify: async (bot, to, title, content) => {
+      const client = registry.get(bot)?.feishuClient;
+      if (!client) throw new Error(`提醒用的机器人没在运行：${bot}`);
+      await sendAlertCard(client, to, title, content);
+    },
+  });
+  housekeeping.start();
+
   // Graceful shutdown
   const shutdown = async () => {
     logger.info('Shutting down...');
     scheduler.destroy();
+    housekeeping.stop();
     if (peerManager) {
       peerManager.destroy();
     }

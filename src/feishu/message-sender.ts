@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import type * as lark from '@larksuiteoapi/node-sdk';
 import type { Logger } from '../utils/logger.js';
 import type { DownloadOutcome, FetchedMessage } from '../bridge/message-sender.interface.js';
+import { recordFeishuDownload } from './download-index.js';
 
 /**
  * [design-note P] 媒体发送结果：成功时带回 message_id 与媒资 key，供出站台账登记
@@ -223,11 +224,15 @@ export class MessageSender {
   }
 
   async downloadImage(messageId: string, imageKey: string, savePath: string): Promise<DownloadOutcome> {
-    return this.downloadResource(messageId, imageKey, 'image', savePath);
+    const r = await this.downloadResource(messageId, imageKey, 'image', savePath);
+    if (r === true) recordFeishuDownload(savePath, messageId, imageKey, 'image');
+    return r;
   }
 
   async downloadFile(messageId: string, fileKey: string, savePath: string): Promise<DownloadOutcome> {
-    return this.downloadResource(messageId, fileKey, 'file', savePath);
+    const r = await this.downloadResource(messageId, fileKey, 'file', savePath);
+    if (r === true) recordFeishuDownload(savePath, messageId, fileKey, 'file');
+    return r;
   }
 
   /**
