@@ -104,9 +104,10 @@
 
 - **多 bot 单进程**：一份 `bots.json` 配任意多个飞书机器人，各自独立的应用凭证、工作目录、引擎与预算限额。
 - **多引擎可选**：每个 bot 用 `engine: "claude" | "deepseek" | "minimax"` 选择后端；Claude 支持 API key 或订阅登录，DeepSeek / MiniMax 走各家官方 Anthropic 兼容端点、只要 key 零安装（均支持看图）。所有引擎共享同一 Claude Code 运行时——持久会话、Agent Teams、记忆体系完全一致。全机默认引擎与各引擎默认模型可在管理台直接改，单个 bot 仍可单独覆盖。
-- **Web 管理台**：系统总览（运行状态、待处理事项、实时动态、技能与记忆的活跃情况）、机器人管理（含手把手的飞书接入向导，列表显示每个 bot 实际生效的模型）、定时任务（按类型 / bot / 状态筛选，可看完整提示词）、群日报（所有 bot 的群一张表）、技能（项目技能的使用统计）、记忆（全 bot 总览、索引占用预警、全文搜索）、运行日志、系统配置（默认引擎 / 模型 / 生图后端可编辑，保存后确认即重启生效），浏览器里完成从建应用到跑通的全流程。
+- **Web 管理台**：系统总览（运行状态、待处理事项、实时动态、技能与记忆的活跃情况）、机器人管理（含手把手的飞书接入向导，列表显示每个 bot 实际生效的模型）、定时任务（按类型 / bot / 状态筛选，可看完整提示词）、群日报（所有 bot 的群一张表）、技能（项目技能的使用统计）、记忆（全 bot 总览、索引占用预警、全文搜索、每条记忆的召回统计）、清理归档（按规则把旧文件归档到外置硬盘、执行记录与一键恢复、磁盘告警）、运行日志、系统配置（默认引擎 / 模型 / 生图后端可编辑，保存后确认即重启生效），浏览器里完成从建应用到跑通的全流程。
 - **定时任务与群日报**：一次性延迟与 cron 周期任务，CLI / 管理台 / HTTP API 三种入口，持久化、重启自动恢复；群日报按群名一键开关，默认每天早 7 点总结昨天全天。
 - **生产磨出来的稳定性**（详见 [设计笔记](docs/design-notes.md)）：文件上传超时重试、快速连发消息合并、群聊引用回复精确通知、被引消息上下文注入、@ 时按接口拉本轮材料、空闲会话自动换新并交接、出站内容脱敏、记忆库出站闸门、发送目录「发过即删 + 漏发补扫」、超大附件分片下载、长连接断连补扫、发送失败明确告知等，全部内建。
+- **磁盘维护**：bot 天天产出素材与中间文件，本机磁盘迟早会满。管理台「清理归档」按规则把长期没动的大文件复制到外置硬盘、校验 SHA-1 后再删本机副本，已解压的 zip 等移到废纸篓；bot 记忆、技能、在用脚本引用的文件和版本序列的最新一版自动保护；附件与发群文件都记了飞书 message_id，归档后也能直接从飞书取回；空间不足或执行出错时由指定机器人私聊或发群提醒。
 - **跨 bot 协作**：共享记忆沉淀知识、技能中心复用方法、agent 总线让 bot 之间互相委托任务，也支持跨主机 peers 联邦。
 - **办公与媒体工具链**：安装脚本一次装齐 bot 产出所需的 Python 基础包（python-pptx / openpyxl / Pillow / pandas / PyMuPDF 等，独立 venv 不碰系统 Python）、LibreOffice、ffmpeg、poppler 与 Noto CJK 字体；`luckagent doctor` 可检查是否齐全。
 - **生图与视频**：生图有 ChatGPT 订阅就走本机 Codex CLI 内置的生图（不需要 API key），没有订阅用火山 Seedream，Codex 未登录或撞订阅额度时自动改用 Seedream；视频用火山 Seedance（文生视频、首帧图生视频、参考图 / 视频 / 音频），与 Seedream 共用一把火山方舟 key。用群里发来的视频 / 音频当参考素材时需要可选的火山 TOS，素材用完自动删除。安装脚本会代装 Codex 并引导登录、询问火山 key，之后在管理台随时切换或补填。
@@ -199,6 +200,9 @@ luckagent inbox poll            # CLI agent 收件箱
 > - **v0.7.9 起的办公与媒体工具链**（LibreOffice / ffmpeg / poppler / 字体 / Python venv）只由 `install.sh` 安装，`luckagent update` 不会补装。老机器升级后重跑一次 `bash install.sh`（幂等，只装缺的），或先跑 `luckagent doctor` 看 `office_media_toolchain` 一项。
 > - **v0.7.13 起生图不再用 OpenAI API**：`OPENAI_IMAGE_API_KEY` 不再生效。只配了它的机器请 `npm i -g @openai/codex && codex login`，或在 `.env` 填 `ARK_API_KEY`，然后 `luckagent restart`；`luckagent doctor` 的 `image_gen` 一项会提示。
 > - **v0.7.18 起内置视频生成技能 `seedance-video`**：`luckagent update` 会同步技能；在管理台「系统配置 → 默认设置 → 视频生成」填火山方舟 key（生图已用 Seedream 的机器共用现有 key，不用再填）即可开通。
+> - **v0.7.28 起 opencli 技能适配 opencli 2.0**：`luckagent update` 会把 opencli 升到最新版，v0.7.29 起升级后自动 `opencli daemon restart` 并用 `opencli doctor` 检查 Chrome 扩展。扩展建议升到 1.0.26（修复偶发的 `Navigation rejected.`），在 `chrome://extensions` 里加载新版 ZIP。
+> - **v0.7.30 起 Codex 生图不再写会话记录**：此前每次生图都会把带图片的会话写进 `~/.codex/sessions` 和 `thread_history_1.sqlite`，一个月可达 30G 以上。升级不会删旧记录，清理方法见[常见问题排查](docs/troubleshooting.md#磁盘快满了)。
+> - **v0.7.31 起有「清理归档」**：默认不定时、不提醒，需要在管理台填归档目录、设置提醒后再打开定时执行（见[管理台使用手册](docs/admin-console.md#清理归档)）。工作区根目录已有的共用规范 `~/projects/CLAUDE.md` 不会被覆盖，想让 bot 知道「旧文件会被归档、找不到时怎么取回」，把模板 `src/workspace/PROJECTS-CLAUDE.md` 里同名一节合并进去。
 > - **v0.7.17 起 bot 工作区根目录可自定义**，但只在安装时询问。老机器沿用 `~/projects`；要换位置就在 `.env` 加一行 `LUCKAGENT_PROJECTS_DIR=<路径>` 再 `luckagent restart`（只影响之后新建的 bot）。
 
 ## 文档
@@ -207,14 +211,14 @@ luckagent inbox poll            # CLI agent 收件箱
 | --- | --- |
 | [飞书应用配置指南](docs/feishu-app-setup.md) | 在飞书开放平台建应用、配权限、订阅事件、发布上线的逐步引导 |
 | [引擎配置](docs/engines.md) | Claude / DeepSeek / MiniMax 各引擎的认证路线、切换方式，以及在管理台改全局默认引擎与模型 |
-| [目录结构](docs/directory-layout.md) | 安装目录、每 bot 工作目录约定、⚠️ 归档目录与发送暂存目录的关键区别、状态目录与日志位置 |
+| [目录结构](docs/directory-layout.md) | 安装目录、每 bot 工作目录约定、⚠️ 归档目录与发送暂存目录的关键区别、状态目录与日志位置、清理归档的清单与飞书索引文件 |
 | [定时任务](docs/scheduling.md) | CLI / 管理台 / HTTP API 三种入口，cron 与时区，暂停恢复 |
 | [技能体系](docs/claude-code-skills.md) | 随装与可选技能、技能发现机制、工作区两级指令模板 |
 | [CLI 参考](docs/cli-reference.md) | `luckagent` 全命令的用途与示例 |
-| [管理台使用手册](docs/admin-console.md) | 各页面说明（含群日报）、机器人增删改流程、重启语义、安全说明 |
+| [管理台使用手册](docs/admin-console.md) | 各页面说明（含群日报、记忆召回统计、清理归档）、机器人增删改流程、重启语义、安全说明、后端接口 |
 | [更新日志](CHANGELOG.md) | 各版本变更；版本号即管理台总览页所示 |
 | [设计笔记](docs/design-notes.md) | 18 项内建行为增强（代号 A–U）的行为说明、开关与设计取舍 |
-| [常见问题排查](docs/troubleshooting.md) | 端口占用、代理变量坑、启动失败、卡片报「启动任务失败」或空白、生图 / 视频失败、管理台打不开等 |
+| [常见问题排查](docs/troubleshooting.md) | 端口占用、代理变量坑、启动失败、卡片报「启动任务失败」或空白、生图 / 视频失败、网站自动化失败、磁盘快满、bot 找不到以前的文件、管理台打不开等 |
 
 ## 安全提示
 

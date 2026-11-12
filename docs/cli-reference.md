@@ -54,7 +54,7 @@ luckagent logs -n 200          # 先回放最近 200 行
 1. `git pull --ff-only`（CLI 自身被更新时会自动用新版重跑）。安装目录没有 `.git`（一行命令在无 git 机器上的 tarball 安装）时，先就地转成跟踪 `origin/main` 的浅克隆：tracked 文件换成最新版，`.env` / `bots.json` / `node_modules` 等被忽略的文件不动；转换失败会清掉半截的 `.git` 并提示；
 2. `npm install` + `npm run build`，并把 `requirements.txt` 同步进 `~/.luckagent/venv`（venv 不存在则跳过；brew 侧的 LibreOffice / ffmpeg 等只由 `install.sh` 安装）；
 3. 复制 CLI 到 `~/.local/bin`；
-4. 同步技能（详见[技能体系](claude-code-skills.md#luckagent-update-的技能同步)），并清理旧版遗留的已退役技能文件；若 Codex CLI、opencli 是经 npm 全局安装的（`install.sh` 的装法），顺带升级到最新版；工作区根目录缺共用规范 `CLAUDE.md` 时补部署；
+4. 同步技能（详见[技能体系](claude-code-skills.md#luckagent-update-的技能同步)），并清理旧版遗留的已退役技能文件；若 Codex CLI、opencli 是经 npm 全局安装的（`install.sh` 的装法），顺带升级到最新版——opencli 版本有变化时还会执行 `opencli daemon restart`（避免新 CLI 连着旧 daemon；版本没变不重启，不打断 bot 正在跑的浏览器任务），再用 `opencli doctor` 检查 Chrome 扩展，过旧时提示下载地址（检查出错只跳过提示，不中断 update）；工作区根目录缺共用规范 `CLAUDE.md` 时补部署（已有的不覆盖）；
 5. `pm2 restart` 两个进程 + `pm2 save`。
 
 ### `luckagent doctor [--json]`

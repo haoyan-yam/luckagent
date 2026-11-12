@@ -90,7 +90,8 @@ pm2 save             # 固化当前进程列表（luckagent start/update 也会�
 5. **改了配置没重启**——`bots.json` 的任何增删改都需要 `luckagent restart` 生效，管理台会亮「配置已变更」提示。
 6. **bots.json 语法错 / 工作目录不存在**——`luckagent doctor` 的 `bots_config` 检查项会指出来。
 7. **没 @ 机器人**——默认群聊需要 @ 才响应（除非该 bot 配了 `groupNoMention: true`）；配了 `privateRequireMention: true` 的 bot 连私聊和两人群也要 @（不 @ 静默不回，飞书私聊输入 @ 能选到机器人；私聊里不 @ 发的链接/要求/文件不会丢，下一次 @ 时按飞书接口拉本轮消息一起带上，48 小时内有效；群聊同理但只拉 @ 的那个人自己发的）；配了 `groupOnly` 的 bot 私聊只理白名单。
-8. **Claude 引擎认证**——`.env` 里配 `ANTHROPIC_API_KEY`，或设 `CLAUDE_EXECUTABLE_PATH` 指向一个已登录的 Claude Code CLI 复用订阅。
+8. **某个群一直不回、日志里 claude 启动即退出**——Claude Code 2.1.29x 起「Bypass Permissions mode」确认框的写法变了，v0.7.24 及更早会误选退出，之后该群每条消息都 `--resume` 失败（日志 `No conversation found`）。升级到 v0.7.25 以上即可（`luckagent update`），已卡住的群下一条消息会自动开新会话，不用 `/reset`。
+9. **Claude 引擎认证**——`.env` 里配 `ANTHROPIC_API_KEY`，或设 `CLAUDE_EXECUTABLE_PATH` 指向一个已登录的 Claude Code CLI 复用订阅。
 
 以上都对还不行，看日志找具体报错（下一条）。
 
@@ -175,6 +176,8 @@ luckagent doctor
 - **`opencli_missing`**：没装 opencli。执行 `npm i -g @jackwener/opencli`，再重跑 `bash install.sh`（或 `luckagent update`）启用技能。
 - **`chrome_missing`**：装了 opencli 但本机没有 Google Chrome。装好 Chrome，登录 bot 要访问的网站。
 - **命令卡住或报浏览器连接失败**：在终端跑 `opencli doctor` 检查浏览器桥接，必要时 `opencli daemon restart`。
+- **偶发 `Navigation rejected.`**：Chrome 扩展过旧。opencli 2.0 不会拒绝旧扩展，但建议升到 1.0.26：从 jackwener/OpenCLI 的 releases 下载 ZIP，在 `chrome://extensions` 里加载，再 `opencli daemon restart`、`opencli doctor` 确认（v0.7.29 起 `luckagent update` 升级 opencli 后会自动检查并提示）。
+- **小红书搜索报 `search_input_not_available`**：opencli 2.0.2 的已知问题（上游 jackwener/OpenCLI#2673）。内置技能里写了绕行办法：直接打开搜索结果页再读笔记卡片，上游修好后会移除。
 - **需要登录的站点报错**：登录要人来做——在这台 Mac 的 Chrome 里登录对应网站（或按 `opencli <站点> login` 的提示操作），bot 不会替你输入账号密码。
 
 ## `luckagent update` 失败
@@ -204,6 +207,36 @@ luckagent doctor
 - **venv 损坏**（多半是 `brew upgrade` 换了 Python 小版本后 `ModuleNotFoundError` 或 `python: bad interpreter`）：`install.sh` 会检测到并自动重建；
 - **bot 会话里 `python3` 仍是系统 Python**：PM2 进程还带着旧 PATH。`pm2 restart <进程名>` 与管理台的「重启」按钮都**沿用首次启动时的 env**，不会重读 `ecosystem.config.cjs`（pm2 7 实测）；执行 `luckagent restart`（v0.7.10 起改为从配置文件重启，会重新求值 PATH），或重跑 `bash install.sh`。
 
+## 发给 bot 的文件它说没收到
+
+- **文字和文件一起发、或引用一条带文件的消息**：v0.7.25 及更早只取文字，附件被丢掉；升级到 v0.7.26 以上会一并下载到 `inputs/`。
+- **引用 bot 自己发过的文件**：飞书发文件时会给文件换新 key，v0.7.26 起先找发送 bot 的 `outputs/` 里同名同大小的留档，找不到再按消息里实际的 key 从飞书下载。
+- **以前发过、现在 bot 说找不到**：可能已被「清理归档」移到外置硬盘，见下一条。
+
+## bot 说找不到以前的文件
+
+开启「清理归档」后，长期没动的大文件会被移出本机（规则见[管理台使用手册](admin-console.md#清理归档)）。找回：
+
+1. **管理台**：「清理归档 → 执行记录」点开对应那次，搜文件路径，点「恢复」（从硬盘恢复需要接着 NAS，会校验 SHA-1，不覆盖已有文件）。
+2. **按清单手动拷**：`~/.luckagent/housekeeping/归档总清单.tsv` 第 5 列是原路径、第 6 列是硬盘位置，`cp` 回去即可。
+3. **硬盘不在手边**：飞书收到的附件查 `inputs/.feishu-index.tsv`、发过群的成品查 `outputs/.feishu-index.tsv`，用 message_id 和 key 重新下载：`lark-cli im +messages-resources-download --profile <bot> --as bot --message-id <om_…> --file-key <key> --type <file|image> --output <原路径>`。
+
+**让某个文件永远不被移走**：把它的路径写进 bot 的 `ref-` / `spec-` 类记忆、项目 `CLAUDE.md` 或项目技能里——清理时会自动跳过，执行记录里标「受保护」。
+
+## 磁盘快满了
+
+先看是什么在涨：
+
+```bash
+df -h /System/Volumes/Data
+du -xhd1 ~ | sort -hr | head
+```
+
+- **`~/.codex` 很大**（v0.7.29 及更早）：生图每次都会把带图片的会话写进 `~/.codex/sessions` 和 `thread_history_1.sqlite`。升级到 v0.7.30 后不再写；旧记录可以清——会话文件里 `"originator":"codex_exec"` 的都是生图留下的，可以删，`codex-tui` 是你手动开的 Codex 会话，按需保留；删 `thread_history_1.sqlite` 前先 `codex app-server daemon stop`，删完再 `start`。也可以直接用「清理归档」里的「Codex 生图会话」规则。
+- **`~/projects` 很大**：用管理台「清理归档」——先填归档目录、点「预览全部」看会处理哪些，再「立即执行」或打开定时；建议同时开「异常提醒」，可用空间低于提醒线时私聊或发群提醒。
+- **清理后空间没变**：「移到废纸篓」的规则要清空废纸篓才释放；执行记录里若有「没有废纸篓权限」，到「系统设置 → 隐私与安全性 → 完全磁盘访问权限」给 node 授权后重跑。
+- **归档规则被跳过**：归档目录所在的硬盘没接上（执行记录和异常提醒都会写明）。
+
 ## bot 好像忘了以前记住的事
 
 先在管理台「记忆」页看这个 bot 的**索引占用**。bot 每次会话开始只加载记忆索引 `MEMORY.md` 的前 **200 行 / 25,000 字符**（Claude Code 的硬上限），超出部分 bot 看不到，记忆文件本身还在，只是不会被想起。
@@ -211,6 +244,7 @@ luckagent doctor
 - **占用超过 70%（标黄）或已超限（标红）**：精简索引——每条记忆在索引里只留一句话指针，细节写进记忆文件本身。「明细」里筛「索引行过长」能找出超过 150 字的行；
 - **记忆在、索引里没有**：「明细」里筛「未入索引」。会话开头自动加载的只有索引，不在索引里的记忆只有 bot 主动去查时才可能用上，需要的话补进 `MEMORY.md`；
 - **想确认 bot 到底记没记过某件事**：「明细」搜索框会全文检索所有 bot 的记忆正文。
+- **记忆在、bot 却从来不读**：看「召回」列（v0.7.27 起）——「从未召回」或 30 天未召回的记忆多半是钩子写得不具体、或与别的记忆重复，改写钩子或合并。
 
 ## 还没解决？
 
