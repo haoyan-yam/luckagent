@@ -2,7 +2,7 @@
 
 版本号 = 根 `package.json`（管理台总览页显示的就是它）。升级：`luckagent update`（git 安装）或重跑一行安装命令（tarball 安装）。git tag 与本文件同步打点。
 
-## 未发布
+## v0.7.32 — 2026-11-13
 
 DeepSeek 默认模型改为官方新 ID `deepseek-flash`（当前即 DeepSeek-V4.1-Flash-1017，原生看图）。
 
