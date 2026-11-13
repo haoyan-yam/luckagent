@@ -113,7 +113,7 @@ export interface BotConfigBase {
   deepseek?: {
     /** DeepSeek API key (falls back to env DEEPSEEK_API_KEY). */
     apiKey?: string;
-    /** Model id (default deepseek-v4-flash; vision: deepseek-v4-flash-vision-exp). */
+    /** Model id (default deepseek-flash = V4.1 Flash 1017, native vision; or deepseek-v4-pro). */
     model?: string;
     /** Anthropic-compatible endpoint (default https://api.deepseek.com/anthropic). */
     baseUrl?: string;

@@ -190,14 +190,14 @@ describe('CommandHandler /model', () => {
   it('lists deepseek models on /model list when engine is deepseek', async () => {
     const { handler, notices } = buildHandler({ engine: 'deepseek' });
     await handler.handle(msg('/model list'));
-    expect(notices[0].content).toContain('deepseek-v4-flash');
+    expect(notices[0].content).toContain('deepseek-flash');
     expect(notices[0].content).toContain('deepseek-v4-pro');
   });
 
   it('accepts /model ls as alias for list', async () => {
     const { handler, notices } = buildHandler({ engine: 'deepseek' });
     await handler.handle(msg('/model ls'));
-    expect(notices[0].content).toContain('deepseek-v4-flash');
+    expect(notices[0].content).toContain('deepseek-flash');
   });
 
   it('switches engine to deepseek on /model deepseek', async () => {

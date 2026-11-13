@@ -27,9 +27,9 @@ export const COMPAT_PROVIDERS: Record<'deepseek' | 'minimax', CompatProvider> = 
     engine: 'deepseek',
     displayName: 'DeepSeek',
     defaultBaseUrl: 'https://api.deepseek.com/anthropic',
-    defaultModel: 'deepseek-v4-flash',
+    defaultModel: 'deepseek-flash',
     models: [
-      { id: 'deepseek-v4-flash', note: '快 · 便宜 · 默认' },
+      { id: 'deepseek-flash', note: 'V4.1 Flash 1017 · 快 · 便宜 · 默认' },
       { id: 'deepseek-v4-pro', note: '更强推理' },
     ],
     keyEnv: 'DEEPSEEK_API_KEY',
@@ -57,8 +57,15 @@ export function compatProviderFor(engine: string | undefined): CompatProvider | 
 
 export const DEEPSEEK_DEFAULT_BASE_URL = COMPAT_PROVIDERS.deepseek.defaultBaseUrl;
 export const DEEPSEEK_DEFAULT_MODEL = COMPAT_PROVIDERS.deepseek.defaultModel;
-// vision-exp is a valid endpoint id but intentionally absent from UI pickers.
-export const DEEPSEEK_KNOWN_MODELS = ['deepseek-v4-flash', 'deepseek-v4-pro', 'deepseek-v4-flash-vision-exp'];
+// `deepseek-flash` is the official id (now served by DeepSeek-V4.1-Flash-1017).
+// The legacy v4-flash ids are retired upstream but still accepted — DeepSeek
+// routes them to the current Flash — so existing configs keep validating.
+export const DEEPSEEK_KNOWN_MODELS = [
+  'deepseek-flash',
+  'deepseek-v4-pro',
+  'deepseek-v4-flash',
+  'deepseek-v4-flash-vision-exp',
+];
 
 /**
  * Auth-related env vars to inject into the spawned Claude Code process for

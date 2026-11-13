@@ -2,6 +2,14 @@
 
 版本号 = 根 `package.json`（管理台总览页显示的就是它）。升级：`luckagent update`（git 安装）或重跑一行安装命令（tarball 安装）。git tag 与本文件同步打点。
 
+## 未发布
+
+DeepSeek 默认模型改为官方新 ID `deepseek-flash`（当前即 DeepSeek-V4.1-Flash-1017，原生看图）。
+
+- **新默认**：管理台机器人表单、系统配置「默认设置」下拉、`/model list`、`bots.example.json`、`.env.example` 统一换成 `deepseek-flash` / `deepseek-v4-pro`，与官方 `/models` 返回一致
+- **兼容旧配置**：旧 ID `deepseek-v4-flash` / `deepseek-v4-flash-vision-exp` 官方已下线但仍被接受（自动转到当前 Flash、按 Flash 计价），全局默认校验继续放行，已有 bots.json / `.env` 无需改动
+- 已实测：Anthropic 兼容端点下 `deepseek-flash` 与旧名 `deepseek-v4-flash` 均正常回复，工具调用（thinking + tool_use）正常
+
 ## v0.7.31 — 2026-11-12
 
 管理台新增「清理归档」板块：按规则把长期没动的大文件归档到 NAS 硬盘或移到废纸篓，防止本机磁盘被写满；bot 记忆、技能、在用脚本引用的文件不会被动。

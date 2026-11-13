@@ -238,9 +238,9 @@ export default function BotFormDrawer({
                     <Form.Item name={['deepseek', 'model']} label="模型">
                       <Select
                         allowClear
-                        placeholder="默认 deepseek-v4-flash"
+                        placeholder="默认 deepseek-flash"
                         options={[
-                          { value: 'deepseek-v4-flash', label: 'deepseek-v4-flash（快 · 便宜 · 默认）' },
+                          { value: 'deepseek-flash', label: 'deepseek-flash（V4.1 Flash 1017 · 快 · 便宜 · 默认）' },
                           { value: 'deepseek-v4-pro', label: 'deepseek-v4-pro（更强推理）' },
                               ]}
                       />

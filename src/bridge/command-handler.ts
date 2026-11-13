@@ -398,7 +398,7 @@ export class CommandHandler {
         { id: 'MiniMax-M2.5', label: 'MiniMax M2.5', note: 'Previous gen · cheaper' },
       ];
       const deepseekModels = [
-        { id: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash', note: 'Fast + cheap default' },
+        { id: 'deepseek-flash', label: 'DeepSeek V4.1 Flash (1017)', note: 'Fast + cheap default · native vision' },
         { id: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro', note: 'Stronger reasoning' },
       ];
       const models = activeEngine === 'deepseek' ? deepseekModels : activeEngine === 'minimax' ? minimaxModels : claudeModels;
@@ -545,7 +545,7 @@ export class CommandHandler {
       case 'claude':
         return this.config.claude.model;
       case 'deepseek':
-        return this.config.deepseek?.model || 'deepseek-v4-flash';
+        return this.config.deepseek?.model || 'deepseek-flash';
       case 'minimax':
         return this.config.minimax?.model || 'MiniMax-M3';
     }
@@ -556,7 +556,7 @@ export class CommandHandler {
       case 'claude':
         return '`claude-fable-5`, `claude-opus-5`, `claude-sonnet-5`, `claude-haiku-4-5`';
       case 'deepseek':
-        return '`deepseek-v4-flash`, `deepseek-v4-pro`, `deepseek-v4-flash-vision-exp`';
+        return '`deepseek-flash`, `deepseek-v4-pro`';
       case 'minimax':
         return '`MiniMax-M3`, `MiniMax-M2.5`';
     }

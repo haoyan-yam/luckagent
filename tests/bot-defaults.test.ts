@@ -196,7 +196,7 @@ describe('deriveDeepseekConfig / engine pinning (session-override regression)', 
     // engine field must NOT leak through.
     const derived = deriveDeepseekConfig(base({ engine: 'claude', deepseek: { apiKey: 'sk-ds' } }));
     expect(derived.engine).toBe('deepseek');
-    expect(derived.claude.model).toBe('deepseek-v4-flash');
+    expect(derived.claude.model).toBe('deepseek-flash');
     expect(derived.claude.apiKey).toBeUndefined();
     expect(derived.claude.backend).toBe('sdk');
   });

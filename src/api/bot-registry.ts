@@ -103,7 +103,7 @@ function defaultModelForEngine(config: BotConfigBase): string | undefined {
     case 'claude':
       return config.claude.model;
     case 'deepseek':
-      return config.deepseek?.model || 'deepseek-v4-flash';
+      return config.deepseek?.model || 'deepseek-flash';
     case 'minimax':
       return config.minimax?.model || 'MiniMax-M3';
   }
