@@ -1,7 +1,8 @@
+import { validateConnectionSelection } from '../../model-connections.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type * as http from 'node:http';
-import { addBot, removeBot, updateBot, getBotEntry, addPeer, removePeer } from '../bots-config-writer.js';
+import { readBotsConfig, addBot, removeBot, updateBot, getBotEntry, addPeer, removePeer } from '../bots-config-writer.js';
 import { installSkillsToWorkDir } from '../skills-installer.js';
 import { resolveEngineName } from '../../engines/index.js';
 import { defaultWorkDirFor, expandUserPath } from '../../config.js';
@@ -132,6 +133,10 @@ export async function handleBotRoutes(
       return true;
     }
     const body = await parseJsonBody(req);
+    if ('modelConnection' in body) {
+      try { validateConnectionSelection(body.modelConnection, readBotsConfig(botsConfigPath)); }
+      catch { jsonResponse(res, 400, { error: '请选择有效的模型连接' }); return true; }
+    }
     const platform = (body.platform as string) || 'feishu';
     const name = body.name as string;
 
@@ -162,6 +167,7 @@ export async function handleBotRoutes(
       : path.join(workDirExpanded, 'inputs');
 
     const entry: Record<string, unknown> = {
+      ...(body.modelConnection ? { modelConnection: body.modelConnection } : {}),
       name, ...(body.description ? { description: body.description } : {}),
       ...(body.engine ? { engine: body.engine } : {}),
       ...(body.deepseek ? { deepseek: body.deepseek } : {}),
@@ -241,6 +247,10 @@ export async function handleBotRoutes(
       return true;
     }
     const body = await parseJsonBody(req);
+    if ('modelConnection' in body) {
+      try { validateConnectionSelection(body.modelConnection, readBotsConfig(botsConfigPath)); }
+      catch { jsonResponse(res, 400, { error: '请选择有效的模型连接' }); return true; }
+    }
     // Strip any masked secret values so an echoed-back mask can never be
     // written into bots.json (updateBot treats ''/null as "delete this key",
     // so an unchanged secret must simply be absent from the payload).

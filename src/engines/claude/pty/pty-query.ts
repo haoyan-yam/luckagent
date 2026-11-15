@@ -1,3 +1,4 @@
+import { nonessentialTrafficSettings } from '../auth-env.js';
 /**
  * PTY backend — ptyQuery(): drop-in replacement for the Agent SDK's query().
  *
@@ -193,7 +194,7 @@ export const ptyQuery = (args: {
 
   // ── Boot: write settings, spawn session, start scanner ───────────────────
   const boot = (async () => {
-    const settingsPath = await hookBridge.writeSettings();
+    const settingsPath = await hookBridge.writeSettings({ ...(options.env?.ANTHROPIC_BASE_URL ? { apiKeyHelper: '' } : {}), ...nonessentialTrafficSettings(options.env) });
 
     session = createPtyClaudeSession({
       cwd: options.cwd,

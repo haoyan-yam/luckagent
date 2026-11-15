@@ -24,6 +24,32 @@ Agent Teams、`/goal`、后台任务、记忆体系（CLAUDE.md / auto-memory / 
 其余参数：`CLAUDE_MAX_TURNS` / `CLAUDE_MAX_BUDGET_USD` 是全局默认，
 bot 级的 `model` / `maxTurns` / `maxBudgetUsd`（管理台「限制与预算」）可覆盖。
 
+## 后台统一管理 Claude 模型连接
+
+在「系统配置 → 模型接入」新增 Anthropic Messages 兼容连接：填写名称、Base URL、可用模型 ID 和 API Key。
+例如灵眸的 Base URL 为 `https://api.lmuai.ai`，模型 ID 以该 Key 的可用列表为准。
+可以先保存不含 Key 的连接，稍后补填；没有 Key 时不会退回其他认证方式。
+
+- Key 保存后不回显；编辑时留空保留原值，输入新值替换，使用「清除已保存的 Key」显式删除。
+- 「测试连接」使用已保存的地址、Key 和模型发送一条简短 Messages 请求，会产生少量费用。
+  成功表示认证与基础模型调用通过，不代表已验证工具调用、图片和流式会话。
+- 每条连接可独立开启「禁用非必要流量」，默认关闭。开启会关闭自动更新、遥测、错误上报等，
+  并可能影响依赖远程功能开关的 Claude 功能。只影响引用此连接的 bot，保存后重启桥接生效。
+  开启向子进程传入 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`，关闭传入空字符串（不能用 `0`）；
+  该选择同时写入子进程的启动设置，以覆盖用户/项目设置中的同名变量，不修改全局 Claude 文件。
+- 全局默认连接影响所有选择「继承全局默认连接」的 Claude bot；页面展示受影响的 bot 名称。
+- 在「机器人管理 → 编辑 → Claude 接入方式」中，每个 bot 可选择某条连接或本机 Claude 登录。
+  清空选择恢复继承。bot 自己的模型覆盖优先于连接默认模型。
+- 「本机 Claude 登录」固定走官方端点，屏蔽继承的网关 Key；持久会话默认使用 PTY，需本机 CLI 已登录。
+- 「沿用现有环境 / Claude 配置」保留原有 `.env` / Claude 配置行为，是未配置连接时的默认值。
+  DeepSeek / MiniMax 仍使用各自独立的认证配置。
+- 保存后需要重启桥接才对 bot 生效；重启会中断正在执行的任务。测试连接可在重启前执行。
+- 仍被机器人或全局默认引用的连接不能删除，应先调整引用。
+
+连接保存在本机 `bots.json` 的 `modelConnections` 中（文件权限 `0600`，Key 为本地明文）；
+`defaultModelConnection` 指定全局选择，bot 的 `modelConnection` 保存连接 ID 或 `local`。
+不会修改用户全局的 `~/.claude/settings.json`，也不会把 Key 返回浏览器或放进测试错误信息。
+
 ## DeepSeek（最省事：零安装，只要 key）
 
 DeepSeek 官方提供 **Anthropic 兼容端点**（`https://api.deepseek.com/anthropic`），Luckagent 让它直接跑在

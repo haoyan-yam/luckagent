@@ -28,6 +28,7 @@ export interface Overview {
 }
 
 export interface BotEntry {
+  modelConnection?: string;
   name: string;
   description?: string;
   engine?: 'claude' | 'deepseek' | 'minimax';
@@ -140,4 +141,19 @@ export interface CodexProbe {
   loggedIn: boolean;
   version: string | null;
   detail: string;
+}
+
+export interface ModelConnectionInfo {
+  disableNonessentialTraffic?: boolean;
+  id: string;
+  name: string;
+  baseUrl: string;
+  model: string;
+  hasApiKey: boolean;
+  affectedBots: string[];
+}
+export interface ModelConnectionsResponse {
+  defaultConnection: string;
+  connections: ModelConnectionInfo[];
+  inheritedBots: string[];
 }

@@ -3,6 +3,7 @@ import { api } from '../api/client';
 import { usePoll } from '../hooks/usePoll';
 import type { EffectiveConfig, Pm2Proc } from '../api/types';
 import DefaultsCard from './DefaultsCard';
+import ModelConnectionsCard from './ModelConnectionsCard';
 
 function SecretHint({ v }: { v?: { set: boolean; tail?: string; pending?: boolean; botLevel?: number } }) {
   const botNote = v?.botLevel ? (
@@ -108,6 +109,7 @@ export default function ConfigPage({ onRestart }: { onRestart: () => void }) {
 
   return (
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
+      <ModelConnectionsCard onRestart={onRestart} />
       <DefaultsCard onRestart={onRestart} />
 
       <Card title="有效配置（只读）">
@@ -115,7 +117,7 @@ export default function ConfigPage({ onRestart }: { onRestart: () => void }) {
           type="info"
           showIcon
           style={{ marginBottom: 16 }}
-          message="以下是当前运行中的配置，从 .env 与环境变量读取、只读。默认引擎 / 模型 / 生图后端 / 视频生成（火山 key、TOS）在上方「默认设置」修改；其余项请编辑安装目录下的 .env 后点顶栏「重启桥接」。"
+          message="以下是当前运行中的配置，从 .env 与环境变量读取、只读。模型连接在上方「模型接入」管理；默认引擎 / 模型 / 生图后端 / 视频生成在「默认设置」修改。其余环境配置请编辑 .env 后重启桥接。"
         />
         <Descriptions column={2} bordered size="small">
           <Descriptions.Item label="API 端口">{cfg?.ports.apiPort ?? '—'}</Descriptions.Item>

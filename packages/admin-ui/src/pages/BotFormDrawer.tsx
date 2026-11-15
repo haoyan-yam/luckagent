@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
+  Alert,
   Button,
   Collapse,
   Drawer,
@@ -14,7 +15,7 @@ import {
 } from 'antd';
 import { useProjectsRoot } from '../hooks/useProjectsRoot';
 import { api } from '../api/client';
-import type { BotEntry } from '../api/types';
+import type { BotEntry, ModelConnectionsResponse } from '../api/types';
 import MemberPicker from '../components/MemberPicker';
 
 const MASK_PREFIX = '••••';
@@ -40,6 +41,8 @@ export default function BotFormDrawer({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const [connections, setConnections] = useState<ModelConnectionsResponse>();
+  const [connectionError, setConnectionError] = useState('');
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -48,6 +51,9 @@ export default function BotFormDrawer({
   useEffect(() => {
     if (!open) return;
     form.resetFields();
+    setConnections(undefined);
+    setConnectionError('');
+    void api.get<ModelConnectionsResponse>('/admin/api/model-connections').then(setConnections).catch(e => setConnectionError(e.message));
     if (editing) {
       void api.get<{ config: BotEntry }>(`/api/bots/${encodeURIComponent(editing)}`).then((r) => {
         const cfg = r.config || {};
@@ -55,7 +61,7 @@ export default function BotFormDrawer({
           ...cfg,
           groupOnlyAllowUsers: cfg.groupOnlyAllowUsers || [],
         });
-      });
+      }).catch(e => message.error(e.message));
     }
   }, [open, editing, form]);
 
@@ -66,7 +72,7 @@ export default function BotFormDrawer({
   // '' as "delete this key", so clearing the whitelist / model override etc.
   // actually removes it from bots.json instead of being ignored.
   const CLEARABLE = [
-    'description', 'model', 'maxTurns', 'maxBudgetUsd', 'budgetLimitDaily',
+    'modelConnection', 'description', 'model', 'maxTurns', 'maxBudgetUsd', 'budgetLimitDaily',
     'maxConcurrentTasks', 'downloadsDir', 'ttsVoice', 'groupOnlyAllowUsers',
   ];
 
@@ -221,6 +227,17 @@ export default function BotFormDrawer({
           </Form.Item>
         )}
 
+        {(engine === 'claude' || !engine) && <>
+          {connectionError && <Alert type="error" message={`模型连接加载失败：${connectionError}`} />}
+          <Form.Item name="modelConnection" label="Claude 接入方式" extra="在「系统配置 → 模型接入」统一管理连接。保存后重启桥接生效。">
+            <Select allowClear placeholder="继承全局默认连接" disabled={!connections}
+              options={[
+                { value: 'local', label: '本机 Claude 登录（官方端点）' },
+                ...(connections?.connections || []).map(c => ({ value: c.id, label: `${c.name} · ${c.model}${c.hasApiKey ? '' : '（未填 Key）'}` })),
+              ]} />
+          </Form.Item>
+        </>}
+
         {editing && engine === 'deepseek' && (
           <Collapse
             size="small"
@@ -295,7 +312,7 @@ export default function BotFormDrawer({
               children: (
                 <>
                   <Form.Item name="model" label="模型覆盖（Claude）">
-                    <Input placeholder="留空 = 用「系统配置 → 默认设置」里的 Claude 默认模型" />
+                    <Input placeholder="留空 = 使用所选连接的默认模型；沿用旧配置时使用系统默认模型" />
                   </Form.Item>
                   <Form.Item name="maxTurns" label="单任务最大回合数">
                     <InputNumber min={1} style={{ width: '100%' }} />

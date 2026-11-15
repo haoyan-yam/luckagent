@@ -1,3 +1,4 @@
+import { nonessentialTrafficSettings } from './auth-env.js';
 /**
  * EXPERIMENTAL — Stage 1 (production hardening).
  *
@@ -53,6 +54,7 @@ const CLAUDE_EXECUTABLE = resolveClaudePath();
 
 const ALWAYS_FILTERED_PREFIXES = ['CLAUDE'];
 const CLAUDE_ENV_PASSTHROUGH = new Set([
+  'CLAUDE_CODE_ATTRIBUTION_HEADER',
   'CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS',
   'CLAUDE_CODE_DISABLE_AGENT_VIEW',
   'CLAUDE_CODE_SIMPLE',
@@ -413,7 +415,7 @@ export class PersistentClaudeExecutor extends EventEmitter {
       settingSources: ['user', 'project'],
       spawnClaudeCodeProcess: createSpawnFn(this.options.authEnv),
       ...(CLAUDE_EXECUTABLE ? { pathToClaudeCodeExecutable: CLAUDE_EXECUTABLE } : {}),
-      settings: { teammateMode: 'in-process' },
+      settings: { teammateMode: 'in-process', ...nonessentialTrafficSettings(this.options.authEnv), ...(this.options.authEnv?.ANTHROPIC_BASE_URL ? { apiKeyHelper: '' } : {}) },
       agentProgressSummaries: true,
     };
     if (this.options.model) queryOptions.model = this.options.model;

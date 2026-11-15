@@ -236,7 +236,7 @@ export default function DefaultsCard({ onRestart }: { onRestart: () => void }) {
         </Form.Item>
 
         <Form.Item
-          label="Claude 默认模型"
+          label="Claude 默认模型（沿用现有配置时）"
           extra={
             <Space direction="vertical" size={4}>
               <FieldState v={v?.CLAUDE_MODEL} fmt={orDefault('跟随订阅档位')} />

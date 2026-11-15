@@ -1,3 +1,4 @@
+import { handleModelConnectionRoutes } from './model-connection-routes.js';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -420,6 +421,7 @@ export async function handleAdminRoutes(
   method: string,
   url: string,
 ): Promise<boolean> {
+  if (await handleModelConnectionRoutes(ctx, req, res, method, url)) return true;
   const { registry, scheduler, logger, botsConfigPath, activityStore } = ctx;
 
 

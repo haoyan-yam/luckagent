@@ -335,7 +335,7 @@ export type SynthesizeResult = (args: SynthesizeResultArgs) => SDKMessage;
  */
 export interface PtyHookBridge {
   /** Absolute path of the generated settings.json (with command hooks). */
-  writeSettings(): Promise<string>;
+  writeSettings(overrides?: { apiKeyHelper?: string; env?: Record<string, string> }): Promise<string>;
   /** Register the per-turn completion callback (Stop hook sentinel). */
   onTurnComplete(cb: () => void): void;
   /** Register team-event callback (TaskCreated/Completed/TeammateIdle). */

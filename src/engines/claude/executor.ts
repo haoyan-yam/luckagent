@@ -5,7 +5,7 @@ import path from 'node:path';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { SDKUserMessage, SpawnOptions, SpawnedProcess } from '@anthropic-ai/claude-agent-sdk';
 import type { BotConfigBase } from '../../config.js';
-import { resolveClaudeAuthEnv } from './auth-env.js';
+import { resolveClaudeAuthEnv, nonessentialTrafficSettings } from './auth-env.js';
 import type { Logger } from '../../utils/logger.js';
 import { AsyncQueue } from '../../utils/async-queue.js';
 import { makeCanUseTool } from './exit-plan-mode.js';
@@ -46,6 +46,7 @@ const ALWAYS_FILTERED_PREFIXES = ['CLAUDE'];
  * Claude Code feature via .env or the host environment.
  */
 const CLAUDE_ENV_PASSTHROUGH = new Set([
+  'CLAUDE_CODE_ATTRIBUTION_HEADER',
   'CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS', // /agent teams (multi-instance coordination)
   'CLAUDE_CODE_DISABLE_AGENT_VIEW',       // disable claude agents / --bg / /background
   'CLAUDE_CODE_SIMPLE',                   // --bare equivalent
@@ -337,6 +338,7 @@ export class ClaudeExecutor {
   ) {}
 
   private buildQueryOptions(cwd: string, sessionId: string | undefined, abortController: AbortController, outputsDir?: string, apiContext?: ApiContext): Record<string, unknown> {
+    const authEnv = resolveClaudeAuthEnv(this.config);
     const isRoot = process.getuid?.() === 0;
     const queryOptions: Record<string, unknown> = {
       permissionMode: isRoot ? 'auto' : ('bypassPermissions' as const),
@@ -351,12 +353,12 @@ export class ClaudeExecutor {
       // (>= 0.2.140) supplies the correct command in spawn options — for the
       // native Claude binary that's the binary itself; for legacy JS
       // entrypoints it's the Node executable.
-      spawnClaudeCodeProcess: createSpawnFn(resolveClaudeAuthEnv(this.config)),
+      spawnClaudeCodeProcess: createSpawnFn(authEnv),
       ...(CLAUDE_EXECUTABLE ? { pathToClaudeCodeExecutable: CLAUDE_EXECUTABLE } : {}),
       // Luckagent has no terminal — split-pane (tmux/iTerm2) teammate display
       // doesn't apply. Force in-process so teammates run inside the same
       // session and surface via SDK message origin / TeammateIdle hooks.
-      settings: { teammateMode: 'in-process' },
+      settings: { teammateMode: 'in-process', ...nonessentialTrafficSettings(authEnv), ...(this.config.claude.connection ? { apiKeyHelper: '' } : {}) },
       // Periodic AI summaries for foreground/background subagents. The SDK
       // emits these as `task_progress.summary`; StreamProcessor already
       // forwards task events into the card's "Background" panel, so enabling

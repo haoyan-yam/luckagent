@@ -2,6 +2,7 @@ import * as dotenv from 'dotenv';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { applyModelConnection, type ModelConnection } from './model-connections.js';
 import type { AgentTeamConfig } from './agent-teams/team-store.js';
 
 /**
@@ -89,6 +90,7 @@ export interface BotConfigBase {
      *  key instead of ~/.claude/.credentials.json. Supports cc-switch compatibility:
      *  leave unset to let Claude Code resolve auth dynamically. */
     apiKey: string | undefined;
+    connection?: ModelConnection | 'local';
     outputsBaseDir: string;
     downloadsDir: string;
     /**
@@ -264,6 +266,7 @@ interface EngineJsonFields {
 }
 
 export interface FeishuBotJsonEntry extends EngineJsonFields {
+  modelConnection?: string;
   name: string;
   description?: string;
   specialties?: string[];
@@ -409,6 +412,8 @@ export interface PeerJsonEntry {
 }
 
 export interface BotsJsonNewFormat {
+  modelConnections?: ModelConnection[];
+  defaultModelConnection?: string;
   feishuBots?: FeishuBotJsonEntry[];
   peers?: PeerJsonEntry[];
   agentTeams?: AgentTeamConfig[];
@@ -434,7 +439,7 @@ export function loadAppConfig(): AppConfig {
       // New format: { feishuBots: [...] }
       const cfg = parsed as BotsJsonNewFormat;
       if (cfg.feishuBots) {
-        feishuBots = cfg.feishuBots.map(feishuBotFromJson);
+        feishuBots = cfg.feishuBots.map(entry => applyModelConnection(feishuBotFromJson(entry), entry, cfg));
       }
       if (cfg.agentTeams) {
         agentTeams = cfg.agentTeams.map(normalizeAgentTeamConfig);

@@ -67,7 +67,7 @@ export function createHookBridge(options?: HookBridgeOptions): PtyHookBridge {
 
   // ── writeSettings ────────────────────────────────────────────────────────
 
-  async function writeSettings(): Promise<string> {
+  async function writeSettings(overrides?: { apiKeyHelper?: string; env?: Record<string, string> }): Promise<string> {
     // Stop hook: Claude pipes hook JSON on stdin to the command.
     // We `cat` stdin into the sentinel file so the watcher sees it change.
     const stopCommand = `cat > ${sentinelPath}`;
@@ -116,7 +116,7 @@ export function createHookBridge(options?: HookBridgeOptions): PtyHookBridge {
     // settings. --settings is flagSettings, so declaring it here suppresses the
     // "WARNING: Bypass Permissions mode" dialog for luckagent-spawned claude
     // only — the user's own ~/.claude/settings.json is left untouched.
-    const settings = { skipDangerousModePermissionPrompt: true, hooks };
+    const settings = { skipDangerousModePermissionPrompt: true, hooks, ...overrides };
 
     writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf8');
     return settingsPath;
