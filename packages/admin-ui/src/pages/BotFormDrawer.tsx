@@ -43,6 +43,8 @@ export default function BotFormDrawer({
 }) {
   const [connections, setConnections] = useState<ModelConnectionsResponse>();
   const [connectionError, setConnectionError] = useState('');
+  const [initialConnectionChoice, setInitialConnectionChoice] = useState('inherit');
+  const [legacyEngine, setLegacyEngine] = useState<string>();
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -51,14 +53,21 @@ export default function BotFormDrawer({
   useEffect(() => {
     if (!open) return;
     form.resetFields();
+    form.setFieldValue('modelConnection', 'inherit');
+    setInitialConnectionChoice('inherit');
+    setLegacyEngine(undefined);
     setConnections(undefined);
     setConnectionError('');
     void api.get<ModelConnectionsResponse>('/admin/api/model-connections').then(setConnections).catch(e => setConnectionError(e.message));
     if (editing) {
-      void api.get<{ config: BotEntry }>(`/api/bots/${encodeURIComponent(editing)}`).then((r) => {
+      void api.get<{ config: BotEntry; connectionChoice: string }>(`/api/bots/${encodeURIComponent(editing)}`).then((r) => {
         const cfg = r.config || {};
+        const choice = r.connectionChoice || cfg.modelConnection || 'inherit';
+        setInitialConnectionChoice(choice);
+        setLegacyEngine(cfg.engine);
         form.setFieldsValue({
           ...cfg,
+          modelConnection: choice,
           groupOnlyAllowUsers: cfg.groupOnlyAllowUsers || [],
         });
       }).catch(e => message.error(e.message));
@@ -72,7 +81,7 @@ export default function BotFormDrawer({
   // '' as "delete this key", so clearing the whitelist / model override etc.
   // actually removes it from bots.json instead of being ignored.
   const CLEARABLE = [
-    'modelConnection', 'description', 'model', 'maxTurns', 'maxBudgetUsd', 'budgetLimitDaily',
+    'description', 'model', 'maxTurns', 'maxBudgetUsd', 'budgetLimitDaily',
     'maxConcurrentTasks', 'downloadsDir', 'ttsVoice', 'groupOnlyAllowUsers',
   ];
 
@@ -108,6 +117,8 @@ export default function BotFormDrawer({
   const onSubmit = async () => {
     const values = await form.validateFields();
     const payload = buildPayload(values);
+    if (editing && payload.modelConnection === initialConnectionChoice) delete payload.modelConnection;
+    if (legacyCompatModel) delete payload.model;
     setLoading(true);
     try {
       if (editing) {
@@ -149,7 +160,9 @@ export default function BotFormDrawer({
     }
   };
 
-  const engine = Form.useWatch('engine', form) || 'claude';
+  const connectionChoice = Form.useWatch('modelConnection', form);
+  const legacySelection = connectionChoice === 'legacy' || (connectionChoice === 'inherit' && connections?.defaultConnection === 'legacy');
+  const legacyCompatModel = legacySelection && (legacyEngine || connections?.legacyDefaultEngine || 'claude') !== 'claude';
   const botName = Form.useWatch('name', form);
 
   return (
@@ -210,95 +223,16 @@ export default function BotFormDrawer({
             </Typography.Text>
           </Form.Item>
         )}
-        {editing ? (
-          <Form.Item name="engine" label="引擎（留空 = 用全局默认）">
-            <Select
-              allowClear
-              options={[
-                { value: 'claude', label: 'Claude Code' },
-                { value: 'deepseek', label: 'DeepSeek' },
-                { value: 'minimax', label: 'MiniMax' },
-              ]}
-            />
-          </Form.Item>
-        ) : (
-          <Form.Item label="引擎">
-            <Typography.Text type="secondary">使用安装时选定的全局默认引擎（建好后可在「编辑」里按 bot 调整）</Typography.Text>
-          </Form.Item>
-        )}
-
-        {(engine === 'claude' || !engine) && <>
-          {connectionError && <Alert type="error" message={`模型连接加载失败：${connectionError}`} />}
-          <Form.Item name="modelConnection" label="Claude 接入方式" extra="在「系统配置 → 模型接入」统一管理连接。保存后重启桥接生效。">
-            <Select allowClear placeholder="继承全局默认连接" disabled={!connections}
-              options={[
-                { value: 'local', label: '本机 Claude 登录（官方端点）' },
-                ...(connections?.connections || []).map(c => ({ value: c.id, label: `${c.name} · ${c.model}${c.hasApiKey ? '' : '（未填 Key）'}` })),
-              ]} />
-          </Form.Item>
-        </>}
-
-        {editing && engine === 'deepseek' && (
-          <Collapse
-            size="small"
-            defaultActiveKey={['deepseek']}
-            items={[
-              {
-                key: 'deepseek',
-                forceRender: true,
-                label: 'DeepSeek 引擎设置（无需装 CLI，只要 API key）',
-                children: (
-                  <>
-                    <Form.Item name={['deepseek', 'apiKey']} label="API Key（留空 = 不修改/用全局 DEEPSEEK_API_KEY）">
-                      <Input.Password placeholder="sk-..." />
-                    </Form.Item>
-                    <Form.Item name={['deepseek', 'model']} label="模型">
-                      <Select
-                        allowClear
-                        placeholder="默认 deepseek-flash"
-                        options={[
-                          { value: 'deepseek-flash', label: 'deepseek-flash（V4.1 Flash 1017 · 快 · 便宜 · 默认）' },
-                          { value: 'deepseek-v4-pro', label: 'deepseek-v4-pro（更强推理）' },
-                              ]}
-                      />
-                    </Form.Item>
-                  </>
-                ),
-              },
-            ]}
-          />
-        )}
-
-        {editing && engine === 'minimax' && (
-          <Collapse
-            size="small"
-            defaultActiveKey={['minimax']}
-            items={[
-              {
-                key: 'minimax',
-                forceRender: true,
-                label: 'MiniMax 引擎设置（Anthropic 兼容端点，无需装 CLI）',
-                children: (
-                  <>
-                    <Form.Item name={['minimax', 'apiKey']} label="API Key（留空 = 不修改/用全局 MINIMAX_API_KEY）">
-                      <Input.Password placeholder="sk-cp-..." />
-                    </Form.Item>
-                    <Form.Item name={['minimax', 'model']} label="模型">
-                      <Select
-                        allowClear
-                        placeholder="默认 MiniMax-M3"
-                        options={[
-                          { value: 'MiniMax-M3', label: 'MiniMax-M3（旗舰 · 原生看图 · 默认）' },
-                          { value: 'MiniMax-M2.5', label: 'MiniMax-M2.5（上一代 · 更省）' },
-                        ]}
-                      />
-                    </Form.Item>
-                  </>
-                ),
-              },
-            ]}
-          />
-        )}
+        {connectionError && <Alert type="error" message={`模型连接加载失败：${connectionError}`} />}
+        <Form.Item name="modelConnection" label="模型连接" rules={[{ required: true }]} extra="在「系统配置 → 模型接入」统一管理服务商、Key 和默认模型。保存后重启桥接生效。">
+          <Select disabled={!connections} options={[
+            { value: 'inherit', label: '继承全局默认连接' },
+            { value: 'legacy', label: `兼容旧配置（${legacyEngine || connections?.legacyDefaultEngine || 'claude'}）` },
+            { value: 'local', label: '本机 Claude 登录（官方端点）' },
+            ...(connections?.connections || []).map(c => ({ value: c.id, label: `${c.name} · ${c.model}${c.hasApiKey ? '' : '（未填 Key）'}` })),
+          ]} />
+        </Form.Item>
+        {legacyCompatModel && <Alert type="info" message="此 bot 保留旧引擎配置。可先到「模型接入 → 旧配置兼容与复制」创建独立连接，再在这里选择；切换前原有 Key 和模型继续生效。" />}
 
         <Collapse
           size="small"
@@ -311,8 +245,8 @@ export default function BotFormDrawer({
               label: '限制与预算（可选）',
               children: (
                 <>
-                  <Form.Item name="model" label="模型覆盖（Claude）">
-                    <Input placeholder="留空 = 使用所选连接的默认模型；沿用旧配置时使用系统默认模型" />
+                  <Form.Item name="model" label="模型覆盖（可选）">
+                    <Input disabled={legacyCompatModel} placeholder="留空 = 使用所选连接的默认模型" />
                   </Form.Item>
                   <Form.Item name="maxTurns" label="单任务最大回合数">
                     <InputNumber min={1} style={{ width: '100%' }} />

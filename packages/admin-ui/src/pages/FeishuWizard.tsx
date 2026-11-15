@@ -87,6 +87,7 @@ export default function FeishuWizard({
     try {
       const r = await api.post<{ skillsWarning?: string }>('/api/bots', {
         platform: 'feishu',
+        modelConnection: 'inherit',
         name: values.name,
         description: values.description || undefined,
         feishuAppId: values.appId,

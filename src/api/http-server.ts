@@ -1,4 +1,5 @@
 import * as http from 'node:http';
+import { createAdminRuntimeState } from './admin-runtime-state.js';
 import * as fs from 'node:fs';
 import type * as lark from '@larksuiteoapi/node-sdk';
 import type { Logger } from '../utils/logger.js';
@@ -161,6 +162,7 @@ export function startApiServer(options: ApiServerOptions): http.Server {
 
   // Build route context (shared across all route handlers)
   const ctx: RouteContext = {
+    adminRuntime: createAdminRuntimeState(botsConfigPath),
     registry, scheduler, logger, botsConfigPath, docSync, feishuServiceClient,
     peerManager,
     asyncTaskStore, intentRouter, circuitBreaker, budgetManager,

@@ -1,8 +1,9 @@
+import { modelConnectionEngine } from '../model-connections.js';
 import type { BotConfigBase } from '../config.js';
 import type { Logger } from '../utils/logger.js';
 import type { Engine, EngineName } from './types.js';
 import { ClaudeEngine } from './claude/index.js';
-import { COMPAT_PROVIDERS, compatProviderFor } from './claude/auth-env.js';
+import { COMPAT_PROVIDERS } from './claude/auth-env.js';
 
 /**
  * Create an Engine for the given bot config.
@@ -23,7 +24,7 @@ export function createEngine(
       // Pin the engine field to the RESOLVED name: a session override
       // (/model claude on a deepseek bot) must not inherit the bot-level
       // engine field, or auth-env resolution would inject the wrong backend.
-      return new ClaudeEngine({ ...config, engine: 'claude' }, logger);
+      return new ClaudeEngine(deriveClaudeConfig(config), logger);
     case 'deepseek':
     case 'minimax':
       return new ClaudeEngine(deriveCompatConfig(config, name), logger);
@@ -32,6 +33,18 @@ export function createEngine(
       throw new Error(`Unknown engine: ${_exhaustive}`);
     }
   }
+}
+
+/** A session switch back to Claude must not keep a compat connection's model. */
+export function deriveClaudeConfig(config: BotConfigBase): BotConfigBase {
+  const connection = config.claude.connection;
+  if (connection && modelConnectionEngine(connection) !== 'claude') {
+    return { ...config, engine: 'claude', claude: { ...config.claude,
+      connection: undefined, apiKey: undefined,
+      model: process.env.CLAUDE_MODEL || process.env.ANTHROPIC_MODEL || undefined,
+    } };
+  }
+  return { ...config, engine: 'claude' };
 }
 
 /**
@@ -46,6 +59,9 @@ export function createEngine(
  *  - credentials/baseUrl are injected per-spawn via resolveClaudeAuthEnv.
  */
 export function deriveCompatConfig(config: BotConfigBase, engine: 'deepseek' | 'minimax'): BotConfigBase {
+  if (config.claude.connection && modelConnectionEngine(config.claude.connection) === engine) {
+    return { ...config, engine, claude: { ...config.claude, backend: 'sdk' } };
+  }
   const provider = COMPAT_PROVIDERS[engine];
   const block = engine === 'minimax' ? config.minimax : config.deepseek;
   return {

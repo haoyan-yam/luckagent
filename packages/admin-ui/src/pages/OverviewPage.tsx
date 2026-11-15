@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Alert, Badge, Button, Card, Col, Descriptions, Drawer, Empty, Progress, Row, Space, Table, Tag, Tooltip, Typography } from 'antd';
 import { ArrowDownOutlined, ArrowUpOutlined, CheckCircleFilled, CloseCircleFilled, ExclamationCircleFilled } from '@ant-design/icons';
 import dayjs from 'dayjs';
@@ -119,13 +119,7 @@ function StatTile({ label, value, sub, extra, link }: { label: string; value: Re
 type StatusLevel = 'success' | 'warning' | 'error';
 interface StatusItem { key: string; level: StatusLevel; label: React.ReactNode; detail?: React.ReactNode; action?: React.ReactNode; }
 
-export default function OverviewPage({
-  onConfigDirty,
-  onRestart,
-}: {
-  onConfigDirty: (dirty: boolean) => void;
-  onRestart: () => void;
-}) {
+export default function OverviewPage() {
   const { data, error, failCount } = usePoll<Overview>(() => api.get('/admin/api/overview'), 5000);
   const { data: dash } = usePoll<DashboardPayload>(() => api.get('/admin/api/dashboard'), 60000);
   // 待处理：飞书群列表在后端缓存 5 分钟，这里每分钟拉一次，失败数等即时项最多晚 1 分钟
@@ -144,9 +138,6 @@ export default function OverviewPage({
     }
   };
 
-  useEffect(() => {
-    if (data) onConfigDirty(data.configDirty);
-  }, [data, onConfigDirty]);
 
   // ---------------- 系统状态条 ----------------
   const offline = (data?.bots || []).filter((b) => !b.running);
@@ -185,9 +176,8 @@ export default function OverviewPage({
           detail: data.configError
             ? `${data.configError} —— 下方机器人列表可能不完整，请勿据此判断“尚未配置”。`
             : data.configDirty
-              ? 'bots.json 在进程启动后被修改过，改动尚未生效。'
+              ? '配置改动尚未生效，请使用顶部统一重启入口。'
               : undefined,
-          action: data.configDirty && !data.configError ? <Button size="small" type="primary" onClick={onRestart}>重启生效</Button> : undefined,
         },
       ]
     : [];

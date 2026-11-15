@@ -17,6 +17,7 @@ import type { AgentTeamStore } from '../../agent-teams/team-store.js';
 import type { AgentTeamSupervisor } from '../../agent-teams/team-supervisor.js';
 
 export interface RouteContext {
+  adminRuntime?: import('../admin-runtime-state.js').AdminRuntimeState;
   registry: BotRegistry;
   scheduler: TaskScheduler;
   logger: Logger;

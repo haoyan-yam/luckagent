@@ -1,3 +1,4 @@
+import { modelConnectionEngine } from '../../model-connections.js';
 import type { BotConfigBase } from '../../config.js';
 
 /**
@@ -81,23 +82,8 @@ export const DEEPSEEK_KNOWN_MODELS = [
  *   env passthrough, apiKeyHelper …).
  */
 export function resolveClaudeAuthEnv(config: BotConfigBase): Record<string, string> | undefined {
-  const provider = compatProviderFor(config.engine);
-  if (provider) {
-    const block = provider.engine === 'minimax' ? config.minimax : config.deepseek;
-    const key = block?.apiKey || process.env[provider.keyEnv];
-    if (!key) {
-      throw new Error(
-        `Bot "${config.name}": engine is '${provider.engine}' but no API key configured — set bots.json ${provider.engine}.apiKey or env ${provider.keyEnv} (get one at ${provider.applyUrl})`,
-      );
-    }
-    return {
-      ANTHROPIC_BASE_URL: block?.baseUrl || provider.defaultBaseUrl,
-      ANTHROPIC_AUTH_TOKEN: key,
-      ANTHROPIC_API_KEY: key,
-    };
-  }
   const connection = config.claude.connection;
-  if (connection) {
+  if (connection && modelConnectionEngine(connection) === (config.engine || 'claude')) {
     // Pin routing and authentication per child, including when host settings
     // contain another gateway, OAuth token or provider mode.
     const isolated = {
@@ -119,6 +105,21 @@ export function resolveClaudeAuthEnv(config: BotConfigBase): Record<string, stri
       // Any non-empty string (including "0") enables this flag. An empty
       // value explicitly turns it off for this connection's subprocess.
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: connection.disableNonessentialTraffic ? '1' : '',
+    };
+  }
+  const provider = compatProviderFor(config.engine);
+  if (provider) {
+    const block = provider.engine === 'minimax' ? config.minimax : config.deepseek;
+    const key = block?.apiKey || process.env[provider.keyEnv];
+    if (!key) {
+      throw new Error(
+        `Bot "${config.name}": engine is '${provider.engine}' but no API key configured — set bots.json ${provider.engine}.apiKey or env ${provider.keyEnv} (get one at ${provider.applyUrl})`,
+      );
+    }
+    return {
+      ANTHROPIC_BASE_URL: block?.baseUrl || provider.defaultBaseUrl,
+      ANTHROPIC_AUTH_TOKEN: key,
+      ANTHROPIC_API_KEY: key,
     };
   }
   if (config.claude.apiKey) {

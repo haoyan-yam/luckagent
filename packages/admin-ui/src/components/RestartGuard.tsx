@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Button, Modal, Spin, Typography } from 'antd';
+import { api } from '../api/client';
+import type { RestartStatus } from '../api/types';
 
 /**
- * Full-screen overlay shown after POST /admin/api/restart. Probes the
- * unauthenticated GET /api/health every 2s until the bridge is back, then
- * reloads data by calling onRecovered.
+ * Confirm a different bridge instance, rather than accepting the old process's
+ * health response during the restart grace window. Detect cancelled restarts.
  */
-export function RestartGuard({ open, onRecovered }: { open: boolean; onRecovered: () => void }) {
+export function RestartGuard({ open, beforeBootId, onRecovered, onCancelled }: { open: boolean; beforeBootId: string; onRecovered: () => void; onCancelled: () => void }) {
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
@@ -17,11 +18,13 @@ export function RestartGuard({ open, onRecovered }: { open: boolean; onRecovered
     const timer = setInterval(async () => {
       setElapsed(Math.round((Date.now() - started) / 1000));
       try {
-        const resp = await fetch('/api/health');
-        if (resp.ok && !stopped) {
-          // The new process is up. Small grace period for bot startup.
+        const state = await api.get<RestartStatus>('/admin/api/restart-status');
+        if (!stopped && state.bootId !== beforeBootId) {
           clearInterval(timer);
-          setTimeout(() => onRecovered(), 1000);
+          onRecovered();
+        } else if (!stopped && state.restartCancelled) {
+          clearInterval(timer);
+          onCancelled();
         }
       } catch {
         /* still down */
@@ -31,7 +34,7 @@ export function RestartGuard({ open, onRecovered }: { open: boolean; onRecovered
       stopped = true;
       clearInterval(timer);
     };
-  }, [open, onRecovered]);
+  }, [open, beforeBootId, onRecovered, onCancelled]);
 
   const stalled = elapsed >= 60;
   return (

@@ -1,114 +1,96 @@
-# 引擎配置（Claude Code / DeepSeek / MiniMax）
+# 模型接入（Claude / 灵眸 / DeepSeek / MiniMax）
 
-每个 bot 独立选引擎：`bots.json` 里的 `engine: "claude" | "deepseek" | "minimax"`（默认 `claude`），
-管理台「机器人管理 → 编辑」的引擎下拉即可切换，选中 DeepSeek / MiniMax 会展开参数子表单。
-同一台机器上多种引擎的 bot 可以并存混用。
+所有接入共用 Claude Code 运行时。后台统一管理服务商连接，每条连接保存自己的地址、Key、默认模型和流量选项；每个机器人独立选择连接。
+旧的 `engine`、`deepseek`、`minimax` 配置块及 `.env` 变量继续读取，升级不会改写这些配置，也不会自动为旧 bot 切换服务商。
 
-所有引擎共享**同一个 Claude Code 运行时**（`@anthropic-ai/claude-agent-sdk`）——持久会话池、
-Agent Teams、`/goal`、后台任务、记忆体系（CLAUDE.md / auto-memory / session 续接）对两者完全一致，
-差别只在指向哪家的 API 和用谁的 key。DeepSeek 与 MiniMax 都走各家官方的 **Anthropic 兼容端点**，零 CLI 安装。
+## 在后台新增连接
 
-## Claude Code（默认，开箱即用）
+进入「系统配置 → 模型接入 → 新增连接」，选择服务商：
 
-运行时随 Luckagent 打包，无需额外安装。认证二选一：
-
-| 方式 | 步骤 |
-| --- | --- |
-| API Key | `.env` 填 `ANTHROPIC_API_KEY`（可配 `ANTHROPIC_BASE_URL` 走中转网关）→ `luckagent restart` |
-| 订阅登录 | 装 Claude Code CLI（`curl -fsSL https://claude.ai/install.sh \| bash`）→ 终端跑 `claude` 完成登录 → `.env` 填 `CLAUDE_EXECUTABLE_PATH=~/.local/bin/claude` |
-
-> Claude 引擎默认用 **PTY 后端**（驱动本机真实的 `claude` CLI），因此需要 PM2 能找到 CLI。找不到时，飞书卡片会直接显示「启动任务失败：PTY backend requires the claude CLI binary…」——装好 CLI，或在 `.env` 用 `CLAUDE_EXECUTABLE_PATH` 指向它，然后 `luckagent restart`。DeepSeek / MiniMax 走 SDK 后端，没装 CLI 也能跑。
-
-模型默认**跟随订阅档位**（不指定时由 Claude 官方按你的计划选：Pro→Opus 5，Max→Fable 5）；
-要固定某个模型才设 `.env` 的 `CLAUDE_MODEL`（指定超出档位的会被静默降级，以回复页脚显示的实际模型为准）。
-其余参数：`CLAUDE_MAX_TURNS` / `CLAUDE_MAX_BUDGET_USD` 是全局默认，
-bot 级的 `model` / `maxTurns` / `maxBudgetUsd`（管理台「限制与预算」）可覆盖。
-
-## 后台统一管理 Claude 模型连接
-
-在「系统配置 → 模型接入」新增 Anthropic Messages 兼容连接：填写名称、Base URL、可用模型 ID 和 API Key。
-例如灵眸的 Base URL 为 `https://api.lmuai.ai`，模型 ID 以该 Key 的可用列表为准。
-可以先保存不含 Key 的连接，稍后补填；没有 Key 时不会退回其他认证方式。
-
-- Key 保存后不回显；编辑时留空保留原值，输入新值替换，使用「清除已保存的 Key」显式删除。
-- 「测试连接」使用已保存的地址、Key 和模型发送一条简短 Messages 请求，会产生少量费用。
-  成功表示认证与基础模型调用通过，不代表已验证工具调用、图片和流式会话。
-- 每条连接可独立开启「禁用非必要流量」，默认关闭。开启会关闭自动更新、遥测、错误上报等，
-  并可能影响依赖远程功能开关的 Claude 功能。只影响引用此连接的 bot，保存后重启桥接生效。
-  开启向子进程传入 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`，关闭传入空字符串（不能用 `0`）；
-  该选择同时写入子进程的启动设置，以覆盖用户/项目设置中的同名变量，不修改全局 Claude 文件。
-- 全局默认连接影响所有选择「继承全局默认连接」的 Claude bot；页面展示受影响的 bot 名称。
-- 在「机器人管理 → 编辑 → Claude 接入方式」中，每个 bot 可选择某条连接或本机 Claude 登录。
-  清空选择恢复继承。bot 自己的模型覆盖优先于连接默认模型。
-- 「本机 Claude 登录」固定走官方端点，屏蔽继承的网关 Key；持久会话默认使用 PTY，需本机 CLI 已登录。
-- 「沿用现有环境 / Claude 配置」保留原有 `.env` / Claude 配置行为，是未配置连接时的默认值。
-  DeepSeek / MiniMax 仍使用各自独立的认证配置。
-- 保存后需要重启桥接才对 bot 生效；重启会中断正在执行的任务。测试连接可在重启前执行。
-- 仍被机器人或全局默认引用的连接不能删除，应先调整引用。
-
-连接保存在本机 `bots.json` 的 `modelConnections` 中（文件权限 `0600`，Key 为本地明文）；
-`defaultModelConnection` 指定全局选择，bot 的 `modelConnection` 保存连接 ID 或 `local`。
-不会修改用户全局的 `~/.claude/settings.json`，也不会把 Key 返回浏览器或放进测试错误信息。
-
-## DeepSeek（最省事：零安装，只要 key）
-
-DeepSeek 官方提供 **Anthropic 兼容端点**（`https://api.deepseek.com/anthropic`），Luckagent 让它直接跑在
-Claude 引擎的运行时上——**不用装任何 CLI**：
-
-1. 申请 key：https://platform.deepseek.com → `.env` 填 `DEEPSEEK_API_KEY`（或在 bot 的 DeepSeek 子表单里按 bot 填）。
-   **没有 Claude 账号的机器**再加一行 `LUCKAGENT_ENGINE=deepseek`（全局默认引擎），之后建的 bot 默认即用 DeepSeek——安装脚本检测到「只填了 DeepSeek key 且未装 Claude CLI」时会自动写入这行。
-2. 新建 bot 默认继承安装时选定的全局引擎；需要按 bot 调整时在「机器人管理 → 编辑」的引擎下拉选 DeepSeek，模型二选一：
-   `deepseek-flash`（V4.1 Flash 1017，快、便宜、默认）/ `deepseek-v4-pro`（更强推理）。
-   两个模型都**原生支持看图**（群里发图片给 bot，agent 用 Read 工具读取即可理解——已实测）；
-   旧 ID `deepseek-v4-flash` / `deepseek-v4-flash-vision-exp` 官方已下线，但仍被接受并自动转到当前 Flash 模型，已有配置无需改动。
-3. 保存重启即生效。会话内 `/model deepseek` 也可临时切换（临时切换的会话走逐回合执行路径，
-   Agent Teams / /goal / 后台任务等持久会话特性不参与；要长期用请在 bots.json 或管理台把该 bot 的 engine 设为 deepseek）。
-
-凭证注入是 **bot 级隔离**的：DeepSeek bot 与 Claude 订阅 bot 在同一台机器并存互不干扰
-（每个 bot 的子进程注入自己的 endpoint 与 key，宿主机的 Claude 登录态不受影响）。
-
-适合：高频轻任务（群日报、摘要、问答）、中文场景、成本敏感的 bot；复杂多步任务的可靠性与 Claude 有差距，重活建议留 Claude。
-
-> 计费提示：管理台/统计里显示的费用是按 Claude 价目估算的（运行时不识别第三方价目），DeepSeek / MiniMax 实际账单以各自平台为准（通常远低于显示值）。
-
-## MiniMax（零安装，原生看图）
-
-MiniMax 同样提供 **Anthropic 兼容端点**（`https://api.minimaxi.com/anthropic`），接法与 DeepSeek 完全一致：
-
-1. 申请 key：https://platform.minimaxi.com （支持订阅制 Coding Plan，key 以 `sk-cp-` 开头）→ `.env` 填 `MINIMAX_API_KEY`（或在 bot 的 MiniMax 子表单里按 bot 填）。全机默认用它则再加 `LUCKAGENT_ENGINE=minimax`（安装脚本选 MiniMax 时自动写入）。
-2. 模型二选一：`MiniMax-M3`（旗舰、**原生看图**、默认）/ `MiniMax-M2.5`（上一代、更省）。
-3. 保存重启即生效；会话内 `/model minimax` 临时切换的说明同上（走逐回合路径）。
-
-凭证同样 bot 级隔离，与 Claude / DeepSeek bot 并存互不干扰。
-
-## 指令文件（CLAUDE.md）如何生效
-
-| 内容 | 生效方式 |
-| --- | --- |
-| bot 工作目录指令 `CLAUDE.md` | 两个引擎同一运行时，直接读取；`AGENTS.md` 是指向它的**符号链接**（建 bot 时自动创建），为你手动在工作目录运行的其他 agent 工具保留兼容 |
-| 共用规范（`~/projects/CLAUDE.md`） | 生效（运行时向上遍历父目录） |
-| 逐回合系统提示（工作目录、发送暂存目录、提问人 open_id 等） | 桥接注入，引擎无关 |
-
-**日常只维护 `CLAUDE.md` 一个文件**即可。如果你曾手工创建过普通文件版的 `AGENTS.md`，系统不会覆盖它。
-
-## 修改全局默认引擎与模型
-
-管理台「系统配置 → 默认设置」可以直接改整机默认值（写入 `.env`，保存后确认即重启桥接生效）：
-
-| 项 | `.env` 键 | 说明 |
+| 服务商预设 | Base URL | 运行方式 |
 | --- | --- | --- |
-| 默认引擎 | `LUCKAGENT_ENGINE` | 没有单独设引擎的 bot 用它；新建 bot 也默认用它 |
-| Claude 默认模型 | `CLAUDE_MODEL` | 推荐「跟随订阅档位」（不写）；也可手填模型 ID |
-| DeepSeek / MiniMax 默认模型 | `DEEPSEEK_MODEL` / `MINIMAX_MODEL` | 下拉选择，清空 = 各引擎内置默认 |
+| 灵眸 | `https://api.lmuai.ai` | Claude 运行时，保留 bot / 环境指定的后端 |
+| DeepSeek | `https://api.deepseek.com/anthropic` | SDK，无需额外安装 CLI |
+| MiniMax | `https://api.minimaxi.com/anthropic` | SDK，无需额外安装 CLI |
+| Anthropic API | `https://api.anthropic.com` | Claude 运行时 |
+| 自定义兼容接口 | 手动填写 | Anthropic Messages 兼容接口 |
 
-生效优先级：会话里 `/model` 临时切换 > bot 自己的设置（机器人管理 → 编辑）> 全局默认。机器人列表的「模型」列显示每个 bot 实际生效的模型。
+预设会填入地址及已支持的默认模型；模型 ID 应以你的 Key 可用列表为准，可手动调整。
+同一服务商可以创建多条连接，使用不同 Key、地址或模型。服务商决定内部适配方式，如需更换服务商请新增连接。
 
-## 快速核对清单
+- Key 保存后不回显。编辑时留空保留原值，填写新值替换；「清除已保存的 Key」显式删除。
+- 可以先保存没有 Key 的连接，稍后填写；使用缺少 Key 的连接会报错，不会偷偷使用其他连接或旧环境 Key。
+- 「测试连接」使用已保存的参数发送一条简短 Messages 请求，产生少量费用。
+  成功只表示认证与基础模型调用通过，不代表已经验证图片、工具调用或流式会话。
+- 每条连接的「禁用非必要流量」默认关闭。开启后禁用自动更新、遥测、错误上报等，也可能影响依赖远程功能开关的 Claude 功能。
+  仅传给引用此连接的 bot，开启使用 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`，关闭使用空字符串（不能用 `0`）。
+- 列表分别展示已保存绑定与当前运行使用的 bot；顶部汇总当前运行接入，不包含会话临时切换。仍被全局默认或 bot 引用的连接不能删除。
 
-| 引擎 | 需要终端做的事 | 其余 |
-| --- | --- | --- |
-| Claude | 无（API key 路线）或装 CLI + 登录（订阅路线） | `.env` / 管理台 |
-| DeepSeek | **无**——只要申请个 key | `.env` 或管理台子表单 |
-| MiniMax | **无**——只要申请个 key | `.env` 或管理台子表单 |
+## 默认连接与机器人选择
 
+「模型接入」中的「默认模型连接」是新配置的统一默认入口。
+「机器人管理 → 新建 / 编辑 → 模型连接」可选择：
+
+| 选项 | 行为 |
+| --- | --- |
+| 继承全局默认连接 | 跟随上方默认模型连接；全局为兼容旧配置时，仍按原有引擎与环境规则解析 |
+| 某条已保存连接 | 固定使用该连接，优先于 bot 旧的 `engine` 和服务商配置块 |
+| 本机 Claude 登录 | 固定官方端点，屏蔽继承的网关 Key；持久会话默认 PTY，要求本机 CLI 已登录 |
+| 兼容旧配置 | 保留旧引擎、模型、凭证与环境配置，不跟随统一默认连接切换 |
+
+模型优先级：会话 `/model` 临时选择 → bot 的「模型覆盖」→ 连接默认模型。
+选择 DeepSeek / MiniMax 连接时自动用 SDK 后端；选择连接不会删除 bot 原有的旧引擎配置，日后可切回兼容模式。
+聊天中的 `/model claude|deepseek|minimax` 仍是旧引擎的临时切换命令，不是后台连接选择器；跨引擎切换按对应旧凭证解析，长期使用请在后台绑定连接。
+
+「本机 Claude 登录」状态使用 `claude auth status --json` 查询结果，短暂缓存一分钟，不读取旧账户缓存来判断订阅状态。
+沿用旧配置的 bot 会在各自工作目录查询认证；确认使用同一官方账号后，显示在本机登录的使用列表中，不改写 bot 配置。查询失败或认证不一致时单独列为未确认。
+
+新建机器人（包括飞书接入向导）默认明确选择继承全局连接。
+原先未设置 `modelConnection` 的 Claude bot 保留先前的默认连接继承行为；
+未设置该字段的旧 DeepSeek / MiniMax bot（包括通过 `LUCKAGENT_ENGINE` 默认选中的 bot）继续使用旧配置。
+这类 bot 会在后台标为「兼容旧配置」，只有主动选择新连接或继承全局才迁移。
+
+## 从旧 DeepSeek / MiniMax 配置迁移
+
+「模型接入 → 旧配置兼容与复制」会列出进程环境中的旧全局配置，以及 `bots.json` 的服务商覆盖块。
+点击「复制为独立连接」会在本机复制有效地址、模型和 Key，不把 Key 返回浏览器。
+
+复制不修改原配置、不更改全局默认，也不重新绑定 bot。
+复制后可先测试新连接，再为目标 bot 选择它；新旧两份配置独立维护，修改新连接不会改变旧 Key。
+同一个来源只能复制一次；删除复制所得连接后可以再次复制。
+
+后台不再分别编辑 `CLAUDE_MODEL`、`DEEPSEEK_MODEL`、`MINIMAX_MODEL`、`LUCKAGENT_ENGINE`。
+这些变量及旧 API 仍保留兼容能力；「默认设置」保存生图、视频等参数时不会清空它们。
+若刚手动更改 `.env` 的旧 Key，请先重启加载后再复制，使复制值与运行值一致。
+
+## 生效与存储
+
+连接与 bot 配置保存后，需要重启桥接才对实际调用生效。全局默认连接需点击「保存默认连接」，确认受影响的 bot 后才写入。
+所有重启统一使用页面顶部入口；服务端检查运行、准备中及排队任务，默认拒绝忙碌时重启，退出前再次检查新任务。确需中断时须在弹窗明确确认。
+待生效状态由服务端与启动时配置快照比较，刷新或切换页面不会丢失提示；进程恢复以新实例标识确认。
+测试连接可以在重启前执行，使用已保存的连接参数；当前运行绑定仍以桥接进程已加载的配置为准。
+重启检查、页面分区和管理接口详见[管理台使用手册](admin-console.md#系统配置)。
+
+连接存于本机 `bots.json.modelConnections`，文件权限为 `0600`，Key 为本地明文。
+`provider` 指定适配服务商；缺少该字段的原有连接继续按自定义 Claude 兼容接口处理。
+`defaultModelConnection` 保存全局连接 ID、`local` 或 `legacy`；bot 的 `modelConnection` 还可为 `inherit`。
+不会修改 `~/.claude/settings.json`，也不会把 Key 放进 API 响应或连接测试的错误信息。
+
+各服务商模型能力仍以实际模型为准；管理台费用可能是运行时估算，实际账单以服务商为准。
+
+## 旧配置与 CLI 安装
+
+旧 `.env` 配置继续支持：
+
+- Claude：`ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN`、`ANTHROPIC_BASE_URL`、`CLAUDE_MODEL`。
+- DeepSeek：`DEEPSEEK_API_KEY`、`DEEPSEEK_BASE_URL`、`DEEPSEEK_MODEL`，以及 bot 的 `deepseek` 配置块。
+- MiniMax：`MINIMAX_API_KEY`、`MINIMAX_BASE_URL`、`MINIMAX_MODEL`，以及 bot 的 `minimax` 配置块。
+- 默认引擎：`LUCKAGENT_ENGINE`；任务限制：`CLAUDE_MAX_TURNS` / `CLAUDE_MAX_BUDGET_USD`，bot 可单独覆盖。
+
+PTY 后端需要本机可执行的 Claude CLI，可通过 `CLAUDE_EXECUTABLE_PATH` 指定；SDK 可以使用随包运行时。
 `luckagent doctor --json` 可核对运行时、PM2、bots、语音、生图等检查项。
+
+## 指令文件与记忆
+
+各接入共用工作目录、CLAUDE.md、技能、持久会话池与记忆体系。工作目录的 `AGENTS.md` 是指向 `CLAUDE.md` 的符号链接；
+共用规范 `~/projects/CLAUDE.md` 继续生效。已有普通 `AGENTS.md` 不会被覆盖。

@@ -1,9 +1,12 @@
+import { legacyModelConnections, MODEL_CONNECTION_PRESETS } from '../legacy-model-connections.js';
 import { randomUUID } from 'node:crypto';
+import { statSync } from 'node:fs';
 import type * as http from 'node:http';
 import { readBotsConfig, writeBotsConfig } from '../bots-config-writer.js';
-import { connectionUsers, parseModelConnection, validateConnectionSelection } from '../../model-connections.js';
+import { botConnectionChoice, connectionUsers, parseModelConnection, validateConnectionSelection } from '../../model-connections.js';
 import { jsonResponse, parseJsonBody } from './helpers.js';
 import type { RouteContext } from './types.js';
+import { inspectLocalClaudeUsage } from '../claude-auth-status.js';
 
 /** Only reached through the local admin authentication gate. Never return upstream errors or keys. */
 export async function handleModelConnectionRoutes(ctx: RouteContext, req: http.IncomingMessage, res: http.ServerResponse, method: string, url: string): Promise<boolean> {
@@ -14,7 +17,7 @@ export async function handleModelConnectionRoutes(ctx: RouteContext, req: http.I
     return true;
   }
   // Finish reading before taking the config snapshot; writes then remain synchronous.
-  const body = (method === 'PUT' || (method === 'POST' && url === prefix)) ? await parseJsonBody(req) : {};
+  const body = (method === 'PUT' || (method === 'POST' && (url === prefix || url === `${prefix}/import`))) ? await parseJsonBody(req) : {};
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     jsonResponse(res, 400, { error: '请求正文须为对象' }); return true;
   }
@@ -23,16 +26,55 @@ export async function handleModelConnectionRoutes(ctx: RouteContext, req: http.I
   const suffix = url.slice(prefix.length);
   try {
     if (method === 'GET' && !suffix) {
+      const running = ctx.registry?.listRegistered?.();
+      const { claudeAuth, ...usage } = await inspectLocalClaudeUsage(running);
+      const summary = new Map<string, { name: string; count: number }>();
+      for (const bot of running || []) {
+        const connection = bot.config.claude.connection;
+        const name = usage.runningBots?.includes(bot.name) ? '本机 Claude 登录'
+          : connection && connection !== 'local' ? connection.name
+            : connection === 'local' ? '本机 Claude 登录'
+              : bot.config.engine === 'deepseek' ? '旧 DeepSeek 配置'
+                : bot.config.engine === 'minimax' ? '旧 MiniMax 配置'
+                  : bot.config.claude.apiKey ? '旧 Claude API 配置' : '旧环境（未确认）';
+        const key = connection && connection !== 'local' ? connection.id : name;
+        const item = summary.get(key) || { name, count: 0 };
+        item.count++; summary.set(key, item);
+      }
       jsonResponse(res, 200, {
+        configDirty: ctx.adminRuntime?.configStatus().configDirty ?? false,
+        revision: statSync(ctx.botsConfigPath).mtimeMs,
+        runtimeSummary: [...summary.values()],
+        claudeAuth,
+        localLoginUsage: {
+          configuredBots: connectionUsers(cfg, 'local'),
+          ...usage,
+        },
+        presets: MODEL_CONNECTION_PRESETS,
+        legacyDefaultEngine: process.env.LUCKAGENT_ENGINE || 'claude',
+        legacyConnections: legacyModelConnections(cfg).map(({ apiKey, ...c }) => ({ ...c, hasApiKey: !!apiKey, importedId: connections.find(saved => saved.importedFrom === c.source)?.id })),
+        legacyBots: (cfg.feishuBots || []).filter(b => botConnectionChoice(b) === 'legacy').map(b => b.name),
         defaultConnection: cfg.defaultModelConnection || 'legacy',
-        connections: connections.map(({ apiKey, ...c }) => ({ ...c, disableNonessentialTraffic: c.disableNonessentialTraffic ?? false, hasApiKey: !!apiKey, affectedBots: connectionUsers(cfg, c.id) })),
-        inheritedBots: (cfg.feishuBots || []).filter(b => !b.modelConnection && (b.engine || process.env.LUCKAGENT_ENGINE || 'claude') === 'claude').map(b => b.name),
+        connections: connections.map(({ apiKey, ...c }) => ({
+          ...c,
+          displayProvider: c.provider || MODEL_CONNECTION_PRESETS.find(p => p.baseUrl && p.baseUrl.replace(/\/+$/, '') === c.baseUrl.replace(/\/+$/, ''))?.provider || 'custom',
+          disableNonessentialTraffic: c.disableNonessentialTraffic ?? false,
+          hasApiKey: !!apiKey, affectedBots: connectionUsers(cfg, c.id),
+          runningBots: running?.filter(b => b.config.claude.connection && b.config.claude.connection !== 'local' && b.config.claude.connection.id === c.id).map(b => b.name) ?? null,
+        })),
+        inheritedBots: (cfg.feishuBots || []).filter(b => botConnectionChoice(b) === 'inherit').map(b => b.name),
       });
       return true;
     }
     if (method === 'PUT' && suffix === '/default') {
       validateConnectionSelection(body.connection, cfg, true);
       cfg.defaultModelConnection = typeof body.connection === 'string' && body.connection ? body.connection : 'legacy';
+    } else if (method === 'POST' && suffix === '/import') {
+      const source = legacyModelConnections(cfg).find(c => c.source === body.source);
+      if (!source) throw new Error('旧配置不存在，请刷新后重试');
+      if (connections.some(c => c.importedFrom === source.source)) throw new Error('此旧配置已复制为连接');
+      const copied = parseModelConnection(source, randomUUID());
+      cfg.modelConnections = [...connections, { ...copied, importedFrom: source.source }];
     } else if (method === 'POST' && !suffix) {
       cfg.modelConnections = [...connections, parseModelConnection(body, randomUUID())];
     } else {

@@ -1,4 +1,5 @@
 export interface BotOverview {
+  connectionName?: string;
   name: string;
   engine: string;
   /** Effective default model; null on claude = follow the subscription plan. */
@@ -9,6 +10,19 @@ export interface BotOverview {
   today: { tasks: number; failed: number; costUsd: number };
   sinceStart: { totalTasks: number; totalCostUsd: number };
   lastActivityAt: number | null;
+}
+
+export interface RestartStatus {
+  bootId: string;
+  configDirty: boolean;
+  pendingChanges: string[];
+  configErrors: string[];
+  activeTasks: number;
+  queuedTasks: number;
+  busyBots: Array<{ name: string; active: number; queued: number }>;
+  onlineBots: number;
+  restarting: boolean;
+  restartCancelled: boolean;
 }
 
 export interface Overview {
@@ -84,17 +98,18 @@ export interface EffectiveConfig {
   engineDefaults: Record<string, string | null>;
   credentials: Record<string, { set: boolean; tail?: string; pending?: boolean; botLevel?: number }>;
   claudeAuth?: {
+    source: 'cli';
+    checkedAt: string;
     cliInstalled: boolean;
-    loggedIn: boolean;
+    loggedIn?: boolean;
+    authMethod?: string;
+    apiProvider?: string;
+    subscriptionType?: string;
     email?: string;
-    billingType?: string;
-    seatTier?: string;
-    rateLimitTier?: string;
-    hasAvailableSubscription?: boolean;
-    trialEndsAt?: string;
-    profileFetchedAt?: string;
+    error?: string;
   };
   imageGen?: {
+    codexAuthError?: string;
     configured: string | null;
     provider: 'codex' | 'seedream' | null;
     codexInstalled: boolean;
@@ -137,13 +152,18 @@ export interface ConfigDefaults {
 }
 
 export interface CodexProbe {
+  error?: string;
   installed: boolean;
   loggedIn: boolean;
   version: string | null;
   detail: string;
 }
 
+export type ConnectionProvider = 'lmuai' | 'anthropic' | 'deepseek' | 'minimax' | 'custom';
 export interface ModelConnectionInfo {
+  displayProvider?: ConnectionProvider;
+  runningBots?: string[] | null;
+  provider?: ConnectionProvider;
   disableNonessentialTraffic?: boolean;
   id: string;
   name: string;
@@ -153,6 +173,16 @@ export interface ModelConnectionInfo {
   affectedBots: string[];
 }
 export interface ModelConnectionsResponse {
+  configDirty?: boolean;
+  revision?: number;
+  runtimeSummary?: Array<{ name: string; count: number }>;
+  claudeAuth?: EffectiveConfig['claudeAuth'];
+  localLoginUsage?: { configuredBots: string[]; runningBots: string[] | null; inheritedLoginBots: string[] | null; legacyClaudeBots: string[] | null };
+  presets: Array<{ provider: ConnectionProvider; name: string; baseUrl: string; model: string }>;
+  legacyDefaultEngine: string;
+  legacyBots: string[];
+  legacyConnections: Array<{ source: string; provider: ConnectionProvider; name: string; baseUrl: string; model: string; hasApiKey: boolean; importedId?: string }>;
+
   defaultConnection: string;
   connections: ModelConnectionInfo[];
   inheritedBots: string[];

@@ -1,4 +1,4 @@
-import { validateConnectionSelection } from '../../model-connections.js';
+import { botConnectionChoice, validateConnectionSelection } from '../../model-connections.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type * as http from 'node:http';
@@ -281,7 +281,7 @@ export async function handleBotRoutes(
     if (botsConfigPath) {
       const found = getBotEntry(botsConfigPath, name);
       if (found) {
-        jsonResponse(res, 200, { name, platform: found.platform, ...runningInfo, config: redactBotEntry(found.entry as unknown as Record<string, unknown>) });
+        jsonResponse(res, 200, { name, platform: found.platform, ...runningInfo, connectionChoice: botConnectionChoice(found.entry), config: redactBotEntry(found.entry as unknown as Record<string, unknown>) });
         return true;
       }
     }

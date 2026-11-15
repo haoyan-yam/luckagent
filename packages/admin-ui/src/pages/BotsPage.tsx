@@ -56,7 +56,7 @@ export default function BotsPage({ onChanged }: { onChanged: () => void }) {
       key: 'status',
       render: (_: unknown, b: BotOverview) => <RunStatusTag running={b.running} />,
     },
-    { title: '引擎', dataIndex: 'engine', key: 'engine', render: (v?: string) => <Tag>{v || 'claude'}</Tag> },
+    { title: '模型连接', key: 'connection', render: (_: unknown, b: BotOverview) => <Space direction="vertical" size={0}><span>{b.connectionName || '兼容旧配置'}</span><Tag>{b.engine || 'claude'}</Tag></Space> },
     {
       title: '模型',
       key: 'model',
