@@ -1,5 +1,9 @@
 import { defineConfig } from 'vitest/config';
 
+// Pin the test timezone so date/day-boundary tests don't depend on the host
+// zone (the dev machine may be in the US). Workers inherit this env.
+process.env.TZ = 'Asia/Shanghai';
+
 export default defineConfig({
   test: {
     // spike/ holds standalone behaviour-check scripts ("7/7 SDK checks pass"

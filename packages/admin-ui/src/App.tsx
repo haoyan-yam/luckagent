@@ -19,6 +19,7 @@ import type { RestartStatus } from './api/types';
 import { usePoll } from './hooks/usePoll';
 import { getToken, clearToken } from './auth';
 import { RestartGuard } from './components/RestartGuard';
+import { setAppTimezone, timezoneLabel } from './lib/time';
 import LoginPage from './pages/LoginPage';
 import OverviewPage from './pages/OverviewPage';
 import BotsPage from './pages/BotsPage';
@@ -74,6 +75,18 @@ export default function App() {
     return () => window.clearInterval(timer);
   }, [reviewOpen, loadReview]);
   useEffect(() => { setForceAcknowledged(false); }, [review?.activeTasks, review?.queuedTasks]);
+
+  // All times render in the server's app timezone; fetch it before pages mount.
+  const [tzReady, setTzReady] = useState(false);
+  useEffect(() => {
+    if (!authed) return;
+    let alive = true;
+    api.get<{ timezone: string; utcOffset?: string }>('/admin/api/meta')
+      .then((m) => { if (m?.timezone) setAppTimezone(m.timezone, m.utcOffset); })
+      .catch(() => { /* keep default Asia/Shanghai */ })
+      .finally(() => { if (alive) setTzReady(true); });
+    return () => { alive = false; };
+  }, [authed]);
 
   useEffect(() => {
     if (!authed && location.pathname !== '/login') {
@@ -145,6 +158,7 @@ export default function App() {
             {MENU.find((m) => m.key === location.pathname)?.label || '控制台'}
           </Typography.Text>
           <Space>
+            {tzReady && <Typography.Text type="secondary" style={{ fontSize: 12 }}>时间均按 {timezoneLabel()} 显示</Typography.Text>}
             <Button icon={<ReloadOutlined />} type={configDirty ? 'primary' : 'default'}
               disabled={restarting} onClick={() => { setReview(null); setReviewError(''); setForceAcknowledged(false); setReviewOpen(true); }}>
               {configDirty ? '重启桥接 · 有待生效配置' : '重启桥接'}
@@ -171,7 +185,7 @@ export default function App() {
         {restartError && <Alert banner type="warning" message="无法获取最新运行与配置状态，重启前将重新检查。" />}
         {!!restartState?.configErrors.length && <Alert banner type="error" message={restartState.configErrors.join('；')} />}
         <Content style={{ padding: 24, overflow: 'auto' }}>
-          <Routes>
+          {tzReady && <Routes>
             <Route path="/" element={<Navigate to="/overview" replace />} />
             <Route path="/overview" element={<OverviewPage />} />
             <Route path="/bots" element={<BotsPage onChanged={() => void refreshRestartState()} />} />
@@ -183,7 +197,7 @@ export default function App() {
             <Route path="/logs" element={<LogsPage />} />
             <Route path="/config" element={<ConfigPage onChanged={() => void refreshRestartState()} />} />
             <Route path="*" element={<Navigate to="/overview" replace />} />
-          </Routes>
+          </Routes>}
         </Content>
       </Layout>
       <Modal title="重启桥接" open={reviewOpen} onCancel={() => setReviewOpen(false)}

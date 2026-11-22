@@ -19,7 +19,7 @@ import {
   Tooltip,
   Typography,
 } from 'antd';
-import dayjs from 'dayjs';
+import { fmt, fromNow } from '../lib/time';
 import { api } from '../api/client';
 import { usePoll } from '../hooks/usePoll';
 import { MarkdownView } from '../md';
@@ -81,7 +81,7 @@ const STATE_LABEL: Record<UsageState, string> = { active: '近 30 天在用', id
 
 const usageState = (s: UsageStat): UsageState => (s.last30d > 0 ? 'active' : s.total > 0 ? 'idle' : 'never');
 
-const fmtDate = (v: string | null) => (v ? dayjs(v).format('YYYY-MM-DD') : '—');
+const fmtDate = (v: string | null) => (v ? fmt(v, 'YYYY-MM-DD') : '—');
 
 export default function SkillsPage() {
   const { data, error } = usePoll<SkillsPayload>(() => api.get('/admin/api/skills'), 30000);
@@ -206,15 +206,15 @@ export default function SkillsPage() {
               {r.coverageFrom && (
                 <div>
                   <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                    自 {dayjs(r.coverageFrom).format('M/D')} 起
+                    自 {fmt(r.coverageFrom, 'M/D')} 起
                   </Typography.Text>
                 </div>
               )}
             </div>
           </Tooltip>
         ) : (
-          <Tooltip title={dayjs(r.stat.lastUsedAt).format('YYYY-MM-DD HH:mm')}>
-            {r.state === 'idle' ? <Tag color="orange">{dayjs(r.stat.lastUsedAt).fromNow()}</Tag> : dayjs(r.stat.lastUsedAt).fromNow()}
+          <Tooltip title={fmt(r.stat.lastUsedAt, 'YYYY-MM-DD HH:mm')}>
+            {r.state === 'idle' ? <Tag color="orange">{fromNow(r.stat.lastUsedAt)}</Tag> : fromNow(r.stat.lastUsedAt)}
           </Tooltip>
         ),
     },
@@ -268,9 +268,9 @@ export default function SkillsPage() {
           <Spin size="small" /> 正在统计对话记录…{' '}
         </>
       )}
-      {earliestCoverage && `统计范围：各 bot 现有会话记录，最早从 ${dayjs(earliestCoverage).format('M 月 D 日')}开始。`}
+      {earliestCoverage && `统计范围：各 bot 现有会话记录，最早从 ${fmt(earliestCoverage, 'M 月 D 日')}开始。`}
       使用次数 = 用到该技能的对话轮数（一次请求里跑多少次脚本都只算 1 次），含 Skill 工具调用、直接读取 SKILL.md、直接运行技能脚本。
-      {usage?.lastScanAt && `上次统计 ${dayjs(usage.lastScanAt).format('HH:mm')}。`}
+      {usage?.lastScanAt && `上次统计 ${fmt(usage.lastScanAt, 'HH:mm')}。`}
     </Typography.Text>
   );
 
@@ -389,7 +389,7 @@ export default function SkillsPage() {
             </Descriptions.Item>
             <Descriptions.Item label="统计起始">{fmtDate(detail.coverageFrom ?? null)}</Descriptions.Item>
             <Descriptions.Item label="最近使用" span={3}>
-              {detail.stat.lastUsedAt ? dayjs(detail.stat.lastUsedAt).format('YYYY-MM-DD HH:mm') : '从未使用'}
+              {detail.stat.lastUsedAt ? fmt(detail.stat.lastUsedAt, 'YYYY-MM-DD HH:mm') : '从未使用'}
             </Descriptions.Item>
           </Descriptions>
         )}

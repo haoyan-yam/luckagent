@@ -18,7 +18,7 @@ import {
   message,
 } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
-import dayjs from 'dayjs';
+import { fmt } from '../lib/time';
 import { api } from '../api/client';
 import { usePoll } from '../hooks/usePoll';
 import type { Overview, ScheduleTask } from '../api/types';
@@ -146,11 +146,11 @@ export default function SchedulePage() {
           <span>
             <Typography.Text code>{t.cronExpr}</Typography.Text>{' '}
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              下次 {t.nextExecuteAt ? dayjs(t.nextExecuteAt).format('MM-DD HH:mm') : '—'}
+              下次 {t.nextExecuteAt ? fmt(t.nextExecuteAt, 'MM-DD HH:mm') : '—'}
             </Typography.Text>
           </span>
         ) : (
-          <span>{t.executeAt ? dayjs(t.executeAt).format('MM-DD HH:mm') : '—'}</span>
+          <span>{t.executeAt ? fmt(t.executeAt, 'MM-DD HH:mm') : '—'}</span>
         ),
     },
     {
@@ -259,18 +259,18 @@ export default function SchedulePage() {
                     {detail.timezone ? ` (${detail.timezone})` : ''}
                   </Descriptions.Item>
                   <Descriptions.Item label="下次执行">
-                    {detail.nextExecuteAt ? dayjs(detail.nextExecuteAt).format('YYYY-MM-DD HH:mm') : '—'}
+                    {detail.nextExecuteAt ? fmt(detail.nextExecuteAt, 'YYYY-MM-DD HH:mm') : '—'}
                   </Descriptions.Item>
                   <Descriptions.Item label="上次执行">
-                    {detail.lastExecutedAt ? dayjs(detail.lastExecutedAt).format('YYYY-MM-DD HH:mm') : '—'}
+                    {detail.lastExecutedAt ? fmt(detail.lastExecutedAt, 'YYYY-MM-DD HH:mm') : '—'}
                   </Descriptions.Item>
                 </>
               ) : (
                 <Descriptions.Item label="执行时间">
-                  {detail.executeAt ? dayjs(detail.executeAt).format('YYYY-MM-DD HH:mm') : '—'}
+                  {detail.executeAt ? fmt(detail.executeAt, 'YYYY-MM-DD HH:mm') : '—'}
                 </Descriptions.Item>
               )}
-              <Descriptions.Item label="创建时间">{dayjs(detail.createdAt).format('YYYY-MM-DD HH:mm')}</Descriptions.Item>
+              <Descriptions.Item label="创建时间">{fmt(detail.createdAt, 'YYYY-MM-DD HH:mm')}</Descriptions.Item>
             </Descriptions>
             <Typography.Text strong>
               提示词 <Typography.Text copyable={{ text: detail.prompt, tooltips: ['复制提示词', '已复制'] }} />

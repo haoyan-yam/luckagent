@@ -63,7 +63,11 @@ export default function ConfigPage({ onChanged }: { onChanged: () => void }) {
           <Descriptions.Item label="状态目录">{cfg?.paths.stateDir ?? '—'}</Descriptions.Item>
           <Descriptions.Item label="日志目录">{cfg?.paths.logsDir ?? '—'}</Descriptions.Item>
           <Descriptions.Item label="发送暂存目录">{cfg?.paths.outputsBaseDir ?? '—'}</Descriptions.Item>
-          <Descriptions.Item label="调度时区">{cfg?.engineDefaults.scheduleTimezone ?? '系统默认'}</Descriptions.Item>
+          <Descriptions.Item label="系统时区">
+            {cfg?.engineDefaults.timezone ?? '—'}
+            {cfg?.engineDefaults.timezoneSource === 'default' ? '（默认）' : cfg?.engineDefaults.timezoneSource ? `（${cfg.engineDefaults.timezoneSource}）` : ''}
+          </Descriptions.Item>
+          <Descriptions.Item label="本机时区">{cfg?.engineDefaults.hostTimezone ?? '—'}</Descriptions.Item>
         </Descriptions>
       </Card>
       <Card title="旧环境默认值与凭证" size="small">

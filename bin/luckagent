@@ -42,6 +42,15 @@ _env_val() {  # _env_val KEY FILE — last assignment wins, quotes stripped (dot
     | sed -e 's/[[:space:]]*#.*$//' -e 's/^["'"'"']//' -e 's/["'"'"']$//' -e 's/[[:space:]]*$//'
 }
 
+# --- App timezone: LUCKAGENT_TIMEZONE > SCHEDULE_TIMEZONE > Asia/Shanghai ---
+# The host may sit in another zone (e.g. a US server). Export TZ so the CLI and
+# a freshly spawned pm2 daemon (which stamps log_date_format) use the app zone.
+# An already-running pm2 daemon keeps its old TZ until `pm2 kill`.
+_app_tz="${LUCKAGENT_TIMEZONE:-$(_env_val LUCKAGENT_TIMEZONE "$LUCKAGENT_HOME/.env" || true)}"
+[[ -z "$_app_tz" ]] && _app_tz="${SCHEDULE_TIMEZONE:-$(_env_val SCHEDULE_TIMEZONE "$LUCKAGENT_HOME/.env" || true)}"
+export TZ="${_app_tz:-Asia/Shanghai}"
+unset _app_tz
+
 _load_bridge_api_config() {
   local envf="$LUCKAGENT_HOME/.env"
   if [[ -f "$envf" ]]; then
@@ -501,6 +510,30 @@ report = {
 check("luckagent_home", home.exists(), "luckagent_home_missing" if not home.exists() else "ok",
       f"LUCKAGENT_HOME resolves to {home}", "Run the installer or set LUCKAGENT_HOME to the installed runtime.", False,
       {"path": str(home), "hasPackageJson": (home / "package.json").exists(), "hasEnv": (home / ".env").exists(), "hasBotsJson": (home / "bots.json").exists()})
+
+def _host_tz():
+    try:
+        link = os.readlink("/etc/localtime")
+        return link.split("zoneinfo/", 1)[1] if "zoneinfo/" in link else link
+    except Exception:
+        try:
+            return Path("/etc/timezone").read_text().strip() or "unknown"
+        except Exception:
+            return "unknown"
+
+_tz_key = "LUCKAGENT_TIMEZONE" if env("LUCKAGENT_TIMEZONE") else ("SCHEDULE_TIMEZONE" if env("SCHEDULE_TIMEZONE") else None)
+_tz = env(_tz_key) if _tz_key else "Asia/Shanghai"
+try:
+    from zoneinfo import ZoneInfo
+    from datetime import datetime
+    _tz_off = datetime.now(ZoneInfo(_tz)).strftime("%z")
+    _tz_ok = True
+except Exception:
+    _tz_off, _tz_ok = None, False
+check("app_timezone", _tz_ok, "ok" if _tz_ok else "app_timezone_invalid",
+      f"App timezone {_tz} (UTC{_tz_off[:3] + ':' + _tz_off[3:] if _tz_off else '?'}, from {_tz_key or 'default'}); host zone {_host_tz()}",
+      "" if _tz_ok else "Set LUCKAGENT_TIMEZONE in .env to a valid IANA name such as Asia/Shanghai (not GMT+8), then `luckagent restart --all`.",
+      False, {"timezone": _tz, "source": _tz_key or "default", "utcOffset": _tz_off, "hostTimezone": _host_tz()})
 
 pm2 = shutil.which("pm2")
 pm2_data = {"installed": bool(pm2)}

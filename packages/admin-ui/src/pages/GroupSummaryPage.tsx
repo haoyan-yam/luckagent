@@ -15,7 +15,7 @@ import {
   Typography,
   message,
 } from 'antd';
-import dayjs from 'dayjs';
+import { fmt } from '../lib/time';
 import { api } from '../api/client';
 import { usePoll } from '../hooks/usePoll';
 import type { Overview, ScheduleTask } from '../api/types';
@@ -279,7 +279,7 @@ export default function GroupSummaryPage() {
           <span>
             <Typography.Text code>{r.task.cronExpr}</Typography.Text>{' '}
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              下次 {r.task.nextExecuteAt ? dayjs(r.task.nextExecuteAt).format('MM-DD HH:mm') : '—'}
+              下次 {r.task.nextExecuteAt ? fmt(r.task.nextExecuteAt, 'MM-DD HH:mm') : '—'}
             </Typography.Text>
           </span>
         ) : (

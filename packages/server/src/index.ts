@@ -3,6 +3,20 @@ import * as path from 'node:path';
 import pino from 'pino';
 import { startServer } from './server.js';
 
+// Pin the app timezone (host may sit in another zone). pm2 passes
+// LUCKAGENT_TIMEZONE/TZ via ecosystem.config.cjs; fall back to Asia/Shanghai.
+function applyAppTimezone(): void {
+  const tz = process.env.LUCKAGENT_TIMEZONE?.trim() || process.env.SCHEDULE_TIMEZONE?.trim() || 'Asia/Shanghai';
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: tz });
+    process.env.TZ = tz;
+  } catch {
+    console.warn(`[luckagent-core] invalid timezone ${tz}, falling back to Asia/Shanghai`);
+    process.env.TZ = 'Asia/Shanghai';
+  }
+}
+applyAppTimezone();
+
 function makeLogger() {
   const level = process.env.LOG_LEVEL || 'info';
   // In production-like envs (no TTY, or LOG_FORMAT=json) emit JSON.

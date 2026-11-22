@@ -1,5 +1,6 @@
 import { Space, Tag, Typography } from 'antd';
 import type { EffectiveConfig } from '../api/types';
+import { fmt } from '../lib/time';
 
 export default function ClaudeAuthStatus({ a }: { a?: EffectiveConfig['claudeAuth'] }) {
   if (!a) return <Tag>状态未获取</Tag>;
@@ -14,7 +15,7 @@ export default function ClaudeAuthStatus({ a }: { a?: EffectiveConfig['claudeAut
       {tier && <Tag>{tier.toLowerCase() === 'max' ? 'Max 订阅' : tier.toLowerCase() === 'pro' ? 'Pro 订阅' : tier}</Tag>}
       {a.authMethod && <Tag>{a.authMethod === 'claude.ai' ? 'Claude 官方账号' : a.authMethod}</Tag>}
       {a.checkedAt && <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-        CLI 查询 · {new Date(a.checkedAt).toLocaleString()}
+        CLI 查询 · {fmt(a.checkedAt, 'YYYY-MM-DD HH:mm:ss')}
       </Typography.Text>}
     </Space>
   );

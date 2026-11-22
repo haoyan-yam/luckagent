@@ -19,7 +19,7 @@ import {
   message,
 } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
-import dayjs from 'dayjs';
+import { fmt, fromNow } from '../lib/time';
 import { api } from '../api/client';
 import { usePoll } from '../hooks/usePoll';
 import { MarkdownView } from '../md';
@@ -399,7 +399,7 @@ export default function MemoryPage() {
       width: 110,
       sorter: (a: OverviewRow, b: OverviewRow) => (a.lastUpdated || '').localeCompare(b.lastUpdated || ''),
       render: (_: unknown, r: OverviewRow) =>
-        r.lastUpdated ? <Tooltip title={dayjs(r.lastUpdated).format('YYYY-MM-DD HH:mm')}>{dayjs(r.lastUpdated).fromNow()}</Tooltip> : '—',
+        r.lastUpdated ? <Tooltip title={fmt(r.lastUpdated, 'YYYY-MM-DD HH:mm')}>{fromNow(r.lastUpdated)}</Tooltip> : '—',
     },
   ];
 
@@ -421,8 +421,8 @@ export default function MemoryPage() {
       {recallError && <Typography.Text type="warning">召回统计加载失败：{recallError}。</Typography.Text>}
       召回次数 = bot 主动读取这条记忆的对话轮数（一次请求里读多少遍都只算 1 次），含 Read 工具和 cat / grep / sed 等命令读取；
       MEMORY.md 每次会话自动加载，不计入；新建、修改记忆也不算召回。
-      {earliestCoverage && `统计范围：现有会话记录，最早从 ${dayjs(earliestCoverage).format('M 月 D 日')}开始。`}
-      {recall?.lastScanAt && `上次统计 ${dayjs(recall.lastScanAt).format('HH:mm')}。`}
+      {earliestCoverage && `统计范围：现有会话记录，最早从 ${fmt(earliestCoverage, 'M 月 D 日')}开始。`}
+      {recall?.lastScanAt && `上次统计 ${fmt(recall.lastScanAt, 'HH:mm')}。`}
     </Typography.Text>
   );
 
@@ -541,12 +541,12 @@ export default function MemoryPage() {
         !r.exists ? (
           '—'
         ) : r.recallState === 'never' ? (
-          <Tooltip title={r.coverageFrom ? `${r.bot} 现有会话记录从 ${dayjs(r.coverageFrom).format('YYYY-MM-DD')} 开始，此后没读过` : undefined}>
+          <Tooltip title={r.coverageFrom ? `${r.bot} 现有会话记录从 ${fmt(r.coverageFrom, 'YYYY-MM-DD')} 开始，此后没读过` : undefined}>
             <Tag>从未召回</Tag>
           </Tooltip>
         ) : (
-          <Tooltip title={dayjs(r.recall.lastRecalledAt).format('YYYY-MM-DD HH:mm')}>
-            {r.recallState === 'idle' ? <Tag color="orange">{dayjs(r.recall.lastRecalledAt).fromNow()}</Tag> : dayjs(r.recall.lastRecalledAt).fromNow()}
+          <Tooltip title={fmt(r.recall.lastRecalledAt, 'YYYY-MM-DD HH:mm')}>
+            {r.recallState === 'idle' ? <Tag color="orange">{fromNow(r.recall.lastRecalledAt)}</Tag> : fromNow(r.recall.lastRecalledAt)}
           </Tooltip>
         ),
     },
@@ -565,8 +565,8 @@ export default function MemoryPage() {
       sorter: (a: Row, b: Row) => (a.mtime || '').localeCompare(b.mtime || ''),
       render: (_: unknown, r: Row) =>
         r.mtime ? (
-          <Tooltip title={dayjs(r.mtime).format('YYYY-MM-DD HH:mm')}>
-            {r.stale ? <Tag color="orange">{dayjs(r.mtime).fromNow()}</Tag> : dayjs(r.mtime).fromNow()}
+          <Tooltip title={fmt(r.mtime, 'YYYY-MM-DD HH:mm')}>
+            {r.stale ? <Tag color="orange">{fromNow(r.mtime)}</Tag> : fromNow(r.mtime)}
           </Tooltip>
         ) : (
           '—'
@@ -671,14 +671,14 @@ export default function MemoryPage() {
                 return (
                   <Descriptions.Item label="召回" span={2}>
                     {r.recall.total > 0
-                      ? `近 7 天 ${r.recall.last7d} 次 · 近 30 天 ${r.recall.last30d} 次 · 累计 ${r.recall.total} 次（${r.recall.sessions} 个会话）· 最近 ${dayjs(r.recall.lastRecalledAt).format('YYYY-MM-DD HH:mm')}`
+                      ? `近 7 天 ${r.recall.last7d} 次 · 近 30 天 ${r.recall.last30d} 次 · 累计 ${r.recall.total} 次（${r.recall.sessions} 个会话）· 最近 ${fmt(r.recall.lastRecalledAt, 'YYYY-MM-DD HH:mm')}`
                       : '从未召回'}
                   </Descriptions.Item>
                 );
               })()}
               <Descriptions.Item label="文件" span={2}>
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  {viewer.data.file} · {(viewer.data.sizeBytes / 1024).toFixed(1)}KB · 更新于 {dayjs(viewer.data.mtime).format('YYYY-MM-DD HH:mm')}
+                  {viewer.data.file} · {(viewer.data.sizeBytes / 1024).toFixed(1)}KB · 更新于 {fmt(viewer.data.mtime, 'YYYY-MM-DD HH:mm')}
                 </Typography.Text>
               </Descriptions.Item>
             </Descriptions>

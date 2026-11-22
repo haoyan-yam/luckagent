@@ -1,6 +1,6 @@
 import { CronExpressionParser } from 'cron-parser';
 
-const DEFAULT_TIMEZONE = process.env.SCHEDULE_TIMEZONE || 'Asia/Shanghai';
+import { appTimezone } from '../utils/timezone.js';
 
 /**
  * Validate a 5-field cron expression (minute hour dom month dow).
@@ -35,7 +35,7 @@ export function nextCronOccurrence(
   timezone?: string,
   afterDate?: Date,
 ): number {
-  const tz = timezone || DEFAULT_TIMEZONE;
+  const tz = timezone || appTimezone();
   const fullExpr = expr.startsWith('@') ? expr : `0 ${expr}`;
   const options: Record<string, unknown> = { tz };
   if (afterDate) {
@@ -47,8 +47,8 @@ export function nextCronOccurrence(
 }
 
 /**
- * Return default timezone from env or fallback.
+ * Default timezone for cron tasks = the app-wide timezone.
  */
 export function getDefaultTimezone(): string {
-  return DEFAULT_TIMEZONE;
+  return appTimezone();
 }

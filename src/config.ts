@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { applyModelConnection, type ModelConnection } from './model-connections.js';
 import type { AgentTeamConfig } from './agent-teams/team-store.js';
+import { applyAppTimezone } from './utils/timezone.js';
 
 /**
  * Keys already present in the process environment before any env file was
@@ -41,6 +42,8 @@ function loadEnvFiles(): void {
 }
 
 loadEnvFiles();
+// Pin the app timezone before anything formats a date (host may be in another zone).
+applyAppTimezone();
 
 /** Agent engine backing a bot. */
 export type EngineName = 'claude' | 'deepseek' | 'minimax';

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Alert, Badge, Button, Card, Col, Descriptions, Drawer, Empty, Progress, Row, Space, Table, Tag, Tooltip, Typography } from 'antd';
 import { ArrowDownOutlined, ArrowUpOutlined, CheckCircleFilled, CloseCircleFilled, ExclamationCircleFilled } from '@ant-design/icons';
-import dayjs from 'dayjs';
+import { fmt, fromNow, inTz, dayDiffFromToday, fmtDayKey } from '../lib/time';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import { usePoll } from '../hooks/usePoll';
@@ -82,8 +82,8 @@ const batchName = (label: string | null) => {
 };
 
 function whenText(iso: string) {
-  const t = dayjs(iso);
-  const d = t.startOf('day').diff(dayjs().startOf('day'), 'day');
+  const t = inTz(iso);
+  const d = dayDiffFromToday(iso);
   const prefix = d === 0 ? '今天' : d === 1 ? '明天' : d === 2 ? '后天' : t.format('MM-DD');
   return `${prefix} ${t.format('HH:mm')}`;
 }
@@ -228,7 +228,7 @@ export default function OverviewPage() {
   const t = dash?.tasks;
   const sk = dash?.skills;
   const mem = dash?.memory;
-  const skillDayLabels = (sk?.days || []).map((d) => dayjs(d).format('M/D'));
+  const skillDayLabels = (sk?.days || []).map((d) => fmtDayKey(d, 'M/D'));
   const nextRun = data?.schedule.upcoming[0];
 
   const tiles = (
@@ -279,7 +279,7 @@ export default function OverviewPage() {
     <Card
       size="small"
       title="待处理"
-      extra={attention && <Typography.Text type="secondary" style={{ fontSize: 12 }}>更新于 {dayjs(attention.generatedAt).format('HH:mm')}</Typography.Text>}
+      extra={attention && <Typography.Text type="secondary" style={{ fontSize: 12 }}>更新于 {fmt(attention.generatedAt, 'HH:mm')}</Typography.Text>}
       style={{ height: '100%' }}
     >
       {!attention && !attentionError && <Typography.Text type="secondary">检查中…（首次要拉各 bot 的飞书群列表，稍等几秒）</Typography.Text>}
@@ -333,7 +333,7 @@ export default function OverviewPage() {
                   <CheckCircleFilled style={{ color: '#389e0d' }} aria-label="完成" />
                 )}
                 <Typography.Text type="secondary" style={{ fontSize: 12, fontVariantNumeric: 'tabular-nums', flex: 'none' }}>
-                  {f.status === 'running' ? '执行中' : dayjs(f.ts).format('HH:mm')}
+                  {f.status === 'running' ? '执行中' : fmt(f.ts, 'HH:mm')}
                 </Typography.Text>
                 <Typography.Text strong style={{ flex: 'none' }}>{f.bot}</Typography.Text>
                 <Tag color={f.source === 'member' ? 'blue' : undefined} style={{ margin: 0, flex: 'none' }}>{f.source === 'member' ? '成员' : '定时'}</Tag>
@@ -390,8 +390,8 @@ export default function OverviewPage() {
         <Space direction="vertical" size={8} style={{ width: '100%' }}>
           {mem.recent.map((m) => (
             <div key={`${m.bot}/${m.file}`} style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-              <Tooltip title={dayjs(m.mtime).format('YYYY-MM-DD HH:mm')}>
-                <Typography.Text type="secondary" style={{ fontSize: 12, width: 64, flex: 'none' }}>{dayjs(m.mtime).fromNow()}</Typography.Text>
+              <Tooltip title={fmt(m.mtime, 'YYYY-MM-DD HH:mm')}>
+                <Typography.Text type="secondary" style={{ fontSize: 12, width: 64, flex: 'none' }}>{fromNow(m.mtime)}</Typography.Text>
               </Tooltip>
               <Tag color={m.isNew ? 'green' : undefined} style={{ margin: 0, flex: 'none' }}>{m.isNew ? '新增' : '更新'}</Tag>
               <Typography.Text style={{ flex: 'none' }}>{m.bot}</Typography.Text>
@@ -508,7 +508,7 @@ export default function OverviewPage() {
       defaultSortOrder: undefined,
       sorter: (a: BotRow, b: BotRow) => (a.lastActivityAt ?? 0) - (b.lastActivityAt ?? 0),
       render: (_: unknown, b: BotRow) =>
-        b.lastActivityAt ? <Tooltip title={dayjs(b.lastActivityAt).format('YYYY-MM-DD HH:mm')}>{dayjs(b.lastActivityAt).fromNow()}</Tooltip> : muted('—'),
+        b.lastActivityAt ? <Tooltip title={fmt(b.lastActivityAt, 'YYYY-MM-DD HH:mm')}>{fromNow(b.lastActivityAt)}</Tooltip> : muted('—'),
     },
     {
       title: (
@@ -596,7 +596,7 @@ export default function OverviewPage() {
                   <div key={i}>
                     <Tag color="red">{f.botName}</Tag>
                     <Typography.Text type="secondary">
-                      {dayjs(f.timestamp).format('HH:mm')} {f.errorMessage || '未知错误'}
+                      {fmt(f.timestamp, 'HH:mm')} {f.errorMessage || '未知错误'}
                     </Typography.Text>
                   </div>
                 ))}
@@ -615,7 +615,7 @@ export default function OverviewPage() {
           <>
             <Descriptions size="small" column={2} bordered style={{ marginBottom: 16 }}>
               <Descriptions.Item label="类型">{MEM_TYPE[memViewer.data.frontmatter?.type ?? ''] ?? '未标注'}</Descriptions.Item>
-              <Descriptions.Item label="更新">{dayjs(memViewer.data.mtime).format('YYYY-MM-DD HH:mm')}</Descriptions.Item>
+              <Descriptions.Item label="更新">{fmt(memViewer.data.mtime, 'YYYY-MM-DD HH:mm')}</Descriptions.Item>
               {memViewer.data.frontmatter?.description && (
                 <Descriptions.Item label="描述" span={2}>{memViewer.data.frontmatter.description}</Descriptions.Item>
               )}

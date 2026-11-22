@@ -10,6 +10,7 @@ import { execFile } from 'node:child_process';
 import type * as http from 'node:http';
 import { readBotsConfig } from '../bots-config-writer.js';
 import { expandUserPath, ORIGINAL_ENV_KEYS, projectsRoot } from '../../config.js';
+import { appTimezone, HOST_TIMEZONE, resolveAppTimezone, utcOffsetLabel } from '../../utils/timezone.js';
 import { COMPAT_PROVIDERS, resolveEngineName } from '../../engines/index.js';
 import { EDITABLE_DEFAULTS, displayDefault, validateDefaultsUpdate, writeEnvUpdates } from '../env-defaults.js';
 import { physicalCwd } from '../../engines/claude/session-lister.js';
@@ -293,6 +294,9 @@ async function effectiveConfig(ctx: RouteContext): Promise<Record<string, unknow
       claudeModel: process.env.CLAUDE_MODEL || null,
       claudeBackend: process.env.CLAUDE_BACKEND === 'sdk' ? 'sdk' : 'pty',
       scheduleTimezone: process.env.SCHEDULE_TIMEZONE || null,
+      timezone: appTimezone(),
+      timezoneSource: resolveAppTimezone().source,
+      hostTimezone: HOST_TIMEZONE,
     },
     credentials: {
       apiSecret: envHint('API_SECRET'),
@@ -902,6 +906,13 @@ export async function handleAdminRoutes(
   // GET /admin/api/image-gen/probe — explicitly refresh the cached CLI query.
   if (method === 'GET' && url === '/admin/api/image-gen/probe') {
     jsonResponse(res, 200, await cachedCodexProbe(true));
+    return true;
+  }
+
+  // GET /admin/api/meta — app-wide display settings the UI needs at boot.
+  if (method === 'GET' && url === '/admin/api/meta') {
+    const tz = appTimezone();
+    jsonResponse(res, 200, { timezone: tz, utcOffset: utcOffsetLabel(tz), hostTimezone: HOST_TIMEZONE });
     return true;
   }
 

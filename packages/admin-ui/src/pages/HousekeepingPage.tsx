@@ -22,7 +22,7 @@ import {
   message,
 } from 'antd';
 import { DeleteOutlined, EyeOutlined, PlayCircleOutlined, PlusOutlined, StopOutlined } from '@ant-design/icons';
-import dayjs from 'dayjs';
+import { fmt } from '../lib/time';
 import { api } from '../api/client';
 import { usePoll } from '../hooks/usePoll';
 import MemberPicker from '../components/MemberPicker';
@@ -332,7 +332,7 @@ export default function HousekeepingPage() {
       title: '开始时间',
       key: 'start',
       render: (_: unknown, r: RunSummary) => (
-        <Typography.Link onClick={() => setOpenRun(r.id)}>{dayjs(r.startedAt).format('MM-DD HH:mm:ss')}</Typography.Link>
+        <Typography.Link onClick={() => setOpenRun(r.id)}>{fmt(r.startedAt, 'MM-DD HH:mm:ss')}</Typography.Link>
       ),
     },
     {
@@ -490,7 +490,7 @@ export default function HousekeepingPage() {
           </Form.Item>
           <Form.Item>
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              {cfg?.schedule.enabled && data?.nextRunAt ? `下次执行 ${dayjs(data.nextRunAt).format('MM-DD HH:mm')}` : '定时未开启'}
+              {cfg?.schedule.enabled && data?.nextRunAt ? `下次执行 ${fmt(data.nextRunAt, 'MM-DD HH:mm')}` : '定时未开启'}
             </Typography.Text>
           </Form.Item>
         </Form>
@@ -644,7 +644,7 @@ function RunDrawer({ runId, onClose }: { runId: string | null; onClose: () => vo
       open={!!runId}
       onClose={onClose}
       width={Math.min(1000, window.innerWidth - 40)}
-      title={run ? `${run.dryRun ? '预览' : '执行'}记录 · ${dayjs(run.startedAt).format('YYYY-MM-DD HH:mm:ss')}` : '记录'}
+      title={run ? `${run.dryRun ? '预览' : '执行'}记录 · ${fmt(run.startedAt, 'YYYY-MM-DD HH:mm:ss')}` : '记录'}
     >
       {run && (
         <Space direction="vertical" size={16} style={{ width: '100%' }}>
@@ -768,7 +768,7 @@ function RunDrawer({ runId, onClose }: { runId: string | null; onClose: () => vo
                 key: 'mt',
                 width: 110,
                 render: (_: unknown, e: RunEntry) => (
-                  <span title={`修改时间 ${dayjs(e.mtimeMs).format('YYYY-MM-DD')}`}>{dayjs(e.touchedMs ?? e.mtimeMs).format('YY-MM-DD')}</span>
+                  <span title={`修改时间 ${fmt(e.mtimeMs, 'YYYY-MM-DD')}`}>{fmt(e.touchedMs ?? e.mtimeMs, 'YY-MM-DD')}</span>
                 ),
               },
               {
