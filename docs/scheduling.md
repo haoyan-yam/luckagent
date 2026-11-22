@@ -58,7 +58,9 @@ DELETE /api/schedule/:id          # 取消
 | `0 18 * * 5` | 每周五 18:00 |
 | `0 0 1 * *` | 每月 1 号 0:00 |
 
-时区解析顺序：任务自带的 `timezone` 字段 → 环境变量 `SCHEDULE_TIMEZONE`（`.env` 里配，IANA 格式）→ 默认 `Asia/Shanghai`。跨时区部署务必显式配置，否则「9 点的晨报」可能在你意想不到的 9 点触发。
+时区解析顺序：任务自带的 `timezone` 字段 → 全局时区 `LUCKAGENT_TIMEZONE`（`.env` 里配，IANA 格式；旧变量 `SCHEDULE_TIMEZONE` 仍兼容）→ 默认 `Asia/Shanghai`。
+
+全局时区与本机系统时区无关（v0.7.34 起）：服务器放在美国等其他时区时，定时任务、按天统计、bot 子进程里的「今天」、日志和管理台显示都按它计算，不需要改系统时区。写 IANA 名称（如 `Asia/Shanghai`），不要写 `GMT+8`。改完执行 `luckagent restart --all`，`luckagent doctor` 的 `app_timezone` 一项会显示当前生效的时区和本机时区。设计取舍见[设计笔记 V](design-notes.md#v-为什么进程级钉-tz)。
 
 ## 一次性 vs 周期
 

@@ -105,6 +105,14 @@ luckagent logs -n 200     # 先回放最近 200 行
 
 文件位置：`<安装目录>/logs/{out,error,core-out,core-error}.log`。管理台「运行日志」页可在浏览器 tail bridge 的两个文件。
 
+## 时间差了几个小时 / 「今天」的统计不对
+
+所有时间按全局时区 `LUCKAGENT_TIMEZONE`（默认 `Asia/Shanghai`）计算，与本机系统时区无关。先跑 `luckagent doctor`，看 `app_timezone` 一项显示的时区对不对：
+
+- **时区不对**：在 `.env` 里设 `LUCKAGENT_TIMEZONE=Asia/Shanghai`（IANA 名称，不要写 `GMT+8`），再执行 `luckagent restart --all`；
+- **只有日志行开头的时间不对**：这个时间由 pm2 守护进程生成，守护进程启动后不会跟着变。空闲时执行一次 `pm2 kill && luckagent start`（会中断正在运行的 bot 会话）；
+- **管理台时间不对**：管理台按服务器的全局时区显示，不跟浏览器所在时区，页头会注明当前时区。升级后刷新已打开的页面。
+
 ## 管理台打不开或登录失败
 
 | 症状 | 原因与处置 |
