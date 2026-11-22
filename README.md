@@ -222,7 +222,7 @@ luckagent inbox poll            # CLI agent 收件箱
 
 ## 安全提示
 
-- bridge 与 core 默认只监听 `127.0.0.1`；把 `LUCKAGENT_API_HOST` 设为 `0.0.0.0` 之前请务必读[管理台使用手册的安全一节](docs/admin-console.md#安全说明)。
+- bridge 与 core 默认只监听 `127.0.0.1`；远程管理推荐 Tailscale Serve 或 ssh 端口转发（见[远程访问](docs/admin-console.md#远程访问)）。把 `LUCKAGENT_API_HOST` 设为 `0.0.0.0` 之前请务必读[管理台使用手册的安全一节](docs/admin-console.md#安全说明)。
 - `.env` 与 `bots.json` 含密钥，安装脚本会将其权限设为 600，请勿提交进版本库。
 
 ## 致谢与来源

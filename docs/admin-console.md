@@ -1,6 +1,6 @@
 # 管理台使用手册
 
-桥接进程自带 Web 管理台：`http://localhost:9100/admin`（访问根路径 `/` 也会进来）。日常运维——看状态、加机器人、配定时任务、翻日志——都可以在浏览器里完成，不用 ssh。
+桥接进程自带 Web 管理台：`http://localhost:9100/admin`（访问根路径 `/` 也会进来）。日常运维——看状态、加机器人、配定时任务、翻日志——都可以在浏览器里完成，不用 ssh。从别的设备远程管理见[远程访问](#远程访问)。
 
 ## 登录
 
@@ -163,9 +163,40 @@ Codex 的安装与登录仍需在运行桥接的机器上完成，后台提供�
 前提是进程由 PM2 等进程管理器自动拉起；直接裸跑 bridge 时，该操作只会让进程退出。
 新进程沿用 PM2 的环境，不会重读 `ecosystem.config.cjs`；需要刷新 PATH 等启动环境时使用 `luckagent restart` 或安装脚本。
 
+## 远程访问
+
+bridge 默认只监听 `127.0.0.1`，别的设备打不开。远程管理不需要改这个设置，任选一种转发方式：
+
+### Tailscale（推荐）
+
+部署机和你的电脑 / 手机都装了 [Tailscale](https://tailscale.com) 并登录同一个 tailnet 时，在部署机上执行一次：
+
+```bash
+tailscale serve --bg 9100
+```
+
+之后在 tailnet 里的任意设备打开 `https://<机器名>.<tailnet>.ts.net/admin`，用 `API_SECRET` 登录。完整地址在命令输出里，也可以用 `tailscale serve status` 查看。
+
+- **第一次执行**：如果 tailnet 还没开启 Serve，命令会打印一个 `login.tailscale.com` 链接并停在那里等待。在浏览器打开链接点启用（连同 HTTPS 证书），命令会自动完成。
+- **安全边界**：只有你 tailnet 里的设备能访问，局域网和公网都访问不到。HTTPS 证书由 Tailscale 自动签发。bridge 仍然只监听回环地址，所有数据接口照常要求 `API_SECRET`，本机来的请求也不会跳过检查。
+- **重启后仍有效**：`--bg` 的配置会保留，部署机重启后自动恢复。关闭执行 `tailscale serve --https=443 off`。
+- **不要用 `tailscale funnel`**：它会把管理台公开到互联网。
+- **限流共用一个来源**：经过转发，所有远端请求在 bridge 看来都来自 `127.0.0.1`，跟本机的 CLI 和 bot 调用算同一个来源。每分钟 300 次的请求上限由两边共用；远端一分钟内输错密钥超过 10 次触发锁定后，本机的 `luckagent talk` 等调用也会暂时收到 429（约 1 分钟）。tailnet 里只有自己的设备时风险很低；确实需要区分时可在 `.env` 设 `LUCKAGENT_TRUST_PROXY=1`，按转发头里的真实来源计数，代价是要信任这个请求头。
+- **不推荐**把 `LUCKAGENT_API_HOST` 直接设成 Tailscale 地址（`100.x.y.z`）：只有 HTTP，开机时 Tailscale 晚于 bridge 启动会导致绑定失败，本机 CLI 默认的 `localhost:9100` 也要跟着改。
+
+### ssh 端口转发
+
+没有 Tailscale 时：
+
+```bash
+ssh -L 9100:127.0.0.1:9100 you@server
+```
+
+然后在本机浏览器打开 `http://localhost:9100/admin`。断开 ssh 即失效。
+
 ## 安全说明
 
-- **默认只绑 127.0.0.1**。bridge 监听地址由 `LUCKAGENT_API_HOST` 控制，默认回环——同机浏览器可访问，外部网络不可达。远程访问推荐 ssh 端口转发：`ssh -L 9100:127.0.0.1:9100 you@server`。
+- **默认只绑 127.0.0.1**。bridge 监听地址由 `LUCKAGENT_API_HOST` 控制，默认回环——同机浏览器可访问，外部网络不可达。远程访问用 Tailscale Serve 或 ssh 端口转发，不需要改监听地址，见[远程访问](#远程访问)。
 - **设 `LUCKAGENT_API_HOST=0.0.0.0` 之前想清楚**：管理台与 API 能创建 bot、投任务、让 agent 在服务器上执行任意命令——暴露它约等于暴露一个 shell。确要暴露时：必须设置强 `API_SECRET`；用防火墙 / 安全组把 9100 限制到可信来源 IP；最好再套一层带 TLS 的反向代理。9200（core）同理，默认也是回环。
 - **鉴权边界**：`/admin` 与 `/admin/*` 的**静态资源**（HTML/JS）免鉴权——它们只是公开的前端代码；但所有数据接口（`/admin/api/*` 与 `/api/*`）一律要求 Bearer。`/api/health` 是唯一例外，只回状态与 uptime，供探活。
 - **内置限流**：每 IP 每分钟 300 请求；一分钟内鉴权失败超过 10 次会被锁定约 1 分钟（返回 429，带 Retry-After）。可用 `LUCKAGENT_RATE_LIMIT_MAX` / `LUCKAGENT_RATE_LIMIT_AUTH_FAILS` 调整，`LUCKAGENT_RATE_LIMIT_DISABLED=1` 关闭（不建议）。
