@@ -1,5 +1,5 @@
 /**
- * App-wide timezone. The host machine may sit in a different zone (e.g. a US
+ * [design-note V] App-wide timezone. The host machine may sit in a different zone (e.g. a US
  * server) than the people using the bots (GMT+8), so every process pins
  * `process.env.TZ` to one configured IANA zone at startup. Child processes
  * (bot engine sessions, python scripts, `date`) inherit it.

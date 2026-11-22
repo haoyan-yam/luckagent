@@ -1,6 +1,6 @@
 /**
- * The ONLY place that imports dayjs directly (enforced by eslint
- * no-restricted-imports). All admin times render in the server's app
+ * [design-note V] The ONLY place that imports dayjs directly (guarded by
+ * tests/timezone.test.ts). All admin times render in the server's app
  * timezone (LUCKAGENT_TIMEZONE, fetched from /admin/api/meta at boot) —
  * not the browser's — so a viewer in the US sees the same clock as one in
  * China and as the bots/logs.

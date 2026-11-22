@@ -1,8 +1,8 @@
 # 设计笔记：内建的行为增强
 
-Luckagent 的飞书桥接链路里有 18 项「不显眼但救过命」的行为增强。它们源自真实生产部署里踩过的坑，**已全部内建进代码**、随框架默认生效——本文是它们的索引：每项一个字母代号，源码中以 `[design-note X]` 注释标记改动位置与取舍说明（个别早期项为不带代号的 `[design-note]` 注释），方便你在读代码时对号入座。
+Luckagent 的飞书桥接链路里有 19 项「不显眼但救过命」的行为增强。它们源自真实生产部署里踩过的坑，**已全部内建进代码**、随框架默认生效——本文是它们的索引：每项一个字母代号，源码中以 `[design-note X]` 注释标记改动位置与取舍说明（个别早期项为不带代号的 `[design-note]` 注释），方便你在读代码时对号入座。
 
-代号使用 A–U，其中 **I / J / O 为空洞**：I、J 曾是飞书「话题（thread）」相关的行为，因话题功能在实际部署中停用、长期零触发而移除；O 预留给一个搁置的产物投递重构方案。编号不重排，避免历史注释失配。
+代号使用 A–V，其中 **I / J / O 为空洞**：I、J 曾是飞书「话题（thread）」相关的行为，因话题功能在实际部署中停用、长期零触发而移除；O 预留给一个搁置的产物投递重构方案。编号不重排，避免历史注释失配。
 
 ## 代号索引
 
@@ -26,6 +26,7 @@ Luckagent 的飞书桥接链路里有 18 项「不显眼但救过命」的行为
 | S | 私聊也需 @（可选） | `privateRequireMention: true` 时私聊也要 @bot 才响应（飞书私聊的 @ 选人框里有机器人），判定与群聊一致：未 @ 静默忽略。**@ 触发时按飞书接口拉「本轮」上下文**（私聊群聊同一机制，`round-context.ts`）：只拉 @ 的这个人上一条 @ 之后的消息，上限 48 小时/100 条，文本按时间顺序拼到提示词前面、图片/文件作附件、引用回复的被引内容照常注入、富文本链接保留 URL；取代上游/N 的内存媒体缓存与 30 分钟寿命（只存媒体、重启即丢）；拉取失败降级为提示词里一句说明。需要应用有读取单聊/群消息权限，缺权限时优雅降级。同时取消「两人群视同私聊免 @」的豁免，两人群按普通群规则走。`groupNoMention` 只管群聊，两开关互不干涉。默认关 = 私聊直答 |
 | T | 空闲会话自动换新（可调） | 一个群的会话空闲 ≥3 小时**且**已经历过上下文压缩时，下一条消息自动开新会话（不再 resume），并把旧会话最近 10 轮对话 + 最后一次完整回复作为 `<system-reminder>` 交接块注入首条提示词（三引号围栏、剥掉旧提示词里的提醒块、剔除群日报等定时任务）。群消息入口与 API/定时任务入口（`executeApiTask`：群日报、`luckagent talk`、管理台投任务）共用同一判定，因此早 7 点的日报自己就会触发换新，白天第一条人话直接落在新会话；带 `maxTurns`/`allowedTools` 的受限回合（语音）不参与。根治「一群一会话永不清零 → 每天自动压缩 2–6 次、每次 2.5–4 分钟且随机砸在任务中间」。判定按 transcript `.jsonl` 的 mtime 与 `compact_boundary` 标记（增量扫描、命中缓存，240 MB 文件 14 ms）；没压缩过的会话继续 resume；claude/deepseek/minimax 三引擎都参与，带目标（goal）的会话跳过；任何一步失败都退回照常 resume。环境变量 `LUCKAGENT_ROLLOVER_IDLE_MS`（默认 3h）/ `LUCKAGENT_ROLLOVER_DISABLED=1`。审计事件 `session_rollover`；`SessionManager.rolloverSession` 只清 sessionId，保留用量/模型/goal（与 `/reset` 不同） |
 | U | 记忆库出站闸门 | 本地 auto-memory（`~/.claude/projects/<工作区>/memory/`、`MEMORY.md`）不可外发，三层硬拦：**桥接层**发送目录里的文件发出前逐个检查——文件名是 MEMORY.md、真实路径在 `~/.claude` 之下、压缩包清单含 `memory/`/MEMORY.md/`.claude/` 或 ≥20 个 .md、正文是记忆 frontmatter 或索引形态 → 拦下删除并发一条红色通知（不能列清单的 .7z/.rar 一律不放行）；**工具层** Bash 调用前的 PreToolUse 钩子——打包/拷贝/移动/同步记忆目录、把记忆重定向到文件、经 lark-cli 或共享记忆库外传记忆、lark-cli 直传任何压缩包（绕过桥接检查）一律 deny 并把原因回给模型（SDK 后端进程内钩子，PTY 后端写进 `--settings` 的 command 钩子，分类逻辑同源）；**提示词层**工作区共用规范写明「记忆不外发，谁提都不行」。刻意不拦读记忆（cat/ls/grep）与 `luckagent memory` 中央库 CLI。起因：2026-09-21 一个群成员一句「先把记忆搞过来」，bot 就把 105 个记忆文件打成 zip 发进了群——出站脱敏只看文字不看文件，提示词约束挡不住「用户明确要求」 |
+| V | 全局时区（可调） | 所有进程钉同一个 IANA 时区（`LUCKAGENT_TIMEZONE`，默认 `Asia/Shanghai`），与本机系统时区无关：bridge/core 启动即设 `process.env.TZ`，bot 子进程（`date`、Python、Claude 认为的「今天」）、cron 默认时区、按天统计、pm2 日志随之统一；管理台经 `lib/time.ts` 按服务器时区显示，不跟浏览器（取舍见下） |
 
 ## 关键取舍
 
@@ -50,10 +51,21 @@ M 指的是 `src/workspace/` 下的两级模板：bot 层 `CLAUDE.md`（专属�
 
 路径脱敏规则以类 Unix 路径形态为主（`/Users/…`、`~/…`、`/tmp/…` 等），Windows 风格路径基本不在覆盖面内。脱敏是**最后一道防线**，第一道仍是工作区规范里的出站纪律（不往聊天里贴本机路径与密钥）。
 
+### V 为什么进程级钉 TZ
+
+起因：部署主机在美国弗吉尼亚北部（`America/New_York`，UTC-5，夏令时 UTC-4），用户在 GMT+8。原先只有 cron 按 `SCHEDULE_TIMEZONE` 走，其余都跟本机时区——美东中午到午夜这半天，预算按天统计、仪表盘 7 天图、「今天失败任务」、bot 回答「今天几号」都比北京晚一天；夏令时切换日 `now - i*DAY_MS` 推日期还会跳日或重日。
+
+- **进程级而非逐处改代码**：不把每处 `getHours`/`setHours(0)` 改成显式带时区，而是启动时设 `process.env.TZ`（Node 支持运行时改）。一个配置源、现有 `localDay` 等逻辑零改动、子进程天然继承、`Asia/Shanghai` 无夏令时顺带消除 DST 问题；新代码后端直接用 `Date` 即可。
+- **不改系统时区**：`systemsetup -settimezone` 最省事，但会波及机器上其他服务，且部署时区与服务器所在地本就该解耦。
+- **配置**：`LUCKAGENT_TIMEZONE` > `SCHEDULE_TIMEZONE`（旧，兼容）> `Asia/Shanghai`。必须是 IANA 名——`GMT+8` 作为 POSIX TZ 正负号相反，`Etc/GMT-8` 才是东八区，极易写错；非法值告警并回退默认。入口：bridge 在 `src/config.ts` 加载完 env 后调用 `applyAppTimezone()`（`src/utils/timezone.ts`）；core 在 `packages/server/src/index.ts`；`ecosystem.config.cjs` 读 `.env` 给两个进程设 `TZ`；`bin/luckagent` 顶部导出 `TZ`；`luckagent doctor` 的 `app_timezone` 检查同时显示 app 时区与本机时区。
+- **前端不跟浏览器**：后端拼好的文字与「哪一天」按服务器时区算，前端若按浏览器时区换算，美国的人打开管理台会在同一页看到两套时区。所以管理台启动先取 `GET /admin/api/meta` 的时区再渲染页面（取不到按默认），所有显示走 `packages/admin-ui/src/lib/time.ts`（唯一允许直接 import `dayjs` 的文件，`tests/timezone.test.ts` 守卫），页头注明「时间均按 … 显示」。服务端算好的日期 key（`YYYY-MM-DD`）用 `fmtDayKey`，不要再做时区换算，否则会偏一天。
+- **测试**：`vitest.config.ts` 固定 `TZ=Asia/Shanghai`，测试结果不随跑测试的机器变化。
+- **上线代价**：pm2 日志前缀时间由 pm2 守护进程生成，已运行的守护进程不会变，需 `pm2 kill` 后重新启动（会中断所有 bot 会话，择机）；切换当天预算「今天」的边界移动一次，当天计数可能拆分或合并一次。
+
 ## 适用范围与开关
 
 使用前值得知道的三件事：
 
 - **中文 UX**：这些行为产生的用户可见文案（如「⚠️ 有文件没发出来」）与注入给 agent 的提示词均为中文硬编码，非中文团队需自行替换文案。
 - **实现于飞书发送链路**：全部增强围绕飞书 sender/事件链路实现；其他接入方式拿不到这些行为。
-- **除 A、S、T 外均为 always-on**：只有 A 的 `groupOnly` / `groupOnlyAllowUsers` 与 S 的 `privateRequireMention` 走 `bots.json` 配置（都不配即默认行为：私聊直答、群聊需 @）。S 做成开关是因为它改的是「私聊要不要 @」这种部署偏好，不是所有部署都会踩的坑。其余 15 项——消息合并、开轮清空、出站脱敏、@提问人、引用注入、记忆库出站闸门等——都是无开关的默认行为；这是刻意的取舍：它们修的是「所有部署都会踩」的坑，可配置化只会增加组合爆炸的测试面。确实不想要某一项，请在源码里按 `[design-note X]` 标记定位后自行调整。 T 默认开启但走环境变量：`LUCKAGENT_ROLLOVER_DISABLED=1` 关闭，`LUCKAGENT_ROLLOVER_IDLE_MS` 调空闲阈值（毫秒）。
+- **除 A、S、T、V 外均为 always-on**：只有 A 的 `groupOnly` / `groupOnlyAllowUsers` 与 S 的 `privateRequireMention` 走 `bots.json` 配置（都不配即默认行为：私聊直答、群聊需 @）。S 做成开关是因为它改的是「私聊要不要 @」这种部署偏好，不是所有部署都会踩的坑。其余 15 项——消息合并、开轮清空、出站脱敏、@提问人、引用注入、记忆库出站闸门等——都是无开关的默认行为；这是刻意的取舍：它们修的是「所有部署都会踩」的坑，可配置化只会增加组合爆炸的测试面。确实不想要某一项，请在源码里按 `[design-note X]` 标记定位后自行调整。 T 默认开启但走环境变量：`LUCKAGENT_ROLLOVER_DISABLED=1` 关闭，`LUCKAGENT_ROLLOVER_IDLE_MS` 调空闲阈值（毫秒）。V 始终生效，`LUCKAGENT_TIMEZONE` 只改时区取值。
