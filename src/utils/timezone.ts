@@ -1,3 +1,5 @@
+import * as fs from 'node:fs';
+
 /**
  * [design-note V] App-wide timezone. The host machine may sit in a different zone (e.g. a US
  * server) than the people using the bots (GMT+8), so every process pins
@@ -65,12 +67,25 @@ export function utcOffsetLabel(tz: string, at: Date = new Date()): string {
   return m?.[1] ?? '+00:00';
 }
 
-/** Host machine zone, captured before TZ was overridden (for diagnostics). */
+/**
+ * Host machine's system zone (for diagnostics). Read from the OS, not from
+ * Intl: pm2 already launches us with TZ=<app zone>, so Intl would just echo
+ * the app timezone back.
+ */
 export const HOST_TIMEZONE: string = (() => {
-  const pre = process.env.TZ;
   try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || pre || 'UTC';
-  } catch {
-    return pre || 'UTC';
+    const link = fs.readlinkSync('/etc/localtime'); // macOS / most Linux
+    const i = link.indexOf('zoneinfo/');
+    if (i >= 0) return link.slice(i + 'zoneinfo/'.length);
+  } catch { /* not a symlink / no such file */ }
+  try {
+    const name = fs.readFileSync('/etc/timezone', 'utf8').trim(); // Debian
+    if (name) return name;
+  } catch { /* absent */ }
+  if (!process.env.TZ) {
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone || 'unknown'; // Windows etc.
+    } catch { /* fallthrough */ }
   }
+  return 'unknown';
 })();
