@@ -9,7 +9,7 @@ import { resolveClaudeAuthEnv, nonessentialTrafficSettings } from './auth-env.js
 import type { Logger } from '../../utils/logger.js';
 import { AsyncQueue } from '../../utils/async-queue.js';
 import { makeCanUseTool } from './exit-plan-mode.js';
-import { createMemoryGuardHook } from '../../utils/memory-export-guard.js';
+import { createMemoryGuardHook, defaultDenialLogPath } from '../../utils/memory-export-guard.js';
 
 const isWindows = process.platform === 'win32';
 
@@ -563,7 +563,11 @@ export class ClaudeExecutor {
     // separate card (StreamProcessor + sendPlanContent).
     queryOptions.canUseTool = makeCanUseTool(this.logger);
 
-    const memoryGuardHook = createMemoryGuardHook(this.logger); // [design-note U]
+    const memoryGuardHook = createMemoryGuardHook(this.logger, { // [design-note U]
+      denialLogPath: defaultDenialLogPath(),
+      bot: apiContext?.botName,
+      chatId: apiContext?.chatId,
+    });
     queryOptions.hooks = {
       PreToolUse: [
         {

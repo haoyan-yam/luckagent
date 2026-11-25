@@ -38,7 +38,7 @@ import { AsyncQueue } from '../../utils/async-queue.js';
 import type { SDKMessage, TeamEvent, ApiContext } from './executor.js';
 import { apply1MContextSettings, resolveClaudePath } from './executor.js';
 import { makeCanUseTool } from './exit-plan-mode.js';
-import { createMemoryGuardHook } from '../../utils/memory-export-guard.js';
+import { createMemoryGuardHook, defaultDenialLogPath } from '../../utils/memory-export-guard.js';
 import { ptyQuery } from './pty/pty-query.js';
 import type {
   PtyQueryOptions,
@@ -891,7 +891,11 @@ export class PersistentClaudeExecutor extends EventEmitter {
       };
     };
 
-    const memoryGuardHook = createMemoryGuardHook(this.options.logger); // [design-note U]
+    const memoryGuardHook = createMemoryGuardHook(this.options.logger, { // [design-note U]
+      denialLogPath: defaultDenialLogPath(),
+      bot: this.options.apiContext?.botName,
+      chatId: this.options.apiContext?.chatId,
+    });
     return {
       PreToolUse: [
         {

@@ -25,7 +25,7 @@ import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import type { FSWatcher } from 'node:fs';
 import type { PtyHookBridge } from './contract.js';
-import { buildGuardHookScript } from '../../../utils/memory-export-guard.js';
+import { buildGuardHookScript, defaultDenialLogPath } from '../../../utils/memory-export-guard.js';
 
 export interface HookBridgeOptions {
   /**
@@ -75,7 +75,7 @@ export function createHookBridge(options?: HookBridgeOptions): PtyHookBridge {
     // [design-note U] 记忆库出站闸门：PTY 后端的 claude 只认 --settings 里的 command 钩子，
     // 把与进程内同源的分类逻辑生成为独立脚本，Bash 调用前逐条判定，命中即 deny。
     // 用 process.execPath 的绝对路径，不依赖 claude 子进程的 PATH。
-    writeFileSync(guardScriptPath, buildGuardHookScript(), { encoding: 'utf8', mode: 0o700 });
+    writeFileSync(guardScriptPath, buildGuardHookScript({ denialLogPath: defaultDenialLogPath() }), { encoding: 'utf8', mode: 0o700 });
     const guardCommand = `"${process.execPath}" "${guardScriptPath}"`;
 
     const hooks: Record<string, unknown> = {
